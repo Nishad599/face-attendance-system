@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Page Title</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+/* CDAC Header Styles */
+.cdac-header {
+    background: white;
+    border-bottom: 2px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 15px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+/* Ensure no extra spacing issues */
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    .cdac-nav {
+        gap: 15px;
+    }
+    
+    .nav-item {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+.cdac-header {
+    background: white;
+    border-bottom: 3px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 10000;
+    margin: 0;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+}
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+        
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .cdac-container {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .cdac-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+            
+            .nav-item {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            .logo-img {
+                height: 40px;
+            }
+            
+            .hindi-text {
+                font-size: 12px;
+            }
+            
+            .english-text {
+                font-size: 10px;
+            }
+        }
+
+        /* Adjust main content to account for header */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    
+        /* Logout Button Styles */
+        .logout-btn {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+        .logout-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Adjust for mobile */
+        @media (max-width: 768px) {
+            .logout-btn {
+                top: 60px;
+                right: 10px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- CDAC Header -->
+<div class="cdac-header">
+    <div class="cdac-container">
+        <div class="cdac-logo">
+            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
+            <div class="logo-text">
+                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
+                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+            </div>
+
+    <!-- Logout Button -->
+    <button class="logout-btn" onclick="performLogout()" title="Logout">
+        🚪 Logout
+    </button>
+        </div>
+        <nav class="cdac-nav">
+            <a href="/dashboard" class="nav-item">🏠</a>
+            <a href="#" class="nav-item">ABOUT US</a>
+            <a href="#" class="nav-item">CONTACT US</a>
+        </nav>
+    </div>
+</div>
+
+
+    <div class="main-container">
+        <div class="header">
+            <div class="header-content">
+                <h1>📊 Attendance Management</h1>
+                <p>Comprehensive student attendance tracking and analytics</p>
+            </div>
+        </div>
+        <div class="container">
+            <div class="back-link">
+                <a href="/dashboard" class="btn btn-outline">← Back to Dashboard</a>
+            </div>
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="switchTab('individual')">
+                    👤 Individual Attendance
+                </button>
+                <button class="nav-tab" onclick="switchTab('today')">
+                    📋 Today's Attendance
+                </button>
+                <button class="nav-tab" onclick="switchTab('overview')">
+                    📈 Class Overview
+                </button>
+                <button class="nav-tab" onclick="switchTab('holidays')">
+                    🗓️ Holiday Management
+                </button>
+            </div>
+            <!-- Individual Attendance Tab -->
+            <div id="individual-tab" class="tab-content active">
+                <div class="card">
+                    <div class="student-selector">
+                        <label for="studentSelect" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151;">
+                            Select Student:
+                        </label>
+                        <select id="studentSelect" class="student-select" onchange="loadStudentAttendance()">
+                            <option value="">Choose a student...</option>
+                        </select>
+                    </div>
+
+                    <div id="studentAttendanceContent" style="display: none;">
+                        <div class="attendance-overview">
+                            <div class="stat-card">
+                                <div class="stat-number present" id="presentDays">0</div>
+                                <div class="stat-label">Present Days</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number absent" id="absentDays">0</div>
+                                <div class="stat-label">Absent Days</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number holiday" id="holidayDays">0</div>
+                                <div class="stat-label">Holidays</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number percentage" id="attendancePercentage">0%</div>
+                                <div class="stat-label">Attendance Rate</div>
+                            </div>
+                        </div>
+
+                        <div class="actions-bar">
+                            <button class="btn btn-success" onclick="markManualAttendance()">
+                                ✓ Mark Present Today
+                            </button>
+                            <button class="btn btn-warning" onclick="showDatePicker()">
+                                📅 Mark Present on Date
+                            </button>
+                            <button class="btn btn-outline" onclick="exportAttendance()">
+                                📄 Export Report
+                            </button>
+                            <button class="btn btn-primary" onclick="showBulkExportModal(event)">
+                                📊 Export All Students (Date Range)
+                            </button>
+                        </div>
+
+                        <div class="calendar-container">
+                            <div class="calendar-header">
+                                <button class="calendar-nav" onclick="previousMonth()">‹ Previous</button>
+                                <div class="calendar-title" id="calendarTitle">October 2024</div>
+                                <button class="calendar-nav" onclick="nextMonth()">Next ›</button>
+                            </div>
+                            <div class="calendar-grid" id="calendarGrid">
+                                <div class="calendar-day-header">Sun</div>
+                                <div class="calendar-day-header">Mon</div>
+                                <div class="calendar-day-header">Tue</div>
+                                <div class="calendar-day-header">Wed</div>
+                                <div class="calendar-day-header">Thu</div>
+                                <div class="calendar-day-header">Fri</div>
+                                <div class="calendar-day-header">Sat</div>
+                                <div id="calendarDays"></div>
+                            </div>
+                            <div class="legend">
+                                <div class="legend-item">
+                                    <div class="legend-color" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);"></div>
+                                    <span>Present</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-color" style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);"></div>
+                                    <span>Absent</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-color" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);"></div>
+                                    <span>Holiday</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-color" style="background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);"></div>
+                                    <span>Today</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="noStudentSelected" class="empty-state">
+                        <div class="empty-state-icon">👤</div>
+                        <h3>Select a Student</h3>
+                        <p>Choose a student from the dropdown to view their comprehensive attendance history</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Today's Attendance Tab -->
+            <div id="today-tab" class="tab-content">
+                <div class="today-attendance-section">
+                    <h2 style="margin-bottom: 1rem; font-size: 1.5rem; color: #1a202c;">📋 Today's Attendance</h2>
+                    
+                   <!-- Add Search Bar and Status Filter -->
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; border: 1px solid #e2e8f0;">
+                        <div style="flex: 1;">
+                            <input 
+                                type="text" 
+                                id="attendanceSearch" 
+                                placeholder="🔍 Search students by name, ID, or email..."
+                                style="
+                                    width: 100%; 
+                                    padding: 0.875rem 1rem; 
+                                    border: 2px solid #e2e8f0; 
+                                    border-radius: 10px; 
+                                    font-size: 1rem;
+                                    background: white;
+                                    transition: all 0.2s;
+                                    font-family: inherit;
+                                "
+                                onfocus="this.style.borderColor='#4299e1'; this.style.boxShadow='0 0 0 4px rgba(66, 153, 225, 0.1)'"
+                                onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'"
+                            >
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <select 
+                                id="statusFilter" 
+                                style="
+                                    padding: 0.875rem 1rem; 
+                                    border: 2px solid #e2e8f0; 
+                                    border-radius: 10px; 
+                                    font-size: 1rem;
+                                    background: white;
+                                    transition: all 0.2s;
+                                    font-family: inherit;
+                                    cursor: pointer;
+                                    min-width: 140px;
+                                "
+                                onfocus="this.style.borderColor='#4299e1'; this.style.boxShadow='0 0 0 4px rgba(66, 153, 225, 0.1)'"
+                                onblur="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'"
+                            >
+                                <option value="all">📊 All Students</option>
+                                <option value="present">✅ Present Only</option>
+                                <option value="absent">❌ Absent Only</option>
+                            </select>
+                        </div>
+                        <div id="searchResultCount" style="color: #64748b; font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px;">
+                            <!-- Will show "X of Y students" -->
+                        </div>
+                    </div>
+                    
+                    <!-- Existing Table -->
+                    <div class="attendance-table-container">
+                        <table class="attendance-table">
+                            <thead>
+                                <tr>
+                                    <th>Student Name</th>
+                                    <th>Student ID</th>
+                                    <th>Email</th>
+                                    <th>Status</th>
+                                    <th>Time In</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="todayAttendanceTableBody">
+                                <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Class Overview Tab -->
+            <div id="overview-tab" class="tab-content">
+                <div class="card">
+                    <h2 style="margin-bottom: 1rem; font-size: 1.5rem; color: #1a202c;">📈 Class Attendance Overview</h2>
+                    <div id="classOverviewContent">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📊</div>
+                            <h3>Class Analytics</h3>
+                            <p>Comprehensive class attendance analytics and insights coming soon</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Holiday Management Tab -->
+            <div id="holidays-tab" class="tab-content">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                        <h2 style="font-size: 1.5rem; color: #1a202c;">🗓️ Holiday Management</h2>
+                        <button class="btn btn-primary" onclick="showAddHolidayModal()">
+                            + Add Holiday
+                        </button>
+                    </div>
+                    
+                    <div id="holidaysList">
+                        <!-- Holidays will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Attendance Modal -->
+    <div id="manualAttendanceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>📅 Mark Attendance</h3>
+                <button class="close" onclick="closeModal('manualAttendanceModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="attendanceDate">Select Date:</label>
+                <input type="date" id="attendanceDate" required>
+            </div>
+            <div class="form-group">
+                <label for="attendanceReason">Reason (Optional):</label>
+                <input type="text" id="attendanceReason" placeholder="e.g., Make-up class, Special event">
+            </div>
+            <div style="text-align: right; margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-outline" onclick="closeModal('manualAttendanceModal')">Cancel</button>
+                <button class="btn btn-success" onclick="submitManualAttendance()">Mark Present</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Holiday Modal -->
+    <div id="addHolidayModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🎉 Add Holiday</h3>
+                <button class="close" onclick="closeModal('addHolidayModal')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="holidayDate">Holiday Date:</label>
+                <input type="date" id="holidayDate" required>
+            </div>
+            <div class="form-group">
+                <label for="holidayName">Holiday Name:</label>
+                <input type="text" id="holidayName" placeholder="e.g., Independence Day" required>
+            </div>
+            <div class="form-group">
+                <label for="holidayType">Holiday Type:</label>
+                <select id="holidayType" required>
+                    <option value="">Select type...</option>
+                    <option value="national">National Holiday</option>
+                    <option value="institutional">Institutional Holiday</option>
+                    <option value="semester_break">Semester Break</option>
+                    <option value="exam">Exam Day</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div style="text-align: right; margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-outline" onclick="closeModal('addHolidayModal')">Cancel</button>
+                <button class="btn btn-primary" onclick="submitHoliday()">Add Holiday</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Export Modal -->
+    <div id="bulkExportModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75);">
+        <div class="modal-content" style="background: white; margin: 5% auto; padding: 2rem; width: 90%; max-width: 500px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="font-size: 1.25rem; font-weight: 700; color: #1a202c;">📊 Export Attendance for All Students</h3>
+                <button class="close" onclick="closeBulkExportModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">&times;</button>
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label for="exportStartDate" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Start Date:</label>
+                <input type="date" id="exportStartDate" required style="width: 100%; padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label for="exportEndDate" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">End Date:</label>
+                <input type="date" id="exportEndDate" required style="width: 100%; padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label for="exportFormat" style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Export Format:</label>
+                <select id="exportFormat" style="width: 100%; padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem;">
+                    <option value="daily">Daily Report (Date-wise)</option>
+                    <option value="student">Student-wise Report</option>
+                    <option value="summary">Summary Report</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="includeWeekends"> Include Weekends
+                </label>
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="includeHolidays"> Include Holidays
+                </label>
+            </div>
+            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                <p style="margin: 0; color: #666;">
+                    <strong>Preview:</strong> <span id="dateRangePreview">Select dates to see preview</span>
+                </p>
+            </div>
+            <div style="text-align: right; margin-top: 2rem; display: flex; gap: 1rem; justify-content: flex-end;">
+                <button onclick="closeBulkExportModal()" style="padding: 0.875rem 1.75rem; border: 2px solid #e2e8f0; background: transparent; color: #64748b; border-radius: 10px; cursor: pointer;">Cancel</button>
+                <button onclick="exportBulkAttendance()" style="padding: 0.875rem 1.75rem; border: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 10px; cursor: pointer;">
+                    📥 Download CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching functionality
+        function switchTab(tabName) {
+            document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Load data based on tab
+            if (tabName === 'holidays') {
+                loadHolidays();
+            } else if (tabName === 'today') {
+                loadTodayAttendance();
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStudents();
+            loadHolidays();
+            updateDateTime();
+            loadTodayAttendance();
+            
+            // Update every minute
+            setInterval(updateDateTime, 60000);
+        });
+
+        // Global variables
+        let currentDate = new Date();
+        let selectedStudent = null;
+        let studentAttendanceData = {};
+        let holidays = [];
+
+
+
+
+async function loadStudents() {
+    try {
+        const response = await fetch('/api/students/list');
+        const data = await response.json();
+        
+        const studentContainer = document.querySelector('.student-selector');
+        
+        studentContainer.innerHTML = `
+            <label for="studentSelect" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151;">
+                Select Student:
+            </label>
+            <select id="studentSelect" class="student-select" onchange="loadStudentAttendance()">
+                <option value="">🔍 Choose a student...</option>
+            </select>
+        `;
+        
+        const select = document.getElementById('studentSelect');
+        
+        if (data.success && data.students) {
+            data.students.forEach(student => {
+                const option = document.createElement('option');
+                option.value = student.id;
+                option.textContent = `${student.name} (${student.student_id})`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading students:', error);
+    }
+}
+
+async function loadStudentAttendance() {
+    const studentId = document.getElementById('studentSelect').value;
+    
+    if (!studentId) {
+        document.getElementById('studentAttendanceContent').style.display = 'none';
+        document.getElementById('noStudentSelected').style.display = 'block';
+        return;
+    }
+    
+    selectedStudent = studentId;
+    document.getElementById('noStudentSelected').style.display = 'none';
+    document.getElementById('studentAttendanceContent').style.display = 'block';
+    
+    try {
+        const response = await fetch(`/api/attendance/student/${studentId}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            studentAttendanceData = data.attendance;
+            updateAttendanceStats(data.stats);
+            updateCalendar();
+        } else {
+            console.error('Error loading attendance data:', data.message);
+            alert('Error loading attendance data: ' + data.message);
+        }
+    } catch (error) {
+        console.error('Error loading student attendance:', error);
+        alert('Error loading attendance data. Please try again.');
+    }
+}        
+     
+
+
+        function updateAttendanceStats(stats) {
+            document.getElementById('presentDays').textContent = stats.present_days || 0;
+            document.getElementById('absentDays').textContent = stats.absent_days || 0;
+            document.getElementById('holidayDays').textContent = stats.holidays || 0;
+            document.getElementById('attendancePercentage').textContent = (stats.percentage || 0) + '%';
+        }
+
+function updateCalendar() {
+    const calendarGrid = document.getElementById('calendarGrid');
+    calendarGrid.innerHTML = '';
+
+    const weekdays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    for (let day of weekdays) {
+        const header = document.createElement('div');
+        header.className = 'calendar-day-header';
+        header.textContent = day;
+        calendarGrid.appendChild(header);
+    }
+
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    document.getElementById('calendarTitle').textContent =
+        currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    const firstDay = new Date(year, month, 1);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    let currentCalendarDate = new Date(startDate);
+    for (let i = 0; i < 42; i++) {
+        const dayElement = document.createElement('div');
+        dayElement.className = 'calendar-day';
+        dayElement.textContent = currentCalendarDate.getDate();
+
+        const dateString = currentCalendarDate.toISOString().split('T')[0];
+        const isCurrentMonth = currentCalendarDate.getMonth() === month;
+        const isToday = dateString === new Date().toISOString().split('T')[0];
+
+        if (!isCurrentMonth) dayElement.classList.add('other-month');
+        if (isToday) dayElement.classList.add('today');
+
+        const holiday = holidays.find(h => h.date === dateString);
+        if (holiday) {
+            dayElement.classList.add('holiday');
+            dayElement.title = holiday.name;
+        } else if (selectedStudent && studentAttendanceData[dateString]) {
+            const status = studentAttendanceData[dateString];
+            if (status === 'present') dayElement.classList.add('present');
+            else if (status === 'absent') dayElement.classList.add('absent');
+        }
+
+        calendarGrid.appendChild(dayElement);
+        currentCalendarDate.setDate(currentCalendarDate.getDate() + 1);
+    }
+}
+
+
+        
+
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            updateCalendar();
+        }
+        
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            updateCalendar();
+        }
+
+        function markManualAttendance() {
+            if (!selectedStudent) {
+                alert('Please select a student first');
+                return;
+            }
+            
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('attendanceDate').value = today;
+            document.getElementById('manualAttendanceModal').style.display = 'block';
+        }
+
+        function showDatePicker() {
+            if (!selectedStudent) {
+                alert('Please select a student first');
+                return;
+            }
+            
+            document.getElementById('attendanceDate').value = '';
+            document.getElementById('manualAttendanceModal').style.display = 'block';
+        }
+
+        async function submitManualAttendance() {
+            const date = document.getElementById('attendanceDate').value;
+            const reason = document.getElementById('attendanceReason').value;
+            
+            if (!date || !selectedStudent) {
+                alert('Please fill all required fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/attendance/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_id: selectedStudent,
+                        date: date,
+                        reason: reason
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    closeModal('manualAttendanceModal');
+                    loadStudentAttendance(); // Refresh data
+                    alert('✅ Attendance marked successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error marking attendance: ' + error.message);
+            }
+        }
+
+        function showAddHolidayModal() {
+            document.getElementById('addHolidayModal').style.display = 'block';
+        }
+
+        async function submitHoliday() {
+            const date = document.getElementById('holidayDate').value;
+            const name = document.getElementById('holidayName').value;
+            const type = document.getElementById('holidayType').value;
+            
+            if (!date || !name || !type) {
+                alert('Please fill all fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/holidays', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date, name, type })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    closeModal('addHolidayModal');
+                    loadHolidays();
+                    updateCalendar();
+                    alert('✅ Holiday added successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error adding holiday: ' + error.message);
+            }
+        }
+
+        async function loadHolidays() {
+            try {
+                const response = await fetch('/api/holidays');
+                const data = await response.json();
+                
+                if (data.success) {
+                    holidays = data.holidays;
+                    displayHolidays();
+                    updateCalendar();
+                }
+            } catch (error) {
+                console.error('Error loading holidays:', error);
+            }
+        }
+
+        function displayHolidays() {
+            const container = document.getElementById('holidaysList');
+            
+            if (holidays.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🗓️</div>
+                        <h3>No Holidays</h3>
+                        <p>Add holidays to exclude them from attendance calculations</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            holidays.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            let html = '<div style="display: grid; gap: 1rem;">';
+            holidays.forEach(holiday => {
+                const date = new Date(holiday.date).toLocaleDateString();
+                html += `
+                    <div class="card" style="padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; margin: 0;">
+                        <div>
+                            <strong style="font-size: 1.1rem; color: #1a202c;">${holiday.name}</strong>
+                            <div style="color: #64748b; font-size: 0.875rem; margin-top: 0.25rem;">
+                                📅 ${date} • ${holiday.type.replace('_', ' ').toUpperCase()}
+                            </div>
+                        </div>
+                        <button class="btn btn-outline" onclick="deleteHoliday(${holiday.id})" style="padding: 0.5rem 0.75rem;">
+                            🗑️ Delete
+                        </button>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        }
+
+        async function deleteHoliday(holidayId) {
+            if (!confirm('Are you sure you want to delete this holiday?')) return;
+            
+            try {
+                const response = await fetch(`/api/holidays/${holidayId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    loadHolidays();
+                    alert('✅ Holiday deleted successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error deleting holiday: ' + error.message);
+            }
+        }
+
+        function exportAttendance() {
+            if (!selectedStudent) {
+                alert('Please select a student first');
+                return;
+            }
+            
+            // Trigger CSV download
+            window.open(`/api/attendance/export/${selectedStudent}`, '_blank');
+        }
+
+        function updateDateRangePreview() {
+            const startDate = document.getElementById('exportStartDate').value;
+            const endDate = document.getElementById('exportEndDate').value;
+            const format = document.getElementById('exportFormat').value;
+            if (startDate && endDate) {
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const diffTime = Math.abs(end - start);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                const formatText = format === 'daily' ? 'Daily format' :
+                                format === 'student' ? 'Student-wise format' : 'Summary format';
+                document.getElementById('dateRangePreview').textContent = 
+                    `${formatText} from ${start.toLocaleDateString()} to ${end.toLocaleDateString()} (${diffDays} days)`;
+            } else {
+                document.getElementById('dateRangePreview').textContent = 'Select dates to see preview';
+            }
+        }
+
+
+async function loadTodayAttendance() {
+    try {
+        const response = await fetch('/api/attendance/today');
+        const data = await response.json();
+        
+        const tbody = document.getElementById('todayAttendanceTableBody');
+        
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No attendance records for today</td></tr>';
+            setTimeout(setupAttendanceSearch, 100);
+            return;
+        }
+
+        let tableHTML = '';
+        data.forEach(record => {
+            // Backend now returns: [name, student_id, email, time_in]
+            const studentName = record[0];
+            const studentId = record[1];
+            const email = record[2];
+            const timeIn = record[3];
+            
+            // Determine status based on time_in
+            const isPresent = timeIn !== null && timeIn !== undefined;
+            const status = isPresent ? 'Present' : 'Absent';
+            const statusClass = isPresent ? 'status-present' : 'status-absent';
+            const displayTimeIn = timeIn || '-';
+            const today = new Date().toLocaleDateString();
+            
+            tableHTML += `
+                <tr>
+                    <td><strong>${studentName}</strong></td>
+                    <td>${studentId || 'N/A'}</td>
+                    <td>${email}</td>
+                    <td class="${statusClass}">${status}</td>
+                    <td>${displayTimeIn}</td>
+                    <td>${today}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = tableHTML;
+        
+        // Setup search functionality after table is loaded
+        setTimeout(setupAttendanceSearch, 100);
+        
+    } catch (error) {
+        console.error("Error loading today's attendance:", error);
+        document.getElementById('todayAttendanceTableBody').innerHTML =
+            '<tr><td colspan="6" style="text-align: center; color: red;">Error loading data</td></tr>';
+        setTimeout(setupAttendanceSearch, 100);
+    }
+}
+
+// Search functionality for today's attendance
+        f// Search functionality for today's attendance
+function setupAttendanceSearch() {
+    const searchInput = document.getElementById('attendanceSearch');
+    const statusFilterDropdown = document.getElementById('statusFilter');
+    const tableBody = document.getElementById('todayAttendanceTableBody');
+    const resultCount = document.getElementById('searchResultCount');
+    
+    if (!searchInput || !statusFilterDropdown || !tableBody) {
+        console.log('Missing elements for search setup');
+        return;
+    }
+    
+    function updateSearch() {
+        const searchTerm = searchInput.value.toLowerCase().trim();
+        const statusFilterValue = statusFilterDropdown.value;
+        const rows = tableBody.getElementsByTagName('tr');
+        let visibleCount = 0;
+        let totalCount = 0;
+        
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const cells = row.getElementsByTagName('td');
+            
+            // Skip empty rows or loading/error messages
+            if (cells.length < 6) continue;
+            
+            totalCount++;
+            
+            const studentName = cells[0]?.textContent?.toLowerCase() || '';
+            const studentId = cells[1]?.textContent?.toLowerCase() || '';
+            const email = cells[2]?.textContent?.toLowerCase() || '';
+            const status = cells[3]?.textContent?.toLowerCase() || '';
+            
+            // Check if search term matches any searchable column
+            const matchesSearch = searchTerm === '' || 
+                        studentName.includes(searchTerm) || 
+                        studentId.includes(searchTerm) || 
+                        email.includes(searchTerm);
+            
+            // Check if status matches filter
+            const matchesStatusFilter = statusFilterValue === 'all' || 
+                                      (statusFilterValue === 'present' && status.includes('present')) ||
+                                      (statusFilterValue === 'absent' && status.includes('absent'));
+            
+            // Show/hide row based on both search and filter
+            const shouldShow = matchesSearch && matchesStatusFilter;
+            row.style.display = shouldShow ? '' : 'none';
+            if (shouldShow) visibleCount++;
+        }
+        
+        // Update result count
+        if (resultCount) {
+            if ((searchTerm || statusFilterValue !== 'all') && totalCount > 0) {
+                const filterText = statusFilterValue !== 'all' ? ` (${statusFilterValue})` : '';
+                resultCount.textContent = `${visibleCount} of ${totalCount} students${filterText}`;
+                resultCount.style.color = visibleCount === 0 ? '#ef4444' : '#64748b';
+            } else if (totalCount > 0) {
+                resultCount.textContent = `${totalCount} students total`;
+                resultCount.style.color = '#64748b';
+            } else {
+                resultCount.textContent = '';
+            }
+        }
+    }
+    
+    // Add event listeners
+    searchInput.addEventListener('input', updateSearch);
+    statusFilterDropdown.addEventListener('change', updateSearch);
+    
+    // Initial update
+    updateSearch();
+    
+    console.log('Search and filter setup complete');
+}
+
+        function updateDateTime() {
+            // Update any time-dependent content
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+            // Clear form fields
+            if (modalId === 'manualAttendanceModal') {
+                document.getElementById('attendanceDate').value = '';
+                document.getElementById('attendanceReason').value = '';
+            } else if (modalId === 'addHolidayModal') {
+                document.getElementById('holidayDate').value = '';
+                document.getElementById('holidayName').value = '';
+                document.getElementById('holidayType').value = '';
+            } else if (modalId === 'bulkExportModal') {
+                document.getElementById('exportStartDate').value = '';
+                document.getElementById('exportEndDate').value = '';
+                document.getElementById('exportFormat').value = 'daily';
+                document.getElementById('includeWeekends').checked = false;
+                document.getElementById('includeHolidays').checked = false;
+                document.getElementById('dateRangePreview').textContent = 'Select dates to see preview';
+            }
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
+        }
+
+        // Working Bulk Export Functions
+        console.log("Bulk export functions loaded");
+
+        function showBulkExportModal(event) {
+            if (event) { event.preventDefault(); event.stopPropagation(); }
+            // Set default dates (last 30 days)
+            const endDate = new Date();
+            const startDate = new Date();
+            startDate.setDate(startDate.getDate() - 30);
+            document.getElementById('exportStartDate').value = startDate.toISOString().split('T')[0];
+            document.getElementById('exportEndDate').value = endDate.toISOString().split('T')[0];
+            updateDateRangePreview();
+            document.getElementById('bulkExportModal').style.display = 'block';
+        }
+
+        function closeBulkExportModal() {
+            console.log("Closing modal");
+            
+            const modal = document.getElementById('bulkExportModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+            
+            // Restore page scroll
+            document.body.style.overflow = '';
+            
+            // Clear form fields
+            document.getElementById('exportStartDate').value = '';
+            document.getElementById('exportEndDate').value = '';
+            document.getElementById('exportFormat').value = 'daily';
+            document.getElementById('includeWeekends').checked = false;
+            document.getElementById('includeHolidays').checked = false;
+            document.getElementById('dateRangePreview').textContent = 'Select dates to see preview';
+        }
+
+        function updateDateRangePreview() {
+            const startDate = document.getElementById('exportStartDate').value;
+            const endDate = document.getElementById('exportEndDate').value;
+            const format = document.getElementById('exportFormat').value;
+            
+            if (startDate && endDate) {
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const diffTime = Math.abs(end - start);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                
+                const formatText = format === 'daily' ? 'Daily format' :
+                                format === 'student' ? 'Student-wise format' : 'Summary format';
+                
+                document.getElementById('dateRangePreview').textContent = 
+                    `${formatText} from ${start.toLocaleDateString()} to ${end.toLocaleDateString()} (${diffDays} days)`;
+            } else {
+                document.getElementById('dateRangePreview').textContent = 'Select dates to see preview';
+            }
+        }
+
+        async function exportBulkAttendance() {
+            console.log("Export function called");
+            
+            const startDate = document.getElementById('exportStartDate').value;
+            const endDate = document.getElementById('exportEndDate').value;
+            const format = document.getElementById('exportFormat').value;
+            const includeWeekends = document.getElementById('includeWeekends').checked;
+            const includeHolidays = document.getElementById('includeHolidays').checked;
+            
+            if (!startDate || !endDate) {
+                alert('❌ Please select both start and end dates');
+                return;
+            }
+            
+            if (new Date(startDate) > new Date(endDate)) {
+                alert('❌ Start date must be before end date');
+                return;
+            }
+            
+            // Show loading state
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = '⏳ Generating...';
+            button.disabled = true;
+            
+            try {
+                console.log("Sending request to backend...");
+                
+                const response = await fetch('/api/attendance/bulk-export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        start_date: startDate,
+                        end_date: endDate,
+                        format: format,
+                        include_weekends: includeWeekends,
+                        include_holidays: includeHolidays
+                    })
+                });
+                
+                console.log("Response received:", response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                // Get filename from response headers
+                const contentDisposition = response.headers.get('content-disposition');
+                let filename = `attendance_report_${format}_${startDate}_to_${endDate}.csv`;
+                if (contentDisposition) {
+                    const matches = /filename="(.+)"/.exec(contentDisposition);
+                    if (matches && matches[1]) filename = matches[1];
+                }
+                
+                // Download file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                console.log("File downloaded successfully");
+                
+                // Close modal and show success
+                closeBulkExportModal();
+                alert('✅ Attendance report downloaded successfully!');
+                
+            } catch (error) {
+                console.error('Export error:', error);
+                alert(`❌ Error exporting report: ${error.message}`);
+            } finally {
+                // Restore button
+                button.textContent = originalText;
+                button.disabled = false;
+            }
+        }
+
+        // Update preview when dates change
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM loaded, setting up event listeners");
+            
+            const startDateInput = document.getElementById('exportStartDate');
+            const endDateInput = document.getElementById('exportEndDate');
+            const formatSelect = document.getElementById('exportFormat');
+            
+            if (startDateInput) {
+                startDateInput.addEventListener('change', updateDateRangePreview);
+                console.log("Start date listener added");
+            }
+            if (endDateInput) {
+                endDateInput.addEventListener('change', updateDateRangePreview);
+                console.log("End date listener added");
+            }
+            if (formatSelect) {
+                formatSelect.addEventListener('change', updateDateRangePreview);
+                console.log("Format listener added");
+            }
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(event) {
+            const modal = document.getElementById('bulkExportModal');
+            if (event.target === modal) {
+                closeBulkExportModal();
+            }
+        });
+
+        // Test function
+        function testModal() {
+            console.log("Testing modal...");
+            showBulkExportModal();
+        }
+
+        console.log("All bulk export functions loaded successfully");
+    </script>
+
+
+    <script>
+        // Logout functionality
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Clear any local storage/session storage
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        
+                        // Redirect to login
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    // Force redirect to login even if API fails
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Check session status on page load
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/session/status', {
+                    credentials: 'include'
+                });
+                const result = await response.json();
+                
+                if (!result.authenticated) {
+                    // Session expired, redirect to login
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        // Check session every 5 minutes
+        setInterval(checkSession, 5 * 60 * 1000);
+        
+        // Check session on page visibility change
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                checkSession();
+            }
+        });
+    </script>
+</body>
+</html>

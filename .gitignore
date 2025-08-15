@@ -1,0 +1,52 @@
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# SSL Certificates (regenerated automatically)
+*.pem
+*.key
+*.crt
+
+# Database (contains user data, handle separately)
+*.db
+
+# Logs and debug files
+logs/
+*.log
+debug_*.jpg
+debug_*.png
+navigation_fix_report.txt
+session_management_report.txt
+
+# Backup files
+*.backup_*
+*_backup_*
+
+# Temporary files
+temp_encodings/
+temp_encodings_*.npy
+debug_photos/
+
+# Large model files (downloaded automatically)
+buffalo_l.zip
+buffalo_l/
+
+# Face encodings (regenerated from photos)
+face_encodings/
+
+# Scripts (can be recreated)
+backup_students.sh
+create_backup_scripts.sh
+start_server.sh
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Page Title</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+/* CDAC Header Styles */
+.cdac-header {
+    background: white;
+    border-bottom: 2px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 15px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+/* Ensure no extra spacing issues */
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    .cdac-nav {
+        gap: 15px;
+    }
+    
+    .nav-item {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+.cdac-header {
+    background: white;
+    border-bottom: 3px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 10000;
+    margin: 0;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+}
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+        
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .cdac-container {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .cdac-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+            
+            .nav-item {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            .logo-img {
+                height: 40px;
+            }
+            
+            .hindi-text {
+                font-size: 12px;
+            }
+            
+            .english-text {
+                font-size: 10px;
+            }
+        }
+
+        /* Adjust main content to account for header */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    
+        /* Logout Button Styles */
+        .logout-btn {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+        .logout-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Adjust for mobile */
+        @media (max-width: 768px) {
+            .logout-btn {
+                top: 60px;
+                right: 10px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- CDAC Header -->
+<div class="cdac-header">
+    <div class="cdac-container">
+        <div class="cdac-logo">
+            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
+            <div class="logo-text">
+                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
+                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+            </div>
+
+    <!-- Logout Button -->
+    <button class="logout-btn" onclick="performLogout()" title="Logout">
+        🚪 Logout
+    </button>
+        </div>
+        <nav class="cdac-nav">
+            <a href="/dashboard" class="nav-item">🏠</a>
+            <a href="#" class="nav-item">ABOUT US</a>
+            <a href="#" class="nav-item">CONTACT US</a>
+        </nav>
+    </div>
+</div>
+
+    <div class="header">
+        <h1> Face Recognition Attendance System</h1>
+        <p>Real-time attendance tracking with facial recognition</p>
+    </div>
+
+    <div class="container">
+        <div class="nav-grid">
+            <a href="/register" class="nav-card">
+                <span class="nav-card-icon">👤</span>
+                <div class="nav-card-title">Register Student</div>
+                <div class="nav-card-desc">Add new students with face recognition</div>
+                <div class="btn btn-primary">Get Started</div>
+            </a>
+            
+            <a href="/attendance" class="nav-card">
+                <span class="nav-card-icon">📷</span>
+                <div class="nav-card-title">Live Attendance</div>
+                <div class="nav-card-desc">Real-time face recognition attendance</div>
+                <div class="btn btn-success">Take Attendance</div>
+            </a>
+            
+            <!-- Updated: Advanced Attendance → Attendance Management -->
+            <a href="/attendance-management" class="nav-card">
+                <span class="nav-card-icon">📊</span>
+                <div class="nav-card-title">Attendance Management</div>
+                <div class="nav-card-desc">Comprehensive tracking, individual reports</div>
+                <div class="btn btn-info">View Reports</div>
+            </a>
+            
+            <a href="/students" class="nav-card">
+                <span class="nav-card-icon">📋</span>
+                <div class="nav-card-title">Manage Students</div>
+                <div class="nav-card-desc">Edit student information and data</div>
+                <div class="btn btn-secondary">Manage</div>
+            </a>
+        </div>
+
+        <div class="attendance-section">
+            <div class="section-header">
+                <h2>📊 Dashboard Overview</h2>
+                <div>
+                    <!-- Keep only Admin button -->
+                    <a href="/admin" class="btn btn-secondary">⚙️ Admin</a>
+                </div>
+            </div>
+            
+            <!-- Keep the datetime info -->
+            <div class="datetime-info">
+                <strong>Date:</strong> <span id="currentDate"></span> | 
+                <strong>Time:</strong> <span id="currentTime"></span>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalStudents">0</div>
+                    <div class="stat-label">Total Students</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="presentToday">0</div>
+                    <div class="stat-label">Present Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="absentToday">0</div>
+                    <div class="stat-label">Absent Today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="attendanceRate">0%</div>
+                    <div class="stat-label">Attendance Rate</div>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+<script>
+    // Function to update date/time display
+    function updateDateTime() {
+        const now = new Date();
+        document.getElementById('currentDate').textContent = now.toLocaleDateString();
+        document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+    }
+
+    // Function to load dashboard statistics
+    async function loadDashboardStats() {
+        try {
+            const response = await fetch('/api/dashboard/stats');
+            const data = await response.json();
+            
+            if (data.success) {
+                const stats = data.stats;
+                
+                // Update dashboard stats
+                document.getElementById('totalStudents').textContent = stats.total_students;
+                document.getElementById('presentToday').textContent = stats.present_today;
+                document.getElementById('absentToday').textContent = stats.absent_today;
+                document.getElementById('attendanceRate').textContent = stats.attendance_rate + '%';
+                
+                console.log('Dashboard stats loaded:', stats);
+            } else {
+                console.error('Failed to load dashboard stats:', data.message);
+                // Set default values on error
+                document.getElementById('totalStudents').textContent = '0';
+                document.getElementById('presentToday').textContent = '0';
+                document.getElementById('absentToday').textContent = '0';
+                document.getElementById('attendanceRate').textContent = '0%';
+            }
+            
+        } catch (error) {
+            console.error('Error loading dashboard stats:', error);
+            // Set default values on error
+            document.getElementById('totalStudents').textContent = 'Error';
+            document.getElementById('presentToday').textContent = 'Error';
+            document.getElementById('absentToday').textContent = 'Error';
+            document.getElementById('attendanceRate').textContent = 'Error';
+        }
+    }
+
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        updateDateTime();
+        loadDashboardStats();
+        
+        // Auto-refresh
+        setInterval(updateDateTime, 1000);      // Update time every second
+        setInterval(loadDashboardStats, 30000); // Refresh stats every 30 seconds
+    });
+</script>
+
+    <script>
+        // Logout functionality
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Clear any local storage/session storage
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        
+                        // Redirect to login
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    // Force redirect to login even if API fails
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Check session status on page load
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/session/status', {
+                    credentials: 'include'
+                });
+                const result = await response.json();
+                
+                if (!result.authenticated) {
+                    // Session expired, redirect to login
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        // Check session every 5 minutes
+        setInterval(checkSession, 5 * 60 * 1000);
+        
+        // Check session on page visibility change
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                checkSession();
+            }
+        });
+    </script>
+</body>
+</html>

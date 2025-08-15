@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Page Title</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+/* CDAC Header Styles */
+.cdac-header {
+    background: white;
+    border-bottom: 2px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 15px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+/* Ensure no extra spacing issues */
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    .cdac-nav {
+        gap: 15px;
+    }
+    
+    .nav-item {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+.cdac-header {
+    background: white;
+    border-bottom: 3px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 10000;
+    margin: 0;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+}
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+        
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .cdac-container {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .cdac-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+            
+            .nav-item {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            .logo-img {
+                height: 40px;
+            }
+            
+            .hindi-text {
+                font-size: 12px;
+            }
+            
+            .english-text {
+                font-size: 10px;
+            }
+        }
+
+        /* Adjust main content to account for header */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    
+        /* Logout Button Styles */
+        .logout-btn {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+        .logout-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Adjust for mobile */
+        @media (max-width: 768px) {
+            .logout-btn {
+                top: 60px;
+                right: 10px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- CDAC Header -->
+<div class="cdac-header">
+    <div class="cdac-container">
+        <div class="cdac-logo">
+            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
+            <div class="logo-text">
+                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
+                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+            </div>
+
+    <!-- Logout Button -->
+    <button class="logout-btn" onclick="performLogout()" title="Logout">
+        🚪 Logout
+    </button>
+        </div>
+        <nav class="cdac-nav">
+            <a href="/dashboard" class="nav-item">🏠</a>
+            <a href="#" class="nav-item">ABOUT US</a>
+            <a href="#" class="nav-item">CONTACT US</a>
+        </nav>
+    </div>
+</div>
+
+
+
+ 
+    <div class="main-container">
+        <div class="header">
+            <div class="header-content">
+                <h1>🔧 System Administration</h1>
+                <p>Advanced system management and maintenance tools</p>
+            </div>
+        </div>
+        
+        <div class="container">
+            <div class="back-link">
+                <a href="/dashboard" class="btn btn-outline">← Back to Dashboard</a>
+            </div>
+            
+            <div class="admin-grid">
+                <!-- System Status Card -->
+                <div class="admin-card info-zone">
+                    <h3>📊 System Status</h3>
+                    <p>Check system health, database status, and loaded models</p>
+                    <button class="btn btn-info" onclick="checkSystem()" id="statusBtn">
+                        <span id="statusSpinner"></span>
+                        Check System Status
+                    </button>
+                    <div id="systemStatus"></div>
+                </div>
+                
+                <!-- Database Management -->
+                <div class="admin-card success-zone">
+                    <h3>🗄️ Database Management</h3>
+                    <p>View database statistics and manage student records</p>
+                    <button class="btn btn-success" onclick="getDatabaseStats()" id="dbBtn">
+                        <span id="dbSpinner"></span>
+                        Get Database Stats
+                    </button>
+                    <div id="databaseStats"></div>
+                </div>
+                
+    
+                
+                <!-- Danger Zone -->
+                <div class="admin-card danger-zone">
+                    <h3>⚠️ Danger Zone</h3>
+                    <p><strong>Warning:</strong> This will permanently delete ALL student data, face encodings, and attendance records!</p>
+                    <button class="btn btn-danger" onclick="clearAllData()" id="clearBtn">
+                        <span id="clearSpinner"></span>
+                        🧹 Clear All Data
+                    </button>
+                    <div id="clearResult"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Utility functions
+        function showLoading(buttonId, spinnerId) {
+            const btn = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            btn.disabled = true;
+            spinner.innerHTML = '<span class="loading-spinner"></span>';
+        }
+        
+        function hideLoading(buttonId, spinnerId) {
+            const btn = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            btn.disabled = false;
+            spinner.innerHTML = '';
+        }
+        
+        function showResult(elementId, message, type = 'info') {
+            document.getElementById(elementId).innerHTML = `<div class="result ${type}">${message}</div>`;
+        }
+        
+        // Enhanced system status check
+        async function checkSystem() {
+            showLoading('statusBtn', 'statusSpinner');
+            
+            try {
+                const response = await fetch('/api/debug/check_system');
+                const data = await response.json();
+                
+                // Create enhanced display
+                let html = '<div class="stats-grid">';
+                html += `<div class="stat-item"><div class="stat-number">${data.database_students || 0}</div><div class="stat-label">DB Students</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${data.loaded_faces || 0}</div><div class="stat-label">Loaded Faces</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${data.embedding_method || 'Unknown'}</div><div class="stat-label">Model Type</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${data.system_status || 'Unknown'}</div><div class="stat-label">Status</div></div>`;
+                html += '</div>';
+                
+                html += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                
+                document.getElementById('systemStatus').innerHTML = html;
+                
+            } catch (error) {
+                showResult('systemStatus', `❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading('statusBtn', 'statusSpinner');
+            }
+        }
+        
+        // Database statistics
+        async function getDatabaseStats() {
+            showLoading('dbBtn', 'dbSpinner');
+            
+            try {
+                const [studentsRes, attendanceRes] = await Promise.all([
+                    fetch('/api/students/count'),
+                    fetch('/api/attendance/today')
+                ]);
+                
+                const studentsData = await studentsRes.json();
+                const attendanceData = await attendanceRes.json();
+                
+                const presentToday = attendanceData.filter(record => record[2] !== null).length;
+                
+                let html = '<div class="stats-grid">';
+                html += `<div class="stat-item"><div class="stat-number">${studentsData.total_students || 0}</div><div class="stat-label">Total Students</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${presentToday}</div><div class="stat-label">Present Today</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${(studentsData.total_students || 0) - presentToday}</div><div class="stat-label">Absent Today</div></div>`;
+                html += `<div class="stat-item"><div class="stat-number">${studentsData.total_students > 0 ? Math.round((presentToday / studentsData.total_students) * 100) : 0}%</div><div class="stat-label">Attendance Rate</div></div>`;
+                html += '</div>';
+                
+                document.getElementById('databaseStats').innerHTML = html;
+                
+            } catch (error) {
+                showResult('databaseStats', `❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading('dbBtn', 'dbSpinner');
+            }
+        }
+        
+        // Export system data
+        async function exportSystemData() {
+            showLoading('exportBtn', 'exportSpinner');
+            
+            try {
+                // This would need a backend endpoint to export data
+                showResult('exportResult', '📋 Export functionality would be implemented here. This could export student data, attendance records, and system settings.', 'info');
+                
+            } catch (error) {
+                showResult('exportResult', `❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading('exportBtn', 'exportSpinner');
+            }
+        }
+        
+        // Enhanced clear all data with better confirmation
+        async function clearAllData() {
+            // Double confirmation for safety
+            if (!confirm('⚠️ DANGER: This will delete ALL student data. Type "DELETE" to confirm:')) {
+                return;
+            }
+            
+            const confirmation = prompt('Type "DELETE ALL DATA" to confirm (case sensitive):');
+            if (confirmation !== 'DELETE ALL DATA') {
+                showResult('clearResult', '❌ Confirmation failed. Operation cancelled.', 'error');
+                return;
+            }
+            
+            showLoading('clearBtn', 'clearSpinner');
+            
+            try {
+                const response = await fetch('/api/admin/clear_all_data', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('clearResult', `✅ ${data.message}`, 'success');
+                    // Refresh system status
+                    setTimeout(checkSystem, 1000);
+                } else {
+                    showResult('clearResult', `❌ ${data.message}`, 'error');
+                }
+            } catch (error) {
+                showResult('clearResult', `❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading('clearBtn', 'clearSpinner');
+            }
+        }
+        
+        // Load initial data
+        window.onload = function() {
+            checkSystem();
+            getDatabaseStats();
+        };
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            checkSystem();
+            getDatabaseStats();
+        }, 30000);
+    </script>
+
+    <script>
+        // Logout functionality
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Clear any local storage/session storage
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        
+                        // Redirect to login
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    // Force redirect to login even if API fails
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Check session status on page load
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/session/status', {
+                    credentials: 'include'
+                });
+                const result = await response.json();
+                
+                if (!result.authenticated) {
+                    // Session expired, redirect to login
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        // Check session every 5 minutes
+        setInterval(checkSession, 5 * 60 * 1000);
+        
+        // Check session on page visibility change
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                checkSession();
+            }
+        });
+    </script>
+</body>
+</html>

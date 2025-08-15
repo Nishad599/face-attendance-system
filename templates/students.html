@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Page Title</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+/* CDAC Header Styles */
+.cdac-header {
+    background: white;
+    border-bottom: 2px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    width: 100%;
+    z-index: 1000;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 15px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+/* Ensure no extra spacing issues */
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        padding: 8px 15px;
+    }
+    
+    .cdac-nav {
+        gap: 15px;
+    }
+    
+    .nav-item {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+.cdac-header {
+    background: white;
+    border-bottom: 3px solid #0066cc;
+    padding: 8px 0;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    z-index: 10000;
+    margin: 0;
+}
+
+.cdac-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+}
+
+.cdac-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo-img {
+    height: 40px;
+    width: auto;
+}
+
+.logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.hindi-text {
+    font-size: 13px;
+    color: #0066cc;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.english-text {
+    font-size: 11px;
+    color: #0066cc;
+    font-weight: 500;
+    line-height: 1.1;
+}
+
+.cdac-nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-item {
+    color: #333;
+    text-decoration: none;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    background: #f0f8ff;
+    color: #0066cc;
+    text-decoration: none;
+}
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+
+
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .cdac-header {
+        position: relative; /* Not fixed on mobile */
+    }
+    
+    body {
+        padding-top: 0 !important; /* No top padding on mobile */
+    }
+    
+    .cdac-container {
+        flex-direction: column;
+        gap: 10px;
+        text-align: center;
+        padding: 5px 15px;
+    }
+    
+    .cdac-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+    
+    .nav-item {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .logo-img {
+        height: 35px;
+    }
+    
+    .hindi-text {
+        font-size: 11px;
+    }
+    
+    .english-text {
+        font-size: 9px;
+    }
+}
+        
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .cdac-container {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .cdac-nav {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+            
+            .nav-item {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            .logo-img {
+                height: 40px;
+            }
+            
+            .hindi-text {
+                font-size: 12px;
+            }
+            
+            .english-text {
+                font-size: 10px;
+            }
+        }
+
+        /* Adjust main content to account for header */
+        body {
+            margin: 0;
+            padding: 0;
+        }
+    
+        /* Logout Button Styles */
+        .logout-btn {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout-btn:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+        .logout-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Adjust for mobile */
+        @media (max-width: 768px) {
+            .logout-btn {
+                top: 60px;
+                right: 10px;
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- CDAC Header -->
+<div class="cdac-header">
+    <div class="cdac-container">
+        <div class="cdac-logo">
+            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
+            <div class="logo-text">
+                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
+                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+            </div>
+
+    <!-- Logout Button -->
+    <button class="logout-btn" onclick="performLogout()" title="Logout">
+        🚪 Logout
+    </button>
+        </div>
+        <nav class="cdac-nav">
+            <a href="/dashboard" class="nav-item">🏠</a>
+            <a href="#" class="nav-item">ABOUT US</a>
+            <a href="#" class="nav-item">CONTACT US</a>
+        </nav>
+    </div>
+</div>
+
+    <div class="header">
+        <h1>📋 Student Management</h1>
+        <p>Manage registered students and their information</p>
+    </div>
+
+    <div class="back-link">
+        <a href="/dashboard" class="btn btn-primary">← Back to Dashboard</a>
+    </div>
+
+    <div class="container">
+        <div class="students-section">
+            <div class="section-header">
+                <h2>👥 Registered Students</h2>
+                <button class="btn btn-success" onclick="refreshStudents()">🔄 Refresh</button>
+            </div>
+            
+            <div id="studentsContainer">
+                <div class="loading">Loading students...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Student Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✏️ Edit Student</h3>
+                <span class="close" onclick="closeEditModal()">&times;</span>
+            </div>
+            <form id="editForm">
+                <div class="form-group">
+                    <label for="editName">Name:</label>
+                    <input type="text" id="editName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editEmail">Email:</label>
+                    <input type="email" id="editEmail" required>
+                </div>
+                <div class="form-group">
+                    <label for="editStudentId">Student ID:</label>
+                    <input type="text" id="editStudentId" required>
+                </div>
+                <div class="form-group">
+                    <label for="editJoiningDate">Joining Date:</label>
+                    <input type="date" id="editJoiningDate" required>
+                </div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn btn-primary" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentEditId = null;
+
+        async function refreshStudents() {
+            try {
+                const response = await fetch('/api/students/list');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    document.getElementById('studentsContainer').innerHTML = 
+                        `<div class="status error">❌ Error loading students: ${data.message}</div>`;
+                    return;
+                }
+
+                if (data.students.length === 0) {
+                    document.getElementById('studentsContainer').innerHTML = 
+                        '<div class="status">No students registered yet. <a href="/register">Register the first student</a></div>';
+                    return;
+                }
+
+                // Store the last loaded students in a global variable
+                window.lastLoadedStudents = data.students;
+
+                let tableHTML = `
+                    
+            <div class="search-controls">
+                <input type="text" id="studentSearch" class="search-input" 
+                       placeholder="Search by name, email, or student ID...">
+                <span>Found: <span id="studentCount">0</span> students</span>
+            </div>
+            <div class="students-table-container">
+                <table class="students-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Student ID</th>
+                                <th>Email</th>
+                                <th>Joining Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                data.students.forEach(student => {
+                    tableHTML += `
+                        <tr>
+                            <td>${student.name}</td>
+                            <td>${student.student_id}</td>
+                            <td>${student.email}</td>
+                            <td>${student.joining_date}</td>
+                            <td>
+                                <button class="btn btn-warning" onclick="editStudent(${student.id})" data-name="${student.name}" data-email="${student.email}" data-studentid="${student.student_id}">
+                                    ✏️ Edit
+                                </button>
+                                <button class="btn btn-danger" onclick="deleteStudent(${student.id}, '${student.name}')">
+                                🗑️ Delete
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tableHTML += `</tbody></table>
+            </div>`;
+                document.getElementById('studentsContainer').innerHTML = tableHTML;
+
+            } catch (error) {
+                console.error('Error loading students:', error);
+                document.getElementById('studentsContainer').innerHTML = 
+                    `<div class="status error">❌ Error loading students: ${error.message}</div>`;
+            }
+        }
+
+        function editStudent(id) {
+            // Find the student data from the last loaded students list
+            const student = window.lastLoadedStudents && window.lastLoadedStudents.find(s => s.id === id);
+            if (!student) return;
+            currentEditId = id;
+            document.getElementById('editName').value = student.name;
+            document.getElementById('editEmail').value = student.email;
+            document.getElementById('editStudentId').value = student.student_id;
+            document.getElementById('editJoiningDate').value = student.joining_date;
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            currentEditId = null;
+        }
+
+        async function deleteStudent(studentId, studentName) {
+    // Confirm deletion
+    if (!confirm(`Are you sure you want to delete ${studentName}? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/students/${studentId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            alert(`✅ ${data.message}`);
+            // Reload the students list
+            loadStudents(); // Assuming you have this function
+        } else {
+            alert(`❌ Error: ${data.message}`);
+        }
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        alert(`❌ Failed to delete student: ${error.message}`);
+    }
+}
+
+        // Handle edit form submission
+        document.getElementById('editForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!currentEditId) return;
+
+            const formData = {
+                name: document.getElementById('editName').value.trim(),
+                email: document.getElementById('editEmail').value.trim(),
+                student_id: document.getElementById('editStudentId').value.trim(),
+                joining_date: document.getElementById('editJoiningDate').value
+            };
+
+            try {
+                const response = await fetch(`/api/students/${currentEditId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                    closeEditModal();
+                    refreshStudents();
+                } else {
+                    alert(`❌ Error: ${data.message}`);
+                }
+            } catch (error) {
+                alert(`❌ Error updating student: ${error.message}`);
+            }
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target === modal) {
+                closeEditModal();
+            }
+        }
+
+        
+        // Student search functionality
+        function setupStudentSearch() {
+            const searchInput = document.getElementById('studentSearch');
+            if (!searchInput) return;
+            
+            searchInput.addEventListener('input', function(e) {
+                const searchTerm = e.target.value.toLowerCase();
+                const tbody = document.querySelector('.students-table tbody');
+                if (!tbody) return;
+                
+                const rows = tbody.querySelectorAll('tr');
+                let visibleCount = 0;
+                
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    if (text.includes(searchTerm)) {
+                        row.style.display = '';
+                        visibleCount++;
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+                
+                document.getElementById('studentCount').textContent = visibleCount;
+            });
+            
+            // Initialize count
+            const totalRows = document.querySelectorAll('.students-table tbody tr').length;
+            document.getElementById('studentCount').textContent = totalRows;
+        }
+        
+        // Call after table is loaded
+        const originalRefreshStudents = refreshStudents;
+        refreshStudents = async function() {
+            await originalRefreshStudents();
+            setupStudentSearch();
+        };
+
+        // Initialize
+        refreshStudents();
+    </script>
+
+    <script>
+        // Logout functionality
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        // Clear any local storage/session storage
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        
+                        // Redirect to login
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    // Force redirect to login even if API fails
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        // Check session status on page load
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/session/status', {
+                    credentials: 'include'
+                });
+                const result = await response.json();
+                
+                if (!result.authenticated) {
+                    // Session expired, redirect to login
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        // Check session every 5 minutes
+        setInterval(checkSession, 5 * 60 * 1000);
+        
+        // Check session on page visibility change
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                checkSession();
+            }
+        });
+    </script>
+</body>
+</html>
