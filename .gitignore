@@ -50,3 +50,7 @@ start_server.sh
 # OS files
 .DS_Store
 Thumbs.db
+fix.py
+sync_db_to_vm.sh
+*.backup_*
+fix_*.py

@@ -1731,6 +1731,147 @@ async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_
     else:
         return {"success": False, "redirect_url": "/login", "message": "Invalid session"}
 
+
+@app.get("/api/attendance/export/{student_id}")
+async def export_student_attendance(student_id: int):
+    """Export individual student attendance as CSV"""
+    try:
+        from fastapi.responses import StreamingResponse
+        import csv
+        from datetime import date, timedelta
+        
+        cursor = attendance_system.conn.cursor()
+        
+        # Get student information
+        cursor.execute('SELECT name, student_id, email, joining_date FROM students WHERE id = ?', (student_id,))
+        student_info = cursor.fetchone()
+        
+        if not student_info:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        student_name, student_id_str, email, joining_date = student_info
+        
+        # Get student's attendance records
+        cursor.execute('''
+            SELECT date, time_in, is_manual, manual_reason
+            FROM attendance 
+            WHERE student_id = ?
+            ORDER BY date DESC
+        ''', (student_id,))
+        attendance_records = cursor.fetchall()
+        
+        # Get holidays
+        cursor.execute('SELECT date, name FROM holidays ORDER BY date')
+        holidays = cursor.fetchall()
+        holiday_dict = {h[0]: h[1] for h in holidays}
+        
+        # Calculate date range
+        if joining_date:
+            try:
+                start_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
+            except:
+                start_date = date.today().replace(month=1, day=1)  # Start of year
+        else:
+            start_date = date.today().replace(month=1, day=1)  # Start of year
+        
+        end_date = date.today()
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Header information
+        writer.writerow(['Student Attendance Report'])
+        writer.writerow(['Student Name', student_name])
+        writer.writerow(['Student ID', student_id_str])
+        writer.writerow(['Email', email])
+        writer.writerow(['Report Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+        writer.writerow(['Academic Period', f"{start_date} to {end_date}"])
+        writer.writerow([])  # Empty row
+        
+        # Statistics
+        present_days = len(attendance_records)
+        
+        # Count working days (excluding weekends and holidays)
+        total_working_days = 0
+        current_date = start_date
+        while current_date <= end_date:
+            if current_date.weekday() < 5 and current_date.strftime('%Y-%m-%d') not in holiday_dict:
+                total_working_days += 1
+            current_date += timedelta(days=1)
+        
+        absent_days = total_working_days - present_days
+        attendance_percentage = (present_days / total_working_days * 100) if total_working_days > 0 else 0
+        
+        writer.writerow(['ATTENDANCE SUMMARY'])
+        writer.writerow(['Present Days', present_days])
+        writer.writerow(['Absent Days', absent_days])
+        writer.writerow(['Total Working Days', total_working_days])
+        writer.writerow(['Attendance Percentage', f"{attendance_percentage:.1f}%"])
+        writer.writerow([])  # Empty row
+        
+        # Detailed attendance records
+        writer.writerow(['DETAILED ATTENDANCE RECORDS'])
+        writer.writerow(['Date', 'Day', 'Status', 'Time In', 'Type', 'Remarks'])
+        
+        # Create attendance dictionary for quick lookup
+        attendance_dict = {}
+        for record in attendance_records:
+            attendance_dict[record[0]] = {
+                'time_in': record[1],
+                'is_manual': record[2],
+                'manual_reason': record[3]
+            }
+        
+        # Generate day-by-day report
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y-%m-%d')
+            day_name = current_date.strftime('%A')
+            
+            # Determine status
+            if date_str in holiday_dict:
+                status = 'Holiday'
+                time_in = '-'
+                record_type = f"Holiday: {holiday_dict[date_str]}"
+                remarks = ''
+            elif current_date.weekday() >= 5:  # Weekend
+                status = 'Weekend'
+                time_in = '-'
+                record_type = 'Weekend'
+                remarks = ''
+            elif date_str in attendance_dict:
+                status = 'Present'
+                record = attendance_dict[date_str]
+                time_in = record['time_in'] or '-'
+                record_type = 'Manual' if record['is_manual'] else 'Face Recognition'
+                remarks = record['manual_reason'] or ''
+            else:
+                status = 'Absent'
+                time_in = '-'
+                record_type = '-'
+                remarks = ''
+            
+            writer.writerow([date_str, day_name, status, time_in, record_type, remarks])
+            current_date += timedelta(days=1)
+        
+        output.seek(0)
+        
+        # Generate filename
+        safe_name = "".join(c if c.isalnum() or c in (' ', '_') else '' for c in student_name).replace(' ', '_')
+        filename = f"attendance_report_{safe_name}_{student_id_str}_{datetime.now().strftime('%Y%m%d')}.csv"
+        
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        print(f"Export error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
 @app.post("/api/attendance/bulk-export")
 async def bulk_export_attendance(export_data: BulkExportRequest):
     """Export bulk attendance data as CSV"""
