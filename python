@@ -1,0 +1,878 @@
+#!/usr/bin/env python3
+"""
+update_templates.py
+
+Automatically updates HTML templates to add live student count and slot-based attendance features.
+This script modifies existing template files to integrate with the new AttendanceSlotManager.
+
+Usage:
+    python update_templates.py
+"""
+
+import os
+import re
+import shutil
+from datetime import datetime
+from typing import List, Dict
+
+class TemplateUpdater:
+    """Updates HTML templates with new attendance slot features"""
+    
+    def __init__(self, templates_dir: str = "templates", backup_dir: str = "templates_backup"):
+        self.templates_dir = templates_dir
+        self.backup_dir = backup_dir
+        self.updated_files = []
+        
+        print(f"TemplateUpdater initialized")
+        print(f"Templates directory: {self.templates_dir}")
+        print(f"Backup directory: {self.backup_dir}")
+    
+    def create_backups(self):
+        """Create backups of original template files"""
+        if not os.path.exists(self.templates_dir):
+            print(f"Warning: Templates directory '{self.templates_dir}' not found!")
+            return False
+        
+        if not os.path.exists(self.backup_dir):
+            os.makedirs(self.backup_dir)
+            print(f"Created backup directory: {self.backup_dir}")
+        
+        # Backup HTML files
+        html_files = [f for f in os.listdir(self.templates_dir) if f.endswith('.html')]
+        
+        for file in html_files:
+            src = os.path.join(self.templates_dir, file)
+            dst = os.path.join(self.backup_dir, f"{file}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+            shutil.copy2(src, dst)
+            print(f"Backed up: {file} -> {os.path.basename(dst)}")
+        
+        return True
+    
+    def update_attendance_html(self):
+        """Update attendance.html with live count and slot features"""
+        attendance_file = os.path.join(self.templates_dir, "attendance.html")
+        
+        if not os.path.exists(attendance_file):
+            print(f"Warning: {attendance_file} not found!")
+            return False
+        
+        print(f"Updating {attendance_file}...")
+        
+        with open(attendance_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Add live count section after the header
+        live_count_html = '''
+            <!-- Live Student Count Section -->
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="detection-card p-4 mb-4">
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center space-x-4">
+                            <div class="text-center">
+                                <div class="text-3xl font-bold text-green-600" id="liveStudentCount">-</div>
+                                <div class="text-sm text-gray-600">Students Present</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-blue-600" id="totalStudents">-</div>
+                                <div class="text-sm text-gray-600">Total Students</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-xl font-bold text-purple-600" id="attendancePercentage">-</div>
+                                <div class="text-sm text-gray-600">Attendance %</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-sm text-gray-600">Current Slot:</div>
+                            <div class="font-semibold" id="currentSlotInfo">Checking...</div>
+                            <div class="text-xs text-gray-500" id="lastUpdated">-</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Slot Status Banner -->
+                    <div class="mt-3 p-3 rounded-lg" id="slotStatusBanner" style="display: none;">
+                        <div class="flex items-center">
+                            <span id="slotStatusIcon" class="mr-2 text-xl"></span>
+                            <span id="slotStatusMessage" class="font-medium"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        '''
+        
+        # Insert live count after the main header
+        header_pattern = r'(<div class="navbar-gradient[^>]*>.*?</div>)'
+        if re.search(header_pattern, content, re.DOTALL):
+            content = re.sub(
+                header_pattern,
+                r'\1' + live_count_html,
+                content,
+                flags=re.DOTALL
+            )
+        else:
+            # Fallback: insert after body tag
+            content = content.replace('<body>', '<body>' + live_count_html)
+        
+        # Update the detection results section
+        detection_results_update = '''
+                <div id="detectionResults" class="space-y-4">
+                    <div class="text-center text-gray-500 py-8" id="defaultDetectionMessage">
+                        <p class="text-lg">🔍 Waiting for face detection...</p>
+                        <p class="text-sm">Stand in front of the camera to mark attendance</p>
+                        <p class="text-xs text-gray-400 mt-2">Attendance slots: Morning (8:30-9:30 AM), Afternoon (1:45-2:00 PM)</p>
+                    </div>
+                </div>
+                
+                <!-- Out of Slot Message Area -->
+                <div id="outOfSlotMessage" class="mt-4 p-4 rounded-lg bg-yellow-100 border border-yellow-300" style="display: none;">
+                    <div class="flex items-center">
+                        <span class="text-yellow-600 mr-2">⏰</span>
+                        <div>
+                            <div class="font-semibold text-yellow-800">Face Detected - Outside Attendance Slot</div>
+                            <div class="text-sm text-yellow-700" id="outOfSlotDetails"></div>
+                        </div>
+                    </div>
+                </div>
+        '''
+        
+        # Replace detection results div
+        content = re.sub(
+            r'<div id="detectionResults"[^>]*>.*?</div>',
+            detection_results_update,
+            content,
+            flags=re.DOTALL
+        )
+        
+        # Update JavaScript section
+        js_updates = '''
+        <script>
+            let stream = null;
+            let detectionInterval = null;
+            let liveCountInterval = null;
+            
+            // Live count update function
+            async function updateLiveCount() {
+                try {
+                    const response = await fetch('/api/attendance/live-count');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        document.getElementById('liveStudentCount').textContent = data.total_present;
+                        document.getElementById('totalStudents').textContent = data.total_students;
+                        document.getElementById('attendancePercentage').textContent = data.attendance_percentage + '%';
+                        document.getElementById('lastUpdated').textContent = 'Updated: ' + data.last_updated;
+                        
+                        // Update slot status
+                        updateSlotStatus(data.current_slot, data.next_slot);
+                    }
+                } catch (error) {
+                    console.error('Error updating live count:', error);
+                }
+            }
+            
+            // Update slot status banner
+            function updateSlotStatus(currentSlot, nextSlot) {
+                const banner = document.getElementById('slotStatusBanner');
+                const icon = document.getElementById('slotStatusIcon');
+                const message = document.getElementById('slotStatusMessage');
+                const slotInfo = document.getElementById('currentSlotInfo');
+                
+                if (currentSlot && currentSlot.is_active) {
+                    // Active slot
+                    banner.style.display = 'block';
+                    banner.className = 'mt-3 p-3 rounded-lg bg-green-100 border border-green-300';
+                    icon.textContent = '✅';
+                    message.textContent = `${currentSlot.slot_info.name} - ${currentSlot.time_remaining} minutes remaining`;
+                    slotInfo.textContent = `${currentSlot.slot_info.name} (Active)`;
+                    slotInfo.className = 'font-semibold text-green-600';
+                } else if (nextSlot) {
+                    // No active slot, show next
+                    banner.style.display = 'block';
+                    banner.className = 'mt-3 p-3 rounded-lg bg-blue-100 border border-blue-300';
+                    icon.textContent = '⏰';
+                    const hours = Math.floor(nextSlot.wait_minutes / 60);
+                    const minutes = nextSlot.wait_minutes % 60;
+                    message.textContent = `Next: ${nextSlot.slot_info.name} in ${hours}h ${minutes}m`;
+                    slotInfo.textContent = 'No Active Slot';
+                    slotInfo.className = 'font-semibold text-gray-600';
+                } else {
+                    // No slots today
+                    banner.style.display = 'none';
+                    slotInfo.textContent = 'No Slots Available';
+                    slotInfo.className = 'font-semibold text-gray-400';
+                }
+            }
+            
+            // Navigation functions (updated)
+            async function goHome() {
+                try {
+                    const response = await fetch('/api/session/status');
+                    const sessionData = await response.json();
+                    
+                    if (sessionData.authenticated) {
+                        if (sessionData.user_type === 'admin') {
+                            window.location.href = '/dashboard';
+                        } else {
+                            showMessage('You are already on your home page!', 'info');
+                        }
+                    } else {
+                        window.location.href = '/login';
+                    }
+                } catch (error) {
+                    console.error('Navigation error:', error);
+                    window.location.href = '/login';
+                }
+            }
+            
+            async function logout() {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    if (result.success) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    window.location.href = '/login';
+                }
+            }
+            
+            // Camera functions (updated)
+            async function startCamera() {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    document.getElementById('video').srcObject = stream;
+                    
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    document.getElementById('captureBtn').disabled = false;
+                    
+                    showMessage('Camera started successfully!', 'success');
+                    
+                    // Start automatic detection every 3 seconds
+                    detectionInterval = setInterval(captureFrame, 3000);
+                    
+                    // Start live count updates every 10 seconds
+                    if (!liveCountInterval) {
+                        updateLiveCount(); // Initial update
+                        liveCountInterval = setInterval(updateLiveCount, 10000);
+                    }
+                    
+                } catch (error) {
+                    console.error('Camera error:', error);
+                    showMessage('Camera access failed: ' + error.message, 'error');
+                }
+            }
+            
+            function stopCamera() {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                
+                if (detectionInterval) {
+                    clearInterval(detectionInterval);
+                    detectionInterval = null;
+                }
+                
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+                document.getElementById('captureBtn').disabled = true;
+                
+                showMessage('Camera stopped', 'info');
+            }
+            
+            // Enhanced detection result display
+            function displayDetectionResults(result) {
+                const resultsDiv = document.getElementById('detectionResults');
+                const outOfSlotDiv = document.getElementById('outOfSlotMessage');
+                const defaultMsg = document.getElementById('defaultDetectionMessage');
+                
+                // Hide default message
+                if (defaultMsg) defaultMsg.style.display = 'none';
+                
+                if (result.success && result.recognized_students && result.recognized_students.length > 0) {
+                    // Successful recognition within slot
+                    outOfSlotDiv.style.display = 'none';
+                    
+                    let html = '';
+                    result.recognized_students.forEach(student => {
+                        const statusColor = student.status === 'marked' ? 'green' : 'orange';
+                        html += `
+                            <div class="p-4 border-l-4 border-${statusColor}-500 bg-${statusColor}-50 rounded-lg">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h4 class="font-semibold text-gray-800">${student.name}</h4>
+                                        <p class="text-sm text-gray-600">Confidence: ${(student.confidence * 100).toFixed(1)}%</p>
+                                        <p class="text-sm text-gray-600">Slot: ${student.slot_name || 'Current'}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="px-3 py-1 rounded-full text-sm font-medium bg-${statusColor}-100 text-${statusColor}-800">
+                                            ${student.status === 'marked' ? '✅ Marked' : '⚠️ Already Present'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <p class="text-sm text-gray-600 mt-2">${student.message}</p>
+                            </div>
+                        `;
+                    });
+                    resultsDiv.innerHTML = html;
+                    showMessage(result.message, 'success');
+                    
+                    // Update live count immediately
+                    setTimeout(updateLiveCount, 1000);
+                    
+                } else if (result.outside_slot) {
+                    // Face detected but outside slot
+                    outOfSlotDiv.style.display = 'block';
+                    
+                    let detailsText = result.message;
+                    if (result.next_slot) {
+                        const hours = Math.floor(result.next_slot.wait_minutes / 60);
+                        const minutes = result.next_slot.wait_minutes % 60;
+                        detailsText += ` Next slot: ${result.next_slot.slot_info.name} in ${hours}h ${minutes}m`;
+                    }
+                    
+                    document.getElementById('outOfSlotDetails').textContent = detailsText;
+                    
+                    resultsDiv.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <p class="text-lg">👤 Face Detected</p>
+                            <p class="text-sm">Recognition successful, but outside attendance hours</p>
+                        </div>
+                    `;
+                    
+                    showMessage('Face detected outside attendance slot', 'warning');
+                    
+                } else {
+                    // No faces detected or other error
+                    outOfSlotDiv.style.display = 'none';
+                    resultsDiv.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <p class="text-lg">❌ ${result.message || 'No faces detected'}</p>
+                            <p class="text-sm">Please position yourself properly in front of the camera</p>
+                        </div>
+                    `;
+                    showMessage(result.message || 'No faces detected', 'warning');
+                }
+            }
+            
+            // Enhanced capture function
+            async function captureFrame() {
+                const video = document.getElementById('video');
+                const canvas = document.getElementById('canvas');
+                const context = canvas.getContext('2d');
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0);
+                
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                
+                try {
+                    showMessage('Processing...', 'info');
+                    
+                    const response = await fetch('/api/detect_attendance_slots', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ image_data: imageData })
+                    });
+                    
+                    const result = await response.json();
+                    displayDetectionResults(result);
+                    
+                } catch (error) {
+                    console.error('Detection error:', error);
+                    showMessage('Detection failed: ' + error.message, 'error');
+                }
+            }
+            
+            function showMessage(message, type) {
+                const statusDiv = document.getElementById('statusMessage');
+                const colors = {
+                    success: 'bg-green-100 text-green-800',
+                    error: 'bg-red-100 text-red-800',
+                    warning: 'bg-yellow-100 text-yellow-800',
+                    info: 'bg-blue-100 text-blue-800'
+                };
+                
+                statusDiv.className = `mt-4 p-4 rounded-lg text-center ${colors[type] || colors.info}`;
+                statusDiv.innerHTML = `<p>${message}</p>`;
+            }
+            
+            // Initialize page
+            document.addEventListener('DOMContentLoaded', function() {
+                showMessage('Click "Start Detection" to begin attendance marking', 'info');
+                updateLiveCount(); // Initial count update
+                
+                // Start live count updates every 10 seconds
+                liveCountInterval = setInterval(updateLiveCount, 10000);
+            });
+            
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', function() {
+                stopCamera();
+                if (liveCountInterval) {
+                    clearInterval(liveCountInterval);
+                }
+            });
+        </script>
+        '''
+        
+        # Replace the existing script section
+        script_pattern = r'<script>.*?</script>'
+        if re.search(script_pattern, content, re.DOTALL):
+            content = re.sub(script_pattern, js_updates, content, flags=re.DOTALL)
+        else:
+            # If no script section found, add before closing body
+            content = content.replace('</body>', js_updates + '\n</body>')
+        
+        # Write updated content
+        with open(attendance_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        self.updated_files.append(attendance_file)
+        print(f"✅ Updated {attendance_file}")
+        return True
+    
+    def create_api_endpoints_file(self):
+        """Create a file with new API endpoints to add to main app"""
+        api_file = "new_api_endpoints.py"
+        
+        api_content = '''"""
+New API endpoints to add to your main FastAPI application.
+Copy these endpoints into your main_with_face_recognition.py file.
+"""
+
+from fastapi import HTTPException
+from attendance_manager import create_slot_manager_instance
+from typing import Optional
+import json
+
+# Add these imports to your main file if not already present:
+# from attendance_manager import create_slot_manager_instance
+
+# Add these endpoints to your FastAPI app:
+
+@app.get("/api/attendance/live-count")
+async def get_live_attendance_count():
+    """Get live student count with slot information"""
+    try:
+        manager = create_slot_manager_instance()
+        count_data = manager.get_live_student_count()
+        return count_data
+    except Exception as e:
+        return {
+            "success": False,
+            "message": str(e),
+            "total_students": 0,
+            "total_present": 0,
+            "total_absent": 0
+        }
+
+@app.post("/api/detect_attendance_slots")
+async def detect_attendance_with_slots(image_data: DetectionImage):
+    """Enhanced detection with slot-based attendance marking"""
+    if not FACE_RECOGNITION_AVAILABLE:
+        return {"success": False, "message": "Face recognition not available"}
+    
+    try:
+        # Convert base64 to image (same as existing detect_attendance)
+        if image_data.image_data.startswith('data:image'):
+            image_data_clean = image_data.image_data.split(',')[1]
+        else:
+            image_data_clean = image_data.image_data
+        
+        image_bytes = base64.b64decode(image_data_clean)
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        image_array = np.array(image)
+        
+        # Use existing face detection
+        detected_faces = asian_face_recognizer.detect_faces_optimized(image_array)
+        
+        if len(detected_faces) == 0:
+            return {
+                "success": False, 
+                "message": "No faces detected",
+                "faces_detected": 0
+            }
+        
+        # Initialize slot manager
+        manager = create_slot_manager_instance()
+        recognized_students = []
+        unknown_faces = 0
+        
+        for face_data in detected_faces:
+            face_encoding = face_data['embedding']
+            
+            # Find best match (same logic as existing)
+            if len(attendance_system.known_face_encodings) > 0:
+                similarities = []
+                for known_encoding in attendance_system.known_face_encodings:
+                    face_norm = face_encoding / np.linalg.norm(face_encoding)
+                    known_norm = known_encoding / np.linalg.norm(known_encoding)
+                    similarity = np.dot(face_norm, known_norm)
+                    similarities.append(similarity)
+                
+                best_match_index = np.argmax(similarities)
+                best_similarity = similarities[best_match_index]
+                
+                RECOGNITION_THRESHOLD = 0.60
+                
+                if best_similarity > RECOGNITION_THRESHOLD:
+                    student_id = attendance_system.known_face_ids[best_match_index]
+                    student_name = attendance_system.known_face_names[best_match_index]
+                    
+                    # Use slot manager for attendance marking
+                    attendance_result = manager.mark_attendance_with_slot(
+                        student_id=student_id,
+                        detection_confidence=best_similarity
+                    )
+                    
+                    face_location = face_data['location']
+                    
+                    if attendance_result['success']:
+                        # Successfully marked
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
+                            "confidence": float(best_similarity),
+                            "status": "marked",
+                            "message": attendance_result['message'],
+                            "slot_name": attendance_result.get('slot_name', ''),
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
+                    elif attendance_result.get('already_marked'):
+                        # Already marked
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
+                            "confidence": float(best_similarity),
+                            "status": "already_marked",
+                            "message": attendance_result['message'],
+                            "slot_name": attendance_result.get('slot_name', ''),
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
+                    elif attendance_result.get('outside_slot'):
+                        # Outside slot hours
+                        return {
+                            "success": False,
+                            "faces_detected": len(detected_faces),
+                            "recognized_students": [],
+                            "unknown_faces": 0,
+                            "outside_slot": True,
+                            "face_detected": True,
+                            "student_name": student_name,
+                            "confidence": float(best_similarity),
+                            "message": attendance_result['message'],
+                            "next_slot": attendance_result.get('next_slot')
+                        }
+                else:
+                    unknown_faces += 1
+            else:
+                unknown_faces += 1
+        
+        success = len(recognized_students) > 0
+        message = f"Processed {len(detected_faces)} faces, recognized {len(recognized_students)} students"
+        
+        return {
+            "success": success,
+            "faces_detected": len(detected_faces),
+            "recognized_students": recognized_students,
+            "unknown_faces": unknown_faces,
+            "message": message
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Slot detection failed: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Detection failed: {str(e)}",
+            "faces_detected": 0
+        }
+
+@app.get("/api/attendance/slot-status")
+async def get_slot_status():
+    """Get current slot status information"""
+    try:
+        manager = create_slot_manager_instance()
+        current_slot = manager.get_current_slot()
+        next_slot = manager.get_next_slot()
+        
+        return {
+            "success": True,
+            "current_slot": current_slot,
+            "next_slot": next_slot,
+            "slots_config": manager.attendance_slots
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
+@app.get("/api/attendance/slot-details/{date}")
+async def get_slot_attendance_details(date: str):
+    """Get detailed attendance by slot for a specific date"""
+    try:
+        manager = create_slot_manager_instance()
+        details = manager.get_slot_attendance_details(date)
+        return details
+    except Exception as e:
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
+@app.post("/api/attendance/manual-slot")
+async def mark_manual_slot_attendance(data: dict):
+    """Mark manual attendance for a specific slot"""
+    try:
+        student_id = data.get('student_id')
+        slot_id = data.get('slot_id')
+        
+        if not student_id or not slot_id:
+            raise HTTPException(status_code=400, detail="student_id and slot_id required")
+        
+        manager = create_slot_manager_instance()
+        result = manager.mark_attendance_with_slot(
+            student_id=student_id,
+            detection_confidence=0.0,
+            force_slot=slot_id
+        )
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": str(e)
+        }
+
+# Instructions:
+# 1. Copy the above endpoints into your main_with_face_recognition.py file
+# 2. Make sure to import: from attendance_manager import create_slot_manager_instance
+# 3. The DetectionImage model should already exist in your main file
+'''
+        
+        with open(api_file, 'w', encoding='utf-8') as f:
+            f.write(api_content)
+        
+        print(f"✅ Created {api_file} with new API endpoints")
+        return True
+    
+    def create_integration_guide(self):
+        """Create a step-by-step integration guide"""
+        guide_content = '''# Integration Guide: Slot-based Attendance System
+
+## Overview
+This guide helps you integrate the new slot-based attendance system with live student counting.
+
+## Files Created
+1. `attendance_manager.py` - Core slot management logic
+2. `update_templates.py` - This script that updates HTML templates
+3. `new_api_endpoints.py` - New API endpoints to add to your main app
+
+## Integration Steps
+
+### Step 1: Install Dependencies
+Make sure you have all required dependencies in your existing environment.
+
+### Step 2: Add Backend Integration
+1. Copy `attendance_manager.py` to your project directory
+2. Add the new API endpoints from `new_api_endpoints.py` to your `main_with_face_recognition.py`
+3. Add this import to your main file:
+   ```python
+   from attendance_manager import create_slot_manager_instance
+   ```
+
+### Step 3: Template Updates
+Your `attendance.html` template has been automatically updated with:
+- Live student count display
+- Slot status information
+- Enhanced detection result handling
+- Out-of-slot message display
+
+### Step 4: Test the Integration
+
+#### Test Slot Timing
+```python
+python -c "
+from attendance_manager import AttendanceSlotManager
+manager = AttendanceSlotManager()
+print('Current slot:', manager.get_current_slot())
+print('Next slot:', manager.get_next_slot())
+print('Live count:', manager.get_live_student_count())
+"
+```
+
+#### Test API Endpoints
+- Visit `/api/attendance/live-count` to see live count
+- Visit `/api/attendance/slot-status` to see slot information
+
+### Step 5: Database Migration
+The new system creates additional tables:
+- `slot_attendance` - Tracks attendance by slot
+- `daily_attendance_summary` - Quick count summaries
+
+These are created automatically when you first run the AttendanceSlotManager.
+
+## Features Added
+
+### 1. Time-based Attendance Slots
+- **Morning**: 8:30 AM - 9:30 AM
+- **Afternoon**: 1:45 PM - 2:00 PM
+- Attendance only marked during these windows
+
+### 2. Live Student Count
+- Real-time count of students present
+- Updates every 10 seconds
+- Shows current slot status
+
+### 3. Enhanced Detection
+- Face detection works outside slots but doesn't mark attendance
+- Clear messaging for out-of-slot detection
+- Confidence scoring and slot information
+
+### 4. Better User Experience
+- Visual slot status indicators
+- Live count display
+- Time remaining in current slot
+- Next slot countdown
+
+## Customization
+
+### Changing Slot Times
+Edit the `attendance_slots` dictionary in `attendance_manager.py`:
+
+```python
+self.attendance_slots = {
+    'morning': {
+        'name': 'Morning Session',
+        'start_time': time(8, 30),    # 8:30 AM
+        'end_time': time(9, 30),      # 9:30 AM
+        'slot_id': 'morning'
+    },
+    # Add more slots as needed
+}
+```
+
+### Updating Live Count Frequency
+Change the interval in the JavaScript (attendance.html):
+```javascript
+// Change 10000 (10 seconds) to your preferred interval
+liveCountInterval = setInterval(updateLiveCount, 10000);
+```
+
+## Troubleshooting
+
+### Database Issues
+If you encounter database issues, try:
+```python
+from attendance_manager import AttendanceSlotManager
+manager = AttendanceSlotManager()
+# This will recreate tables if needed
+```
+
+### Template Issues
+If the template updates didn't work correctly:
+1. Restore from backup: `templates_backup/`
+2. Run `python update_templates.py` again
+3. Check file permissions
+
+### API Issues
+Make sure all new endpoints are properly added to your main FastAPI app and the attendance_manager is properly imported.
+
+## Support
+Check the comments in each file for detailed documentation of functions and usage examples.
+'''
+        
+        with open('INTEGRATION_GUIDE.md', 'w', encoding='utf-8') as f:
+            f.write(guide_content)
+        
+        print("✅ Created INTEGRATION_GUIDE.md")
+    
+    def run_updates(self):
+        """Run all template updates"""
+        print("🚀 Starting template updates for slot-based attendance system...")
+        print("=" * 60)
+        
+        # Create backups
+        if not self.create_backups():
+            print("❌ Failed to create backups. Aborting.")
+            return False
+        
+        success_count = 0
+        
+        # Update attendance.html
+        if self.update_attendance_html():
+            success_count += 1
+        
+        # Create additional files
+        if self.create_api_endpoints_file():
+            success_count += 1
+        
+        if self.create_integration_guide():
+            success_count += 1
+        
+        print("=" * 60)
+        print(f"✅ Template updates completed!")
+        print(f"📁 Updated files: {len(self.updated_files)}")
+        for file in self.updated_files:
+            print(f"   - {file}")
+        
+        print(f"\n📋 Next steps:")
+        print("1. Add new API endpoints from 'new_api_endpoints.py' to your main app")
+        print("2. Import attendance_manager in your main file")
+        print("3. Test the live count and slot functionality")
+        print("4. Check INTEGRATION_GUIDE.md for detailed instructions")
+        
+        return success_count > 0
+
+def main():
+    """Main function to run template updates"""
+    print("🎯 Slot-based Attendance System - Template Updater")
+    print("This script will update your HTML templates with live student count and slot features.")
+    print()
+    
+    # Get user confirmation
+    response = input("Do you want to proceed with template updates? (y/N): ").strip().lower()
+    if response not in ['y', 'yes']:
+        print("❌ Operation cancelled.")
+        return
+    
+    # Run updates
+    updater = TemplateUpdater()
+    success = updater.run_updates()
+    
+    if success:
+        print("\n🎉 All updates completed successfully!")
+        print("Your attendance system now supports slot-based attendance with live counting.")
+    else:
+        print("\n❌ Some updates failed. Check the error messages above.")
+
+if __name__ == "__main__":
+    main()

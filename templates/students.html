@@ -1,403 +1,229 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Your Page Title</title>
+
+    <!-- Fonts & your external stylesheet -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
+
     <style>
-/* CDAC Header Styles */
-.cdac-header {
-    background: white;
-    border-bottom: 2px solid #0066cc;
-    padding: 8px 0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    position: sticky;
-    top: 0;
-    width: 100%;
-    z-index: 1000;
-}
-
-.cdac-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-}
-
-.cdac-logo {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.logo-img {
-    height: 40px;
-    width: auto;
-}
-
-.logo-text {
-    display: flex;
-    flex-direction: column;
-}
-
-.hindi-text {
-    font-size: 13px;
-    color: #0066cc;
-    font-weight: 600;
-    line-height: 1.1;
-}
-
-.english-text {
-    font-size: 11px;
-    color: #0066cc;
-    font-weight: 500;
-    line-height: 1.1;
-}
-
-.cdac-nav {
-    display: flex;
-    align-items: center;
-    gap: 25px;
-}
-
-.nav-item {
-    color: #333;
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 8px 15px;
-    border-radius: 5px;
-    transition: all 0.3s ease;
-    white-space: nowrap;
-}
-
-.nav-item:hover {
-    background: #f0f8ff;
-    color: #0066cc;
-    text-decoration: none;
-    transform: translateY(-1px);
-}
-
-/* Ensure no extra spacing issues */
-body {
-    margin: 0;
-    padding: 0;
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        padding: 8px 15px;
-    }
-    
-    .cdac-nav {
-        gap: 15px;
-    }
-    
-    .nav-item {
-        font-size: 12px;
-        padding: 6px 12px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
-
-
-
-.cdac-header {
-    background: white;
-    border-bottom: 3px solid #0066cc;
-    padding: 8px 0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    z-index: 10000;
-    margin: 0;
-}
-
-.cdac-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-}
-
-.cdac-logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.logo-img {
-    height: 40px;
-    width: auto;
-}
-
-.logo-text {
-    display: flex;
-    flex-direction: column;
-}
-
-.hindi-text {
-    font-size: 13px;
-    color: #0066cc;
-    font-weight: 600;
-    line-height: 1.1;
-}
-
-.english-text {
-    font-size: 11px;
-    color: #0066cc;
-    font-weight: 500;
-    line-height: 1.1;
-}
-
-.cdac-nav {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-
-.nav-item {
-    color: #333;
-    text-decoration: none;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 6px 10px;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-    white-space: nowrap;
-}
-
-.nav-item:hover {
-    background: #f0f8ff;
-    color: #0066cc;
-    text-decoration: none;
-}
-
-/* CRITICAL: Add top margin to body to account for fixed header */
-body {
-    margin: 0;
-    padding: 0;
-    padding-top: 70px !important; /* Space for fixed header */
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .cdac-header {
-        position: relative; /* Not fixed on mobile */
-    }
-    
-    body {
-        padding-top: 0 !important; /* No top padding on mobile */
-    }
-    
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-        padding: 5px 15px;
-    }
-    
-    .cdac-nav {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-    }
-    
-    .nav-item {
-        font-size: 10px;
-        padding: 4px 8px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
-
-
-
-/* CRITICAL: Add top margin to body to account for fixed header */
-body {
-    margin: 0;
-    padding: 0;
-    padding-top: 70px !important; /* Space for fixed header */
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .cdac-header {
-        position: relative; /* Not fixed on mobile */
-    }
-    
-    body {
-        padding-top: 0 !important; /* No top padding on mobile */
-    }
-    
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-        padding: 5px 15px;
-    }
-    
-    .cdac-nav {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-    }
-    
-    .nav-item {
-        font-size: 10px;
-        padding: 4px 8px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
-        
-
-        /* Mobile responsiveness */
-        @media (max-width: 768px) {
-            .cdac-container {
-                flex-direction: column;
-                gap: 15px;
-                text-align: center;
-            }
-            
-            .cdac-nav {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 10px;
-            }
-            
-            .nav-item {
-                font-size: 12px;
-                padding: 6px 10px;
-            }
-            
-            .logo-img {
-                height: 40px;
-            }
-            
-            .hindi-text {
-                font-size: 12px;
-            }
-            
-            .english-text {
-                font-size: 10px;
-            }
-        }
-
-        /* Adjust main content to account for header */
-        body {
+        /* ===== Base ===== */
+        html, body {
             margin: 0;
             padding: 0;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-    
-        /* Logout Button Styles */
-        .logout-btn {
+        /* Space for fixed header on desktop */
+        body {
+            padding-top: 90px !important;
+        }
+
+        /* ===== CDAC NAVBAR (About Us style) ===== */
+        .cdac-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-bottom: 4px solid #0066cc;
+            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
             position: fixed;
-            top: 80px;
-            right: 20px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 10px 16px;
+            top: 0; left: 0; right: 0;
+            width: 100%;
+            z-index: 10000;
+            padding: 12px 0;
+        }
+        .cdac-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            padding: 0 24px;
+        }
+
+        /* Logo + text */
+        .cdac-logo-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+        }
+        .cdac-logo-wrapper {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            min-height: 60px;
+            position: relative;
+        }
+        .cdac-logo-img {
+            height: 50px;
+            width: 50px;
+            object-fit: contain;
+            display: block;
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 8px;
-            cursor: pointer;
+            padding: 4px;
+        }
+        .cdac-fallback-logo {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 50px;
+            height: 50px;
+        }
+        .fallback-icon {
+            font-size: 32px;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .cdac-text-section {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .cdac-hindi {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0066cc;
+            line-height: 1.2;
+            letter-spacing: 0.5px;
+        }
+        .cdac-english {
+            font-size: 13px;
             font-weight: 600;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            z-index: 999;
+            color: #004499;
+            line-height: 1.2;
+            letter-spacing: 0.3px;
+        }
+        .cdac-tagline {
+            font-size: 11px;
+            font-weight: 500;
+            color: #666;
+            line-height: 1.2;
+            font-style: italic;
+        }
+
+        /* Center nav */
+        .cdac-navigation {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
+        .nav-link {
             display: flex;
             align-items: center;
             gap: 6px;
+            padding: 10px 16px;
+            color: #333;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            border: 2px solid transparent;
         }
-
-        .logout-btn:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+        .nav-link:hover {
+            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
+            color: #0066cc;
+            border-color: #b3d9ff;
             transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
+            text-decoration: none;
+        }
+        .nav-link.active {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: #fff;
+            border-color: #0066cc;
+        }
+        .nav-icon { font-size: 16px; }
+        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
+
+        /* Right: Logout button */
+        .cdac-user-section { flex: 0 0 auto; }
+        .logout-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            letter-spacing: 0.3px;
+        }
+        .logout-button:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-3px);
             box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
         }
 
-        .logout-btn:active {
-            transform: translateY(0);
-        }
-
-        /* Adjust for mobile */
+        /* ===== Mobile ===== */
         @media (max-width: 768px) {
-            .logout-btn {
-                top: 60px;
-                right: 10px;
-                padding: 8px 12px;
-                font-size: 12px;
-            }
+            .cdac-header { position: relative; padding: 16px 0; }
+            body { padding-top: 0 !important; } /* remove offset when header isn’t fixed */
+            .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
         }
     </style>
 </head>
 <body>
-<!-- CDAC Header -->
-<div class="cdac-header">
-    <div class="cdac-container">
-        <div class="cdac-logo">
-            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
-            <div class="logo-text">
-                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
-                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+
+    <!-- Header (About Us style) -->
+    <header class="cdac-header">
+        <div class="cdac-container">
+            <!-- Left: logo block -->
+            <div class="cdac-logo-section">
+                <div class="cdac-logo-wrapper">
+                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
+                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
+                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
+                        <span class="fallback-icon">🏛️</span>
+                    </div>
+                </div>
+                <div class="cdac-text-section">
+                    <div class="cdac-hindi">भारत संगणन विकास केंद्र</div>
+                    <div class="cdac-english">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+                    <div class="cdac-tagline">Face Recognition Attendance System</div>
+                </div>
             </div>
 
-    <!-- Logout Button -->
-    <button class="logout-btn" onclick="performLogout()" title="Logout">
-        🚪 Logout
-    </button>
+            <!-- Center: nav -->
+            <nav class="cdac-navigation">
+                <a href="/dashboard" class="nav-link">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-text">HOME</span>
+                </a>
+                <a href="/about" class="nav-link">
+                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-text">ABOUT</span>
+                </a>
+                <a href="/contact" class="nav-link">
+                    <span class="nav-icon">📞</span>
+                    <span class="nav-text">CONTACT</span>
+                </a>
+            </nav>
+
+            <!-- Right: logout -->
+            <div class="cdac-user-section">
+                <button class="logout-button" onclick="performLogout()" title="Logout">
+                    <span class="logout-icon">🚪</span>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
-        <nav class="cdac-nav">
-            <a href="/dashboard" class="nav-item">🏠</a>
-            <a href="#" class="nav-item">ABOUT US</a>
-            <a href="#" class="nav-item">CONTACT US</a>
-        </nav>
-    </div>
-</div>
+    </header>
 
     <div class="header">
         <h1>📋 Student Management</h1>
@@ -414,7 +240,7 @@ body {
                 <h2>👥 Registered Students</h2>
                 <button class="btn btn-success" onclick="refreshStudents()">🔄 Refresh</button>
             </div>
-            
+
             <div id="studentsContainer">
                 <div class="loading">Loading students...</div>
             </div>
@@ -460,41 +286,40 @@ body {
             try {
                 const response = await fetch('/api/students/list');
                 const data = await response.json();
-                
+
                 if (!data.success) {
-                    document.getElementById('studentsContainer').innerHTML = 
+                    document.getElementById('studentsContainer').innerHTML =
                         `<div class="status error">❌ Error loading students: ${data.message}</div>`;
                     return;
                 }
 
                 if (data.students.length === 0) {
-                    document.getElementById('studentsContainer').innerHTML = 
+                    document.getElementById('studentsContainer').innerHTML =
                         '<div class="status">No students registered yet. <a href="/register">Register the first student</a></div>';
                     return;
                 }
 
-                // Store the last loaded students in a global variable
+                // Keep last loaded for editing
                 window.lastLoadedStudents = data.students;
 
                 let tableHTML = `
-                    
-            <div class="search-controls">
-                <input type="text" id="studentSearch" class="search-input" 
-                       placeholder="Search by name, email, or student ID...">
-                <span>Found: <span id="studentCount">0</span> students</span>
-            </div>
-            <div class="students-table-container">
-                <table class="students-table">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Student ID</th>
-                                <th>Email</th>
-                                <th>Joining Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    <div class="search-controls">
+                        <input type="text" id="studentSearch" class="search-input"
+                               placeholder="Search by name, email, or student ID...">
+                        <span>Found: <span id="studentCount">0</span> students</span>
+                    </div>
+                    <div class="students-table-container">
+                        <table class="students-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Student ID</th>
+                                    <th>Email</th>
+                                    <th>Joining Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                 `;
 
                 data.students.forEach(student => {
@@ -505,30 +330,28 @@ body {
                             <td>${student.email}</td>
                             <td>${student.joining_date}</td>
                             <td>
-                                <button class="btn btn-warning" onclick="editStudent(${student.id})" data-name="${student.name}" data-email="${student.email}" data-studentid="${student.student_id}">
+                                <button class="btn btn-warning" onclick="editStudent(${student.id})">
                                     ✏️ Edit
                                 </button>
-                                <button class="btn btn-danger" onclick="deleteStudent(${student.id}, '${student.name}')">
-                                🗑️ Delete
+                                <button class="btn btn-danger" onclick="deleteStudent(${student.id}, '${student.name.replace(/'/g,"\\'")}')">
+                                    🗑️ Delete
                                 </button>
                             </td>
                         </tr>
                     `;
                 });
 
-                tableHTML += `</tbody></table>
-            </div>`;
+                tableHTML += `</tbody></table></div>`;
                 document.getElementById('studentsContainer').innerHTML = tableHTML;
 
             } catch (error) {
                 console.error('Error loading students:', error);
-                document.getElementById('studentsContainer').innerHTML = 
+                document.getElementById('studentsContainer').innerHTML =
                     `<div class="status error">❌ Error loading students: ${error.message}</div>`;
             }
         }
 
         function editStudent(id) {
-            // Find the student data from the last loaded students list
             const student = window.lastLoadedStudents && window.lastLoadedStudents.find(s => s.id === id);
             if (!student) return;
             currentEditId = id;
@@ -545,39 +368,32 @@ body {
         }
 
         async function deleteStudent(studentId, studentName) {
-    // Confirm deletion
-    if (!confirm(`Are you sure you want to delete ${studentName}? This action cannot be undone.`)) {
-        return;
-    }
-    
-    try {
-        const response = await fetch(`/api/students/${studentId}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json'
+            if (!confirm(`Are you sure you want to delete ${studentName}? This action cannot be undone.`)) return;
+
+            try {
+                const response = await fetch(`/api/students/${studentId}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                    // FIX: call the existing refresh method (was loadStudents)
+                    await refreshStudents();
+                    setupStudentSearch();
+                } else {
+                    alert(`❌ Error: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert(`❌ Failed to delete student: ${error.message}`);
             }
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            alert(`✅ ${data.message}`);
-            // Reload the students list
-            loadStudents(); // Assuming you have this function
-        } else {
-            alert(`❌ Error: ${data.message}`);
         }
-        
-    } catch (error) {
-        console.error('Delete error:', error);
-        alert(`❌ Failed to delete student: ${error.message}`);
-    }
-}
 
         // Handle edit form submission
         document.getElementById('editForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             if (!currentEditId) return;
 
             const formData = {
@@ -590,9 +406,7 @@ body {
             try {
                 const response = await fetch(`/api/students/${currentEditId}`, {
                     method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(formData)
                 });
                 const data = await response.json();
@@ -600,7 +414,8 @@ body {
                 if (data.success) {
                     alert(`✅ ${data.message}`);
                     closeEditModal();
-                    refreshStudents();
+                    await refreshStudents();
+                    setupStudentSearch();
                 } else {
                     alert(`❌ Error: ${data.message}`);
                 }
@@ -609,54 +424,48 @@ body {
             }
         });
 
-        // Close modal when clicking outside
+        // Close modal on outside click
         window.onclick = function(event) {
             const modal = document.getElementById('editModal');
-            if (event.target === modal) {
-                closeEditModal();
-            }
+            if (event.target === modal) closeEditModal();
         }
 
-        
-        // Student search functionality
+        // Search functionality
         function setupStudentSearch() {
             const searchInput = document.getElementById('studentSearch');
             if (!searchInput) return;
-            
+
+            const tbody = document.querySelector('.students-table tbody');
+            const countEl = document.getElementById('studentCount');
+            const updateCount = () => {
+                const rows = tbody ? tbody.querySelectorAll('tr') : [];
+                let visibleCount = 0;
+                rows.forEach(r => { if (r.style.display !== 'none') visibleCount++; });
+                if (countEl) countEl.textContent = visibleCount;
+            };
+
             searchInput.addEventListener('input', function(e) {
                 const searchTerm = e.target.value.toLowerCase();
-                const tbody = document.querySelector('.students-table tbody');
-                if (!tbody) return;
-                
-                const rows = tbody.querySelectorAll('tr');
-                let visibleCount = 0;
-                
+                const rows = tbody ? tbody.querySelectorAll('tr') : [];
                 rows.forEach(row => {
                     const text = row.textContent.toLowerCase();
-                    if (text.includes(searchTerm)) {
-                        row.style.display = '';
-                        visibleCount++;
-                    } else {
-                        row.style.display = 'none';
-                    }
+                    row.style.display = text.includes(searchTerm) ? '' : 'none';
                 });
-                
-                document.getElementById('studentCount').textContent = visibleCount;
+                updateCount();
             });
-            
+
             // Initialize count
-            const totalRows = document.querySelectorAll('.students-table tbody tr').length;
-            document.getElementById('studentCount').textContent = totalRows;
+            updateCount();
         }
-        
-        // Call after table is loaded
-        const originalRefreshStudents = refreshStudents;
+
+        // Wrap refreshStudents to auto-wire search after render
+        const _refreshStudents = refreshStudents;
         refreshStudents = async function() {
-            await originalRefreshStudents();
+            await _refreshStudents();
             setupStudentSearch();
         };
 
-        // Initialize
+        // Initial load
         refreshStudents();
     </script>
 
@@ -667,57 +476,38 @@ body {
                 try {
                     const response = await fetch('/api/logout', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         credentials: 'include'
                     });
-                    
                     const result = await response.json();
-                    
+
                     if (result.success) {
-                        // Clear any local storage/session storage
                         localStorage.clear();
                         sessionStorage.clear();
-                        
-                        // Redirect to login
                         window.location.href = '/login';
                     } else {
                         alert('Logout failed: ' + result.message);
                     }
                 } catch (error) {
                     console.error('Logout error:', error);
-                    // Force redirect to login even if API fails
                     window.location.href = '/login';
                 }
             }
         }
 
-        // Check session status on page load
+        // Session checks (optional but kept from your pattern)
         async function checkSession() {
             try {
-                const response = await fetch('/api/session/status', {
-                    credentials: 'include'
-                });
+                const response = await fetch('/api/session/status', { credentials: 'include' });
                 const result = await response.json();
-                
-                if (!result.authenticated) {
-                    // Session expired, redirect to login
-                    window.location.href = '/login';
-                }
+                if (!result.authenticated) window.location.href = '/login';
             } catch (error) {
                 console.log('Session check failed:', error);
             }
         }
-
-        // Check session every 5 minutes
         setInterval(checkSession, 5 * 60 * 1000);
-        
-        // Check session on page visibility change
         document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                checkSession();
-            }
+            if (!document.hidden) checkSession();
         });
     </script>
 </body>

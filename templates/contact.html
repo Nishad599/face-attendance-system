@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact Us - CDAC Kharghar</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* ===== CDAC NAVBAR STYLES ===== */
+        .cdac-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-bottom: 4px solid #0066cc;
+            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            z-index: 10000;
+            padding: 12px 0;
+        }
+
+        .cdac-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 24px;
+            gap: 20px;
+        }
+
+        /* Logo Section */
+        .cdac-logo-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .cdac-logo-wrapper {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            min-height: 60px;
+            position: relative;
+        }
+
+        .cdac-logo-img {
+            height: 50px;
+            width: 50px;
+            object-fit: contain;
+            display: block;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .cdac-fallback-logo {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 50px;
+            height: 50px;
+        }
+
+        .fallback-icon {
+            font-size: 32px;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .cdac-text-section {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .cdac-hindi {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0066cc;
+            line-height: 1.2;
+            letter-spacing: 0.5px;
+        }
+
+        .cdac-english {
+            font-size: 13px;
+            font-weight: 600;
+            color: #004499;
+            line-height: 1.2;
+            letter-spacing: 0.3px;
+        }
+
+        .cdac-tagline {
+            font-size: 11px;
+            font-weight: 500;
+            color: #666;
+            line-height: 1.2;
+            font-style: italic;
+        }
+
+        /* Navigation */
+        .cdac-navigation {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            color: #333;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            border: 2px solid transparent;
+        }
+
+        .nav-link:hover {
+            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
+            color: #0066cc;
+            border-color: #b3d9ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
+            text-decoration: none;
+        }
+
+        .nav-link.active {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: white;
+            border-color: #0066cc;
+        }
+
+        .nav-icon {
+            font-size: 16px;
+        }
+
+        .nav-text {
+            font-size: 13px;
+            letter-spacing: 0.5px;
+        }
+
+        /* User Section */
+        .cdac-user-section {
+            flex: 0 0 auto;
+        }
+
+        .logout-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            letter-spacing: 0.3px;
+        }
+
+        .logout-button:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+        .logout-icon {
+            font-size: 16px;
+        }
+
+        .logout-text {
+            font-size: 13px;
+        }
+
+        /* Body adjustment */
+        body {
+            margin: 0;
+            padding: 0;
+            padding-top: 90px !important;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+        }
+
+        /* Page Content Styles */
+        .page-hero {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 50%, #003366 100%);
+            color: white;
+            padding: 60px 0;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .hero-subtitle {
+            font-size: 1.5rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+
+        .content-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            color: #0066cc;
+            margin-bottom: 1.5rem;
+            font-weight: 700;
+            position: relative;
+            padding-bottom: 15px;
+        }
+
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(135deg, #0066cc, #004499);
+            border-radius: 2px;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .contact-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .contact-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(135deg, #0066cc, #004499);
+        }
+
+        .contact-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .contact-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            display: block;
+            color: #0066cc;
+        }
+
+        .contact-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0066cc;
+            margin-bottom: 15px;
+        }
+
+        .contact-details {
+            color: #666;
+            line-height: 1.8;
+        }
+
+        .developer-section {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: white;
+            border-radius: 20px;
+            padding: 50px;
+            text-align: center;
+            margin: 50px 0;
+        }
+
+        .developer-name {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        .developer-title {
+            font-size: 1.3rem;
+            opacity: 0.9;
+            margin-bottom: 20px;
+            font-weight: 300;
+        }
+
+        .back-button {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 102, 204, 0.3);
+            text-decoration: none;
+            color: white;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .cdac-header { position: relative; padding: 16px 0; }
+            body { padding-top: 0 !important; }
+            .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
+            .hero-title { font-size: 2.5rem; }
+            .hero-subtitle { font-size: 1.2rem; }
+            .content-section { padding: 25px; margin-bottom: 25px; }
+            .section-title { font-size: 2rem; }
+            .contact-grid { grid-template-columns: 1fr; gap: 20px; }
+            .developer-section { padding: 30px 20px; }
+            .developer-name { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- CDAC Header -->
+    <header class="cdac-header">
+        <div class="cdac-container">
+            <div class="cdac-logo-section">
+                <div class="cdac-logo-wrapper">
+                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img" 
+                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
+                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display: none;">
+                        <span class="fallback-icon">🏛️</span>
+                    </div>
+                </div>
+                <div class="cdac-text-section">
+                    <div class="cdac-hindi">भारत संगणन विकास केंद्र</div>
+                    <div class="cdac-english">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+                    <div class="cdac-tagline">Face Recognition Attendance System</div>
+                </div>
+            </div>
+            
+            <nav class="cdac-navigation">
+                <a href="/dashboard" class="nav-link">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-text">HOME</span>
+                </a>
+                <a href="/about" class="nav-link">
+                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-text">ABOUT</span>
+                </a>
+                <a href="/contact" class="nav-link active">
+                    <span class="nav-icon">📞</span>
+                    <span class="nav-text">CONTACT</span>
+                </a>
+            </nav>
+            
+            <div class="cdac-user-section">
+                <button class="logout-button" onclick="performLogout()" title="Logout">
+                    <span class="logout-icon">🚪</span>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="page-hero">
+        <div class="hero-content">
+            <h1 class="hero-title">Contact Us</h1>
+            <p class="hero-subtitle">Connect with CDAC Kharghar - Your Gateway to Advanced Computing</p>
+        </div>
+    </section>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <a href="/dashboard" class="back-button">
+            ← Back to Dashboard
+        </a>
+
+        <!-- Contact Information -->
+        <section class="content-section">
+            <h2 class="section-title">�� CDAC Kharghar</h2>
+            <div class="contact-grid">
+                <div class="contact-card">
+                    <span class="contact-icon">🏢</span>
+                    <h3 class="contact-title">Office Address</h3>
+                    <div class="contact-details">
+                        <p><strong>CDAC Knowledge Park</strong><br>
+                        Plot No. 14A, Sector 7, CBD Belapur<br>
+                        Navi Mumbai, Maharashtra 400614</p>
+                        <p><strong>Nearest Station:</strong> CBD Belapur Railway Station<br>
+                        <em>5 minutes walk from station</em></p>
+                    </div>
+                </div>
+
+                <div class="contact-card">
+                    <span class="contact-icon">📞</span>
+                    <h3 class="contact-title">Contact Numbers</h3>
+                    <div class="contact-details">
+                        <p><strong>Main Office:</strong><br>
+                        +91-22-2734-7111 / 7222</p>
+                        <p><strong>Admissions:</strong><br>
+                        +91-22-2734-7100</p>
+                        <p><strong>Student Support:</strong><br>
+                        +91-22-2734-7200</p>
+                    </div>
+                </div>
+
+                <div class="contact-card">
+                    <span class="contact-icon">✉️</span>
+                    <h3 class="contact-title">Email Contacts</h3>
+                    <div class="contact-details">
+                        <p><strong>General Inquiry:</strong><br>
+                        info@cdac.in</p>
+                        <p><strong>Admissions:</strong><br>
+                        admissions@cdacmumbai.in</p>
+                        <p><strong>Training Programs:</strong><br>
+                        training@cdacmumbai.in</p>
+                    </div>
+                </div>
+
+                <div class="contact-card">
+                    <span class="contact-icon">🕐</span>
+                    <h3 class="contact-title">Office Hours</h3>
+                    <div class="contact-details">
+                        <p><strong>Monday - Friday:</strong><br>
+                        9:00 AM - 6:00 PM</p>
+                        <p><strong>Saturday:</strong><br>
+                        9:00 AM - 1:00 PM</p>
+                        <p><strong>Sunday:</strong> Closed</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Developer Section -->
+        <section class="developer-section">
+            <div style="font-size: 4rem; margin-bottom: 20px;">👨‍💻</div>
+            <h2 class="developer-name">Nishad Kharote</h2>
+            <p class="developer-title">Lead Developer & AI Systems Engineer</p>
+            
+            <p style="font-size: 1.1rem; line-height: 1.6; opacity: 0.9; max-width: 800px; margin: 0 auto 30px;">
+                Passionate software engineer specializing in AI/ML solutions and modern web development. 
+                Architect of the Face Recognition Attendance System, combining cutting-edge computer vision 
+                with intuitive user experience design.
+            </p>
+
+            <div class="contact-grid">
+                <div class="contact-card" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">
+                    <span class="contact-icon" style="color: white;">💼</span>
+                    <h3 class="contact-title" style="color: white;">Professional Contact</h3>
+                    <div class="contact-details" style="color: rgba(255, 255, 255, 0.9);">
+                        <p>📧 nishad.kharote@cdac.in</p>
+                        <p>🔗 Senior Software Engineer</p>
+                        <p>🎯 AI/ML Specialist</p>
+                    </div>
+                </div>
+
+                <div class="contact-card" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">
+                    <span class="contact-icon" style="color: white;">🚀</span>
+                    <h3 class="contact-title" style="color: white;">Expertise</h3>
+                    <div class="contact-details" style="color: rgba(255, 255, 255, 0.9);">
+                        <p>🧠 AI/ML Algorithm Development</p>
+                        <p>👁️ Computer Vision Systems</p>
+                        <p>🎨 Full-Stack Web Development</p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 40px; padding: 25px; background: rgba(255, 255, 255, 0.1); border-radius: 15px;">
+                <h3 style="margin-bottom: 15px;">🎯 Project Highlights</h3>
+                <ul style="text-align: left; max-width: 600px; margin: 0 auto; line-height: 1.8;">
+                    <li>Built real-time face recognition system with 95%+ accuracy</li>
+                    <li>Implemented secure attendance tracking with time-slot management</li>
+                    <li>Designed responsive web interface for multi-device compatibility</li>
+                    <li>Integrated advanced analytics and reporting features</li>
+                    <li>Optimized system performance for institutional-scale deployment</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Academic Programs -->
+        <section class="content-section">
+            <h2 class="section-title">🎓 Academic Programs</h2>
+            <div class="contact-grid">
+                <div class="contact-card">
+                    <span class="contact-icon">📊</span>
+                    <h3 class="contact-title">PG DBDA</h3>
+                    <div class="contact-details">
+                        <p><strong>Post Graduate Diploma in Big Data Analytics</strong></p>
+                        <p>Duration: 6 Months</p>
+                        <p>Admissions: +91-22-2734-7100</p>
+                    </div>
+                </div>
+
+                <div class="contact-card">
+                    <span class="contact-icon">💻</span>
+                    <h3 class="contact-title">DAC</h3>
+                    <div class="contact-details">
+                        <p><strong>Diploma in Advanced Computing</strong></p>
+                        <p>Duration: 6 Months</p>
+                        <p>Info: +91-22-2734-7100</p>
+                    </div>
+                </div>
+
+                <div class="contact-card">
+                    <span class="contact-icon">🤖</span>
+                    <h3 class="contact-title">AI/ML Programs</h3>
+                    <div class="contact-details">
+                        <p><strong>Specialized courses in Artificial Intelligence</strong></p>
+                        <p>Various Durations Available</p>
+                        <p>Training: +91-22-2734-7200</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        async function performLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    const response = await fetch('/api/logout', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include'
+                    });
+                    const result = await response.json();
+                    if (result.success) {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                        window.location.href = '/login';
+                    } else {
+                        alert('Logout failed: ' + result.message);
+                    }
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    window.location.href = '/login';
+                }
+            }
+        }
+
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/session/status', { credentials: 'include' });
+                const result = await response.json();
+                if (!result.authenticated) {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        setInterval(checkSession, 5 * 60 * 1000);
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                checkSession();
+            }
+        });
+    </script>
+</body>
+</html>

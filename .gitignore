@@ -15,8 +15,6 @@ __pycache__/
 *.key
 *.crt
 
-# Database (contains user data, handle separately)
-*.db
 
 # Logs and debug files
 logs/

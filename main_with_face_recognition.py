@@ -25,6 +25,11 @@ from fastapi import Body
 from fastapi.staticfiles import StaticFiles  # Add this import
 import secrets
 import hashlib
+from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
+from attendance_manager import create_slot_manager_instance
+
+
+
 # Add system path for OpenCV
 sys.path.insert(0, '/usr/lib/python3/dist-packages')
 
@@ -1245,6 +1250,30 @@ async def admin_dashboard(request: Request, session: Dict[str, Any] = Depends(re
     })
 
 
+# Add these routes to your Flask app file
+
+# Add these routes to your FastAPI app (replace the incomplete Flask ones)
+
+@app.get("/about", response_class=HTMLResponse)
+async def about_page():
+    """About Us page"""
+    try:
+        # Fixed path: files are in templates/ folder
+        with open('templates/about.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="About page not found in templates folder")
+
+@app.get("/contact", response_class=HTMLResponse) 
+async def contact_page():
+    """Contact Us page"""
+    try:
+        # Fixed path: files are in templates/ folder
+        with open('templates/contact.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Contact page not found in templates folder")
+    
 
 @app.get("/register", response_class=HTMLResponse)
 async def registration_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
@@ -1731,147 +1760,6 @@ async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_
     else:
         return {"success": False, "redirect_url": "/login", "message": "Invalid session"}
 
-
-@app.get("/api/attendance/export/{student_id}")
-async def export_student_attendance(student_id: int):
-    """Export individual student attendance as CSV"""
-    try:
-        from fastapi.responses import StreamingResponse
-        import csv
-        from datetime import date, timedelta
-        
-        cursor = attendance_system.conn.cursor()
-        
-        # Get student information
-        cursor.execute('SELECT name, student_id, email, joining_date FROM students WHERE id = ?', (student_id,))
-        student_info = cursor.fetchone()
-        
-        if not student_info:
-            raise HTTPException(status_code=404, detail="Student not found")
-        
-        student_name, student_id_str, email, joining_date = student_info
-        
-        # Get student's attendance records
-        cursor.execute('''
-            SELECT date, time_in, is_manual, manual_reason
-            FROM attendance 
-            WHERE student_id = ?
-            ORDER BY date DESC
-        ''', (student_id,))
-        attendance_records = cursor.fetchall()
-        
-        # Get holidays
-        cursor.execute('SELECT date, name FROM holidays ORDER BY date')
-        holidays = cursor.fetchall()
-        holiday_dict = {h[0]: h[1] for h in holidays}
-        
-        # Calculate date range
-        if joining_date:
-            try:
-                start_date = datetime.strptime(joining_date, '%Y-%m-%d').date()
-            except:
-                start_date = date.today().replace(month=1, day=1)  # Start of year
-        else:
-            start_date = date.today().replace(month=1, day=1)  # Start of year
-        
-        end_date = date.today()
-        
-        # Create CSV content
-        output = io.StringIO()
-        writer = csv.writer(output)
-        
-        # Header information
-        writer.writerow(['Student Attendance Report'])
-        writer.writerow(['Student Name', student_name])
-        writer.writerow(['Student ID', student_id_str])
-        writer.writerow(['Email', email])
-        writer.writerow(['Report Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
-        writer.writerow(['Academic Period', f"{start_date} to {end_date}"])
-        writer.writerow([])  # Empty row
-        
-        # Statistics
-        present_days = len(attendance_records)
-        
-        # Count working days (excluding weekends and holidays)
-        total_working_days = 0
-        current_date = start_date
-        while current_date <= end_date:
-            if current_date.weekday() < 5 and current_date.strftime('%Y-%m-%d') not in holiday_dict:
-                total_working_days += 1
-            current_date += timedelta(days=1)
-        
-        absent_days = total_working_days - present_days
-        attendance_percentage = (present_days / total_working_days * 100) if total_working_days > 0 else 0
-        
-        writer.writerow(['ATTENDANCE SUMMARY'])
-        writer.writerow(['Present Days', present_days])
-        writer.writerow(['Absent Days', absent_days])
-        writer.writerow(['Total Working Days', total_working_days])
-        writer.writerow(['Attendance Percentage', f"{attendance_percentage:.1f}%"])
-        writer.writerow([])  # Empty row
-        
-        # Detailed attendance records
-        writer.writerow(['DETAILED ATTENDANCE RECORDS'])
-        writer.writerow(['Date', 'Day', 'Status', 'Time In', 'Type', 'Remarks'])
-        
-        # Create attendance dictionary for quick lookup
-        attendance_dict = {}
-        for record in attendance_records:
-            attendance_dict[record[0]] = {
-                'time_in': record[1],
-                'is_manual': record[2],
-                'manual_reason': record[3]
-            }
-        
-        # Generate day-by-day report
-        current_date = start_date
-        while current_date <= end_date:
-            date_str = current_date.strftime('%Y-%m-%d')
-            day_name = current_date.strftime('%A')
-            
-            # Determine status
-            if date_str in holiday_dict:
-                status = 'Holiday'
-                time_in = '-'
-                record_type = f"Holiday: {holiday_dict[date_str]}"
-                remarks = ''
-            elif current_date.weekday() >= 5:  # Weekend
-                status = 'Weekend'
-                time_in = '-'
-                record_type = 'Weekend'
-                remarks = ''
-            elif date_str in attendance_dict:
-                status = 'Present'
-                record = attendance_dict[date_str]
-                time_in = record['time_in'] or '-'
-                record_type = 'Manual' if record['is_manual'] else 'Face Recognition'
-                remarks = record['manual_reason'] or ''
-            else:
-                status = 'Absent'
-                time_in = '-'
-                record_type = '-'
-                remarks = ''
-            
-            writer.writerow([date_str, day_name, status, time_in, record_type, remarks])
-            current_date += timedelta(days=1)
-        
-        output.seek(0)
-        
-        # Generate filename
-        safe_name = "".join(c if c.isalnum() or c in (' ', '_') else '' for c in student_name).replace(' ', '_')
-        filename = f"attendance_report_{safe_name}_{student_id_str}_{datetime.now().strftime('%Y%m%d')}.csv"
-        
-        return StreamingResponse(
-            io.BytesIO(output.getvalue().encode('utf-8')),
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
-        )
-        
-    except Exception as e:
-        print(f"Export error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
-
-
 @app.post("/api/attendance/bulk-export")
 async def bulk_export_attendance(export_data: BulkExportRequest):
     """Export bulk attendance data as CSV"""
@@ -2019,6 +1907,289 @@ async def bulk_export_attendance(export_data: BulkExportRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+@app.get("/api/attendance/export/{student_id}")
+async def export_student_attendance(student_id: int):
+    """Export individual student attendance as CSV"""
+    try:
+        from fastapi.responses import StreamingResponse
+        import csv
+        import io
+        
+        cursor = attendance_system.conn.cursor()
+        
+        # Get student info
+        cursor.execute('SELECT name, student_id, email FROM students WHERE id = ?', (student_id,))
+        student = cursor.fetchone()
+        
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        student_name, student_id_str, email = student
+        
+        # Get attendance records
+        cursor.execute('''
+            SELECT date, time_in, is_manual, manual_reason
+            FROM attendance 
+            WHERE student_id = ?
+            ORDER BY date DESC
+        ''', (student_id,))
+        
+        attendance_records = cursor.fetchall()
+        
+        # Create CSV content
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Headers
+        writer.writerow([
+            'Student Name', 'Student ID', 'Email', 'Date', 'Day', 
+            'Status', 'Time In', 'Type', 'Reason'
+        ])
+        
+        # Add attendance records
+        for record in attendance_records:
+            date_str, time_in, is_manual, manual_reason = record
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+            day_name = date_obj.strftime('%A')
+            
+            writer.writerow([
+                student_name,
+                student_id_str,
+                email,
+                date_str,
+                day_name,
+                'Present',
+                time_in or '-',
+                'Manual' if is_manual else 'Automatic',
+                manual_reason or '-'
+            ])
+        
+        output.seek(0)
+        
+        # Generate filename
+        filename = f"attendance_{student_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv"
+        
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode()),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+@app.get("/api/attendance/export/bulk")
+async def bulk_export_attendance_get(
+    start_date: str,
+    end_date: str,
+    format: str = "daily",
+    include_weekends: bool = False,
+    include_holidays: bool = False
+):
+    """Export bulk attendance data as CSV (GET version)"""
+    # Convert query parameters to BulkExportRequest object
+    export_data = BulkExportRequest(
+        start_date=start_date,
+        end_date=end_date,
+        format=format,
+        include_weekends=include_weekends,
+        include_holidays=include_holidays
+    )
+    
+    # Reuse your existing bulk export logic
+    return await bulk_export_attendance(export_data)
+
+
+@app.get("/api/attendance/export/bulk")
+async def bulk_export_attendance_get(
+    start_date: str,
+    end_date: str,
+    format: str = "daily",
+    include_weekends: bool = False,
+    include_holidays: bool = False
+):
+    """Export bulk attendance data as CSV (GET version)"""
+    # Convert query parameters to BulkExportRequest object
+    export_data = BulkExportRequest(
+        start_date=start_date,
+        end_date=end_date,
+        format=format,
+        include_weekends=include_weekends,
+        include_holidays=include_holidays
+    )
+    
+    # Reuse your existing bulk export logic
+    return await bulk_export_attendance(export_data)
+
+
+
+
+# ADD THIS LINE HERE:
+add_phase1_api_endpoints(app, attendance_system)
+
+
+
+
+@app.get("/api/attendance/live-count")
+async def get_live_attendance_count():
+    """Get live student count with slot information"""
+    try:
+        manager = create_slot_manager_instance()
+        count_data = manager.get_live_student_count()
+        return count_data
+    except Exception as e:
+        print(f"Error in live count: {e}")
+        return {
+            "success": False,
+            "message": str(e),
+            "total_students": 0,
+            "total_present": 0,
+            "total_absent": 0,
+            "current_slot": None,
+            "next_slot": None,
+            "last_updated": datetime.now().strftime('%H:%M:%S')
+        }
+
+@app.post("/api/detect_attendance_slots")
+async def detect_attendance_with_slots(image_data: DetectionImage):
+    """Enhanced detection with slot-based attendance marking"""
+    if not FACE_RECOGNITION_AVAILABLE:
+        return {"success": False, "message": "Face recognition not available"}
+    
+    try:
+        # Convert base64 to image (same as existing detect_attendance)
+        if image_data.image_data.startswith('data:image'):
+            image_data_clean = image_data.image_data.split(',')[1]
+        else:
+            image_data_clean = image_data.image_data
+        
+        image_bytes = base64.b64decode(image_data_clean)
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        image_array = np.array(image)
+        
+        # Use existing face detection
+        detected_faces = asian_face_recognizer.detect_faces_optimized(image_array)
+        
+        if len(detected_faces) == 0:
+            return {
+                "success": False, 
+                "message": "No faces detected",
+                "faces_detected": 0
+            }
+        
+        # Initialize slot manager
+        manager = create_slot_manager_instance()
+        recognized_students = []
+        unknown_faces = 0
+        
+        for face_data in detected_faces:
+            face_encoding = face_data['embedding']
+            
+            # Find best match (same logic as existing)
+            if len(attendance_system.known_face_encodings) > 0:
+                similarities = []
+                for known_encoding in attendance_system.known_face_encodings:
+                    face_norm = face_encoding / np.linalg.norm(face_encoding)
+                    known_norm = known_encoding / np.linalg.norm(known_encoding)
+                    similarity = np.dot(face_norm, known_norm)
+                    similarities.append(similarity)
+                
+                best_match_index = np.argmax(similarities)
+                best_similarity = similarities[best_match_index]
+                
+                RECOGNITION_THRESHOLD = 0.60
+                
+                if best_similarity > RECOGNITION_THRESHOLD:
+                    student_id = attendance_system.known_face_ids[best_match_index]
+                    student_name = attendance_system.known_face_names[best_match_index]
+                    
+                    # Use slot manager for attendance marking
+                    attendance_result = manager.mark_attendance_with_slot(
+                        student_id=student_id,
+                        detection_confidence=best_similarity
+                    )
+                    
+                    face_location = face_data['location']
+                    
+                    if attendance_result['success']:
+                        # Successfully marked
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
+                            "confidence": float(best_similarity),
+                            "status": "marked",
+                            "message": attendance_result['message'],
+                            "slot_name": attendance_result.get('slot_name', ''),
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
+                    elif attendance_result.get('already_marked'):
+                        # Already marked
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
+                            "confidence": float(best_similarity),
+                            "status": "already_marked",
+                            "message": attendance_result['message'],
+                            "slot_name": attendance_result.get('slot_name', ''),
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
+                    elif attendance_result.get('outside_slot'):
+                        # Outside slot hours - return special response
+                        return {
+                            "success": False,
+                            "faces_detected": len(detected_faces),
+                            "recognized_students": [],
+                            "unknown_faces": 0,
+                            "outside_slot": True,
+                            "face_detected": True,
+                            "student_name": student_name,
+                            "confidence": float(best_similarity),
+                            "message": attendance_result['message'],
+                            "next_slot": attendance_result.get('next_slot')
+                        }
+                else:
+                    unknown_faces += 1
+            else:
+                unknown_faces += 1
+        
+        success = len(recognized_students) > 0
+        message = f"Processed {len(detected_faces)} faces, recognized {len(recognized_students)} students"
+        
+        return {
+            "success": success,
+            "faces_detected": len(detected_faces),
+            "recognized_students": recognized_students,
+            "unknown_faces": unknown_faces,
+            "message": message
+        }
+        
+    except Exception as e:
+        print(f"[ERROR] Slot detection failed: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Detection failed: {str(e)}",
+            "faces_detected": 0
+        }
+
+
+
+
 
 if __name__ == "__main__":
     import uvicorn

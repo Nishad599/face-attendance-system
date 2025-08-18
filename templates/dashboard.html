@@ -7,325 +7,167 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-/* CDAC Header Styles */
-.cdac-header {
-    background: white;
-    border-bottom: 2px solid #0066cc;
-    padding: 8px 0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    position: sticky;
-    top: 0;
-    width: 100%;
-    z-index: 1000;
-}
-
-.cdac-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-}
-
-.cdac-logo {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.logo-img {
-    height: 40px;
-    width: auto;
-}
-
-.logo-text {
-    display: flex;
-    flex-direction: column;
-}
-
-.hindi-text {
-    font-size: 13px;
-    color: #0066cc;
-    font-weight: 600;
-    line-height: 1.1;
-}
-
-.english-text {
-    font-size: 11px;
-    color: #0066cc;
-    font-weight: 500;
-    line-height: 1.1;
-}
-
-.cdac-nav {
-    display: flex;
-    align-items: center;
-    gap: 25px;
-}
-
-.nav-item {
-    color: #333;
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 500;
-    padding: 8px 15px;
-    border-radius: 5px;
-    transition: all 0.3s ease;
-    white-space: nowrap;
-}
-
-.nav-item:hover {
-    background: #f0f8ff;
-    color: #0066cc;
-    text-decoration: none;
-    transform: translateY(-1px);
-}
-
-/* Ensure no extra spacing issues */
-body {
-    margin: 0;
-    padding: 0;
-}
-
-/* Mobile responsive */
-@media (max-width: 768px) {
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        padding: 8px 15px;
-    }
-    
-    .cdac-nav {
-        gap: 15px;
-    }
-    
-    .nav-item {
-        font-size: 12px;
-        padding: 6px 12px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
 
 
-
-.cdac-header {
-    background: white;
-    border-bottom: 3px solid #0066cc;
-    padding: 8px 0;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    z-index: 10000;
-    margin: 0;
-}
-
-.cdac-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-}
-
-.cdac-logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.logo-img {
-    height: 40px;
-    width: auto;
-}
-
-.logo-text {
-    display: flex;
-    flex-direction: column;
-}
-
-.hindi-text {
-    font-size: 13px;
-    color: #0066cc;
-    font-weight: 600;
-    line-height: 1.1;
-}
-
-.english-text {
-    font-size: 11px;
-    color: #0066cc;
-    font-weight: 500;
-    line-height: 1.1;
-}
-
-.cdac-nav {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-}
-
-.nav-item {
-    color: #333;
-    text-decoration: none;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 6px 10px;
-    border-radius: 4px;
-    transition: all 0.3s ease;
-    white-space: nowrap;
-}
-
-.nav-item:hover {
-    background: #f0f8ff;
-    color: #0066cc;
-    text-decoration: none;
-}
-
-/* CRITICAL: Add top margin to body to account for fixed header */
-body {
-    margin: 0;
-    padding: 0;
-    padding-top: 70px !important; /* Space for fixed header */
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .cdac-header {
-        position: relative; /* Not fixed on mobile */
-    }
-    
-    body {
-        padding-top: 0 !important; /* No top padding on mobile */
-    }
-    
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-        padding: 5px 15px;
-    }
-    
-    .cdac-nav {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-    }
-    
-    .nav-item {
-        font-size: 10px;
-        padding: 4px 8px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
-
-
-
-/* CRITICAL: Add top margin to body to account for fixed header */
-body {
-    margin: 0;
-    padding: 0;
-    padding-top: 70px !important; /* Space for fixed header */
-}
-
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-    .cdac-header {
-        position: relative; /* Not fixed on mobile */
-    }
-    
-    body {
-        padding-top: 0 !important; /* No top padding on mobile */
-    }
-    
-    .cdac-container {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
-        padding: 5px 15px;
-    }
-    
-    .cdac-nav {
-        flex-wrap: wrap;
-        justify-content: center;
-        gap: 8px;
-    }
-    
-    .nav-item {
-        font-size: 10px;
-        padding: 4px 8px;
-    }
-    
-    .logo-img {
-        height: 35px;
-    }
-    
-    .hindi-text {
-        font-size: 11px;
-    }
-    
-    .english-text {
-        font-size: 9px;
-    }
-}
-        
-
-        /* Mobile responsiveness */
-        @media (max-width: 768px) {
-            .cdac-container {
-                flex-direction: column;
-                gap: 15px;
-                text-align: center;
-            }
-            
-            .cdac-nav {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 10px;
-            }
-            
-            .nav-item {
-                font-size: 12px;
-                padding: 6px 10px;
-            }
-            
-            .logo-img {
-                height: 40px;
-            }
-            
-            .hindi-text {
-                font-size: 12px;
-            }
-            
-            .english-text {
-                font-size: 10px;
-            }
+        /* ===== CDAC NAVBAR STYLES (About Us style) ===== */
+        .cdac-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-bottom: 4px solid #0066cc;
+            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            width: 100%;
+            z-index: 10000;
+            padding: 12px 0;
         }
+        .cdac-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            padding: 0 24px;
+        }
+
+        /* Logo Section (left) */
+        .cdac-logo-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+        }
+        .cdac-logo-wrapper {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 60px;
+            min-height: 60px;
+            position: relative;
+        }
+        .cdac-logo-img {
+            height: 50px;
+            width: 50px;
+            object-fit: contain;
+            display: block;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 4px;
+        }
+        .cdac-fallback-logo {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            width: 50px;
+            height: 50px;
+        }
+        .fallback-icon {
+            font-size: 32px;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .cdac-text-section {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .cdac-hindi {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0066cc;
+            line-height: 1.2;
+            letter-spacing: 0.5px;
+        }
+        .cdac-english {
+            font-size: 13px;
+            font-weight: 600;
+            color: #004499;
+            line-height: 1.2;
+            letter-spacing: 0.3px;
+        }
+        .cdac-tagline {
+            font-size: 11px;
+            font-weight: 500;
+            color: #666;
+            line-height: 1.2;
+            font-style: italic;
+        }
+
+        /* Navigation (center) */
+        .cdac-navigation {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 0 auto;
+        }
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            color: #333;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            border: 2px solid transparent;
+        }
+        .nav-link:hover {
+            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
+            color: #0066cc;
+            border-color: #b3d9ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
+            text-decoration: none;
+        }
+        .nav-link.active {
+            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
+            color: white;
+            border-color: #0066cc;
+        }
+        .nav-icon { font-size: 16px; }
+        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
+
+        /* User Section (right) */
+        .cdac-user-section { flex: 0 0 auto; }
+        .logout-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            letter-spacing: 0.3px;
+        }
+        .logout-button:hover {
+            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
+
+
+
+/* CRITICAL: Add top margin to body to account for fixed header */
+body {
+    margin: 0;
+    padding: 0;
+    padding-top: 70px !important; /* Space for fixed header */
+}
+
+
 
         /* Adjust main content to account for header */
         body {
@@ -333,37 +175,6 @@ body {
             padding: 0;
         }
     
-        /* Logout Button Styles */
-        .logout-btn {
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            z-index: 999;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .logout-btn:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        .logout-btn:active {
-            transform: translateY(0);
-        }
-
         /* Adjust for mobile */
         @media (max-width: 768px) {
             .logout-btn {
@@ -376,33 +187,50 @@ body {
     </style>
 </head>
 <body>
-<!-- CDAC Header -->
-<div class="cdac-header">
-    <div class="cdac-container">
-        <div class="cdac-logo">
-            <img src="/static/images/cdac-logo.png" alt="CDAC" class="logo-img" onerror="this.style.display='none'">
-            <div class="logo-text">
-                <div class="hindi-text">भारत संगणन विकास केंद्र</div>
-                <div class="english-text">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+   <!-- CDAC Header (About-Us style) -->
+    <header class="cdac-header">
+        <div class="cdac-container">
+            <!-- Left: Logo block -->
+            <div class="cdac-logo-section">
+                <div class="cdac-logo-wrapper">
+                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
+                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
+                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
+                        <span class="fallback-icon">🏛️</span>
+                    </div>
+                </div>
+                <div class="cdac-text-section">
+                    <div class="cdac-hindi">भारत संगणन विकास केंद्र</div>
+                    <div class="cdac-english">CENTRE FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
+                    <div class="cdac-tagline">Face Recognition Attendance System</div>
+                </div>
             </div>
 
-    <!-- Logout Button -->
-    <button class="logout-btn" onclick="performLogout()" title="Logout">
-        🚪 Logout
-    </button>
-        </div>
-        <nav class="cdac-nav">
-            <a href="/dashboard" class="nav-item">🏠</a>
-            <a href="#" class="nav-item">ABOUT US</a>
-            <a href="#" class="nav-item">CONTACT US</a>
-        </nav>
-    </div>
-</div>
+            <!-- Center: Nav -->
+            <nav class="cdac-navigation">
+                <a href="/dashboard" class="nav-link">
+                    <span class="nav-icon">🏠</span>
+                    <span class="nav-text">HOME</span>
+                </a>
+                <a href="/about" class="nav-link">
+                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-text">ABOUT</span>
+                </a>
+                <a href="/contact" class="nav-link">
+                    <span class="nav-icon">📞</span>
+                    <span class="nav-text">CONTACT</span>
+                </a>
+            </nav>
 
-    <div class="header">
-        <h1> Face Recognition Attendance System</h1>
-        <p>Real-time attendance tracking with facial recognition</p>
-    </div>
+            <!-- Right: Logout -->
+            <div class="cdac-user-section">
+                <button class="logout-button" onclick="performLogout()" title="Logout">
+                    <span class="logout-icon">🚪</span>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
+        </div>
+    </header>
 
     <div class="container">
         <div class="nav-grid">
