@@ -3,13 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your Page Title</title>
+    <title>CDAC Attendance Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
     <style>
-
-
-        /* ===== CDAC NAVBAR STYLES (About Us style) ===== */
+        /* ===== CDAC NAVBAR STYLES ===== */
         .cdac-header {
             background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
             border-bottom: 4px solid #0066cc;
@@ -158,36 +156,310 @@
             box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
         }
 
-
-
-/* CRITICAL: Add top margin to body to account for fixed header */
-body {
-    margin: 0;
-    padding: 0;
-    padding-top: 70px !important; /* Space for fixed header */
-}
-
-
-
-        /* Adjust main content to account for header */
+        /* CRITICAL: Add top margin to body to account for fixed header */
         body {
             margin: 0;
             padding: 0;
+            padding-top: 90px !important; /* Space for fixed header */
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            min-height: 100vh;
         }
-    
-        /* Adjust for mobile */
+
+        /* Container styles */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+
+
+        
+        /* Navigation grid */
+        .nav-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .nav-card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            text-decoration: none;
+            color: inherit;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            border: 1px solid #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .nav-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .nav-card-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .nav-card-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a202c;
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-card-desc {
+            color: #64748b;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+
+        /* Button styles */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            font-weight: 600;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            text-decoration: none;
+            color: white;
+        }
+
+        /* Attendance section */
+        .attendance-section {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.75rem;
+            color: black !important;;
+            margin: 0;
+        }
+
+.datetime-info strong {
+    color: black !important;
+}
+
+        /* Working schedule info */
+        .schedule-info {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 2px solid #3b82f6;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .schedule-info h3 {
+            color: #1e40af;
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .schedule-info p {
+            color: #1e40af;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        /* Sunday notice */
+        .sunday-notice {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+            display: none;
+        }
+
+        .sunday-notice h3 {
+            color: #92400e;
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .sunday-notice p {
+            color: #92400e;
+            margin: 0;
+            font-weight: 600;
+        }
+
+        /* DateTime info */
+        .datetime-info {
+            color: #000000 !important;
+            font-size: 0.95rem;
+            margin-bottom: 1.5rem;
+            padding: 0.75rem 1rem;
+            background: #f1f5f9;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+
+        /* Stats grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            border: 2px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            color: #1a202c;
+        }
+
+        .stat-label {
+            color: #64748b;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        /* Color coding for stats */
+        .stat-card:nth-child(1) .stat-number { color: #3b82f6; }
+        .stat-card:nth-child(2) .stat-number { color: #10b981; }
+        .stat-card:nth-child(3) .stat-number { color: #ef4444; }
+        .stat-card:nth-child(4) .stat-number { color: #f59e0b; }
+
+        /* Mobile responsive */
         @media (max-width: 768px) {
-            .logout-btn {
-                top: 60px;
-                right: 10px;
+            body {
+                padding-top: 120px !important;
+            }
+
+            .cdac-container {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+                padding: 5px 15px;
+            }
+
+            .cdac-navigation {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+            }
+
+            .nav-link {
+                font-size: 10px;
+                padding: 4px 8px;
+            }
+
+            .cdac-logo-img {
+                height: 35px;
+            }
+
+            .cdac-hindi {
+                font-size: 11px;
+            }
+
+            .cdac-english {
+                font-size: 9px;
+            }
+
+            .logout-button {
                 padding: 8px 12px;
                 font-size: 12px;
+            }
+
+            .container {
+                padding: 1rem 0.5rem;
+            }
+
+            .nav-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .nav-card {
+                padding: 1.5rem;
+            }
+
+            .section-header {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
             }
         }
     </style>
 </head>
 <body>
-   <!-- CDAC Header (About-Us style) -->
+   <!-- CDAC Header -->
     <header class="cdac-header">
         <div class="cdac-container">
             <!-- Left: Logo block -->
@@ -208,7 +480,7 @@ body {
 
             <!-- Center: Nav -->
             <nav class="cdac-navigation">
-                <a href="/dashboard" class="nav-link">
+                <a href="/dashboard" class="nav-link active">
                     <span class="nav-icon">🏠</span>
                     <span class="nav-text">HOME</span>
                 </a>
@@ -233,6 +505,19 @@ body {
     </header>
 
     <div class="container">
+        <!-- Working Schedule Information -->
+        <div class="schedule-info">
+            <h3>📅 Working Schedule</h3>
+            <p>Working Days: Monday - Saturday | Non-Working Day: Sunday</p>
+        </div>
+
+        <!-- Sunday Notice (shown only on Sundays) -->
+        <div id="sundayNotice" class="sunday-notice">
+            <h3>📅 Sunday - Non-Working Day</h3>
+            <p>Today is Sunday. Attendance can be marked but won't count toward statistics.</p>
+        </div>
+
+        <!-- Navigation Cards -->
         <div class="nav-grid">
             <a href="/register" class="nav-card">
                 <span class="nav-card-icon">👤</span>
@@ -248,7 +533,6 @@ body {
                 <div class="btn btn-success">Take Attendance</div>
             </a>
             
-            <!-- Updated: Advanced Attendance → Attendance Management -->
             <a href="/attendance-management" class="nav-card">
                 <span class="nav-card-icon">📊</span>
                 <div class="nav-card-title">Attendance Management</div>
@@ -264,19 +548,21 @@ body {
             </a>
         </div>
 
+        <!-- Dashboard Overview -->
         <div class="attendance-section">
             <div class="section-header">
                 <h2>📊 Dashboard Overview</h2>
                 <div>
-                    <!-- Keep only Admin button -->
                     <a href="/admin" class="btn btn-secondary">⚙️ Admin</a>
                 </div>
             </div>
             
-            <!-- Keep the datetime info -->
+            <!-- DateTime info with working day indicator -->
             <div class="datetime-info">
                 <strong>Date:</strong> <span id="currentDate"></span> | 
-                <strong>Time:</strong> <span id="currentTime"></span>
+                <strong>Time:</strong> <span id="currentTime"></span> | 
+                <strong>Day:</strong> <span id="currentDay"></span>
+                <span id="workingDayStatus"></span>
             </div>
             
             <div class="stats-grid">
@@ -294,68 +580,98 @@ body {
                 </div>
                 <div class="stat-card">
                     <div class="stat-number" id="attendanceRate">0%</div>
-                    <div class="stat-label">Attendance Rate</div>
+                    <div class="stat-label">Attendance Rate (Mon-Sat)</div>
                 </div>
-            </div>
             </div>
         </div>
     </div>
-<script>
-    // Function to update date/time display
-    function updateDateTime() {
-        const now = new Date();
-        document.getElementById('currentDate').textContent = now.toLocaleDateString();
-        document.getElementById('currentTime').textContent = now.toLocaleTimeString();
-    }
-
-    // Function to load dashboard statistics
-    async function loadDashboardStats() {
-        try {
-            const response = await fetch('/api/dashboard/stats');
-            const data = await response.json();
-            
-            if (data.success) {
-                const stats = data.stats;
-                
-                // Update dashboard stats
-                document.getElementById('totalStudents').textContent = stats.total_students;
-                document.getElementById('presentToday').textContent = stats.present_today;
-                document.getElementById('absentToday').textContent = stats.absent_today;
-                document.getElementById('attendanceRate').textContent = stats.attendance_rate + '%';
-                
-                console.log('Dashboard stats loaded:', stats);
-            } else {
-                console.error('Failed to load dashboard stats:', data.message);
-                // Set default values on error
-                document.getElementById('totalStudents').textContent = '0';
-                document.getElementById('presentToday').textContent = '0';
-                document.getElementById('absentToday').textContent = '0';
-                document.getElementById('attendanceRate').textContent = '0%';
-            }
-            
-        } catch (error) {
-            console.error('Error loading dashboard stats:', error);
-            // Set default values on error
-            document.getElementById('totalStudents').textContent = 'Error';
-            document.getElementById('presentToday').textContent = 'Error';
-            document.getElementById('absentToday').textContent = 'Error';
-            document.getElementById('attendanceRate').textContent = 'Error';
-        }
-    }
-
-    // Initialize when page loads
-    document.addEventListener('DOMContentLoaded', function() {
-        updateDateTime();
-        loadDashboardStats();
-        
-        // Auto-refresh
-        setInterval(updateDateTime, 1000);      // Update time every second
-        setInterval(loadDashboardStats, 30000); // Refresh stats every 30 seconds
-    });
-</script>
 
     <script>
-        // Logout functionality
+        // Check if today is Sunday and show appropriate notices
+        function checkSundayStatus() {
+            const today = new Date();
+            const isSunday = today.getDay() === 0; // Sunday = 0
+            const sundayNotice = document.getElementById('sundayNotice');
+            
+            if (isSunday && sundayNotice) {
+                sundayNotice.style.display = 'block';
+                console.log('📅 Today is Sunday - Non-working day notice displayed');
+            } else if (sundayNotice) {
+                sundayNotice.style.display = 'none';
+            }
+            
+            return isSunday;
+        }
+
+        // Function to update date/time display with working day status
+        function updateDateTime() {
+            const now = new Date();
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const currentDay = days[now.getDay()];
+            const isSunday = now.getDay() === 0;
+            
+            document.getElementById('currentDate').textContent = now.toLocaleDateString();
+            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+            document.getElementById('currentDay').textContent = currentDay;
+            
+            const workingDayStatus = document.getElementById('workingDayStatus');
+            if (isSunday) {
+                workingDayStatus.textContent = ' (Non-Working Day)';
+                workingDayStatus.style.color = '#f59e0b';
+                workingDayStatus.style.fontWeight = 'bold';
+            } else {
+                workingDayStatus.textContent = ' (Working Day)';
+                workingDayStatus.style.color = '#10b981';
+                workingDayStatus.style.fontWeight = 'bold';
+            }
+        }
+
+        // Function to load dashboard statistics with Sunday awareness
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch('/api/dashboard/stats');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const stats = data.stats;
+                    const isSunday = new Date().getDay() === 0;
+                    
+                    // Update dashboard stats
+                    document.getElementById('totalStudents').textContent = stats.total_students;
+                    document.getElementById('presentToday').textContent = stats.present_today;
+                    document.getElementById('absentToday').textContent = stats.absent_today;
+                    document.getElementById('attendanceRate').textContent = stats.attendance_rate + '%';
+                    
+                    // Log Sunday-specific information
+                    if (isSunday) {
+                        console.log('📊 Sunday Dashboard Stats:', {
+                            ...stats,
+                            note: 'Today is Sunday - attendance visible but statistics based on Mon-Sat working days'
+                        });
+                    } else {
+                        console.log('📊 Dashboard stats loaded:', stats);
+                    }
+                    
+                } else {
+                    console.error('Failed to load dashboard stats:', data.message);
+                    // Set default values on error
+                    setDefaultStats();
+                }
+                
+            } catch (error) {
+                console.error('Error loading dashboard stats:', error);
+                setDefaultStats();
+            }
+        }
+
+        function setDefaultStats() {
+            document.getElementById('totalStudents').textContent = '0';
+            document.getElementById('presentToday').textContent = '0';
+            document.getElementById('absentToday').textContent = '0';
+            document.getElementById('attendanceRate').textContent = '0%';
+        }
+
+        // Enhanced logout functionality
         async function performLogout() {
             if (confirm('Are you sure you want to logout?')) {
                 try {
@@ -387,7 +703,7 @@ body {
             }
         }
 
-        // Check session status on page load
+        // Enhanced session checking
         async function checkSession() {
             try {
                 const response = await fetch('/api/session/status', {
@@ -397,6 +713,7 @@ body {
                 
                 if (!result.authenticated) {
                     // Session expired, redirect to login
+                    console.log('Session expired, redirecting to login');
                     window.location.href = '/login';
                 }
             } catch (error) {
@@ -404,13 +721,33 @@ body {
             }
         }
 
-        // Check session every 5 minutes
-        setInterval(checkSession, 5 * 60 * 1000);
-        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Dashboard initialized with Monday-Saturday working schedule');
+            
+            // Check and display Sunday status
+            checkSundayStatus();
+            
+            // Initialize time and stats
+            updateDateTime();
+            loadDashboardStats();
+            
+            // Set up auto-refresh intervals
+            setInterval(updateDateTime, 1000);        // Update time every second
+            setInterval(loadDashboardStats, 30000);   // Refresh stats every 30 seconds
+            setInterval(checkSession, 5 * 60 * 1000); // Check session every 5 minutes
+            
+            const isSunday = new Date().getDay() === 0;
+            if (isSunday) {
+                console.log('📅 Sunday Dashboard Mode: Statistics based on Mon-Sat working days');
+            }
+        });
+
         // Check session on page visibility change
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
                 checkSession();
+                checkSundayStatus(); // Recheck Sunday status when page becomes visible
             }
         });
     </script>

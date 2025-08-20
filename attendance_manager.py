@@ -25,20 +25,20 @@ class AttendanceSlotManager:
         self.attendance_slots = {
             'morning': {
                 'name': 'Morning Session',
-                'start_time': time(8, 30),    # 8:30 AM
-                'end_time': time(9, 30),      # 9:30 AM
+                'start_time': time(8, 45),    # FIXED: 8:45 AM
+                'end_time': time(9, 30),      # 9:30 AM (unchanged)
                 'slot_id': 'morning'
             },
             'afternoon': {
                 'name': 'Afternoon Session', 
-                'start_time': time(13, 45),   # 1:45 PM
-                'end_time': time(14, 0),      # 2:00 PM
+                'start_time': time(13, 45),   # 1:45 PM (unchanged)
+                'end_time': time(14, 30),     # FIXED: 2:30 PM
                 'slot_id': 'afternoon'
             }
         }
-        
-        logger.info("AttendanceSlotManager initialized with slots: Morning (8:30-9:30 AM), Afternoon (1:45-2:00 PM)")
-    
+
+        logger.info("AttendanceSlotManager initialized with slots: Morning (8:45-9:30 AM), Afternoon (1:45-2:30 PM)")
+            
     def init_slot_tables(self):
         """Initialize database tables for slot-based attendance"""
         cursor = self.conn.cursor()

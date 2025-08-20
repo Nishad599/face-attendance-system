@@ -9,6 +9,8 @@
         body {
             background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%);
             min-height: 100vh;
+            margin: 0;
+            padding: 0;
         }
         .navbar-gradient {
             background: linear-gradient(135deg, #0891b2, #0e7490);
@@ -17,52 +19,9 @@
             background: white;
             border-radius: 16px;
             box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-
         }
 
-
-         /* Logout Button Styles */
-        .logout-btn {
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            z-index: 999;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .logout-btn:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        .logout-btn:active {
-            transform: translateY(0);
-        }
-
-        /* Adjust for mobile */
-        @media (max-width: 768px) {
-            .logout-btn {
-                top: 60px;
-                right: 10px;
-                padding: 8px 12px;
-                font-size: 12px;
-            }
-        }
-
-        /* ===== CDAC NAVBAR STYLES (About Us style) ===== */
+        /* ===== CDAC NAVBAR STYLES ===== */
         .cdac-header {
             background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
             border-bottom: 4px solid #0066cc;
@@ -209,17 +168,71 @@
             background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
             transform: translateY(-3px);
             box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
+        }
 
-/* Ensure no extra spacing issues */
-body {
-    margin: 0;
-    padding: 0;
-}
+        /* Working schedule indicator */
+        .schedule-info {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.9);
+            margin-top: 8px;
+        }
 
+        /* Status indicators for Sunday */
+        .sunday-notice {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 16px 0;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        /* Adjust for mobile */
+        @media (max-width: 768px) {
+            .cdac-container {
+                flex-direction: column;
+                gap: 10px;
+                text-align: center;
+                padding: 5px 15px;
+            }
+
+            .cdac-navigation {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+            }
+
+            .nav-link {
+                font-size: 10px;
+                padding: 4px 8px;
+            }
+
+            .cdac-logo-img {
+                height: 35px;
+            }
+
+            .cdac-hindi {
+                font-size: 11px;
+            }
+
+            .cdac-english {
+                font-size: 9px;
+            }
+
+            .logout-button {
+                padding: 8px 12px;
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
-   <!-- CDAC Header (About-Us style) -->
+   <!-- CDAC Header -->
     <header class="cdac-header">
         <div class="cdac-container">
             <!-- Left: Logo block -->
@@ -256,7 +269,7 @@ body {
 
             <!-- Right: Logout -->
             <div class="cdac-user-section">
-                <button class="logout-button" onclick="performLogout()" title="Logout">
+                <button class="logout-button" onclick="logout()" title="Logout">
                     <span class="logout-icon">🚪</span>
                     <span class="logout-text">Logout</span>
                 </button>
@@ -264,52 +277,55 @@ body {
         </div>
     </header>
 
-    <!-- Logout Button -->
-    <button class="logout-btn" onclick="performLogout()" title="Logout">
-        🚪 Logout
-    </button>
-
     <!-- Main Content -->
-    <div class="navbar-gradient text-white py-6">
+    <div class="navbar-gradient text-white py-6" style="margin-top: 80px;">
         <div class="max-w-7xl mx-auto px-4 text-center">
             <h1 class="text-3xl font-bold mb-2">📹 Live Attendance Detection</h1>
             <p class="text-lg opacity-90">Automatic face recognition attendance system</p>
+            <div class="schedule-info">
+                📅 Working Days: Monday - Saturday | 🚫 Sunday: Non-working day
+            </div>
         </div>
-            <!-- Live Student Count Section -->
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="detection-card p-4 mb-4">
-                    <div class="flex justify-between items-center">
-                        <div class="flex items-center space-x-4">
-                            <div class="text-center">
-                                <div class="text-3xl font-bold text-green-600" id="liveStudentCount">-</div>
-                                <div class="text-sm text-gray-600">Students Present</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-2xl font-bold text-blue-600" id="totalStudents">-</div>
-                                <div class="text-sm text-gray-600">Total Students</div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-xl font-bold text-purple-600" id="attendancePercentage">-</div>
-                                <div class="text-sm text-gray-600">Attendance %</div>
-                            </div>
+        
+        <!-- Live Student Count Section -->
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="detection-card p-4 mb-4">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-4">
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-green-600" id="liveStudentCount">-</div>
+                            <div class="text-sm text-gray-600">Students Present</div>
                         </div>
-                        <div class="text-right">
-                            <div class="text-sm text-gray-600">Current Slot:</div>
-                            <div class="font-semibold" id="currentSlotInfo">Checking...</div>
-                            <div class="text-xs text-gray-500" id="lastUpdated">-</div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-600" id="totalStudents">-</div>
+                            <div class="text-sm text-gray-600">Total Students</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-purple-600" id="attendancePercentage">-</div>
+                            <div class="text-sm text-gray-600">Attendance % (Mon-Sat)</div>
                         </div>
                     </div>
-                    
-                    <!-- Slot Status Banner -->
-                    <div class="mt-3 p-3 rounded-lg" id="slotStatusBanner" style="display: none;">
-                        <div class="flex items-center">
-                            <span id="slotStatusIcon" class="mr-2 text-xl"></span>
-                            <span id="slotStatusMessage" class="font-medium"></span>
-                        </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-600">Current Slot:</div>
+                        <div class="font-semibold" id="currentSlotInfo">Checking...</div>
+                        <div class="text-xs text-gray-500" id="lastUpdated">-</div>
+                    </div>
+                </div>
+                
+                <!-- Sunday Notice -->
+                <div id="sundayNotice" class="sunday-notice" style="display: none;">
+                    📅 Today is Sunday - Non-working day. Attendance marking is available but won't count toward statistics.
+                </div>
+                
+                <!-- Slot Status Banner -->
+                <div class="mt-3 p-3 rounded-lg" id="slotStatusBanner" style="display: none;">
+                    <div class="flex items-center">
+                        <span id="slotStatusIcon" class="mr-2 text-xl"></span>
+                        <span id="slotStatusMessage" class="font-medium"></span>
                     </div>
                 </div>
             </div>
-        
+        </div>
     </div>
 
     <!-- Attendance Detection Interface -->
@@ -348,12 +364,12 @@ body {
                     <p class="text-gray-600">Real-time attendance marking</p>
                 </div>
                 
-                
                 <div id="detectionResults" class="space-y-4">
                     <div class="text-center text-gray-500 py-8" id="defaultDetectionMessage">
                         <p class="text-lg">🔍 Waiting for face detection...</p>
                         <p class="text-sm">Stand in front of the camera to mark attendance</p>
                         <p class="text-xs text-gray-400 mt-2">Attendance slots: Morning (8:30-9:30 AM), Afternoon (1:45-2:00 PM)</p>
+                        <p class="text-xs text-blue-600 mt-1">Working days: Monday - Saturday</p>
                     </div>
                 </div>
                 
@@ -366,8 +382,6 @@ body {
                             <div class="text-sm text-yellow-700" id="outOfSlotDetails"></div>
                         </div>
                     </div>
-                </div>
-        
                 </div>
                 
                 <div id="statusMessage" class="mt-4 p-4 rounded-lg bg-gray-100 text-center">
@@ -396,292 +410,371 @@ body {
                     <p class="text-gray-600 text-sm">System will automatically mark your attendance when recognized</p>
                 </div>
             </div>
+            
+            <!-- Working Schedule Information -->
+            <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h4 class="font-semibold text-blue-800 mb-2">📅 Working Schedule</h4>
+                <div class="grid md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <strong class="text-blue-700">Working Days:</strong>
+                        <ul class="text-blue-600 mt-1">
+                            <li>• Monday - Saturday</li>
+                            <li>• Attendance counts toward statistics</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong class="text-blue-700">Non-Working Day:</strong>
+                        <ul class="text-blue-600 mt-1">
+                            <li>• Sunday</li>
+                            <li>• Attendance visible but not counted</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    
-        <script>
-            let stream = null;
-            let detectionInterval = null;
-            let liveCountInterval = null;
+    <script>
+        let stream = null;
+        let detectionInterval = null;
+        let liveCountInterval = null;
+        
+        // Check if today is Sunday and show notice
+        function checkSundayStatus() {
+            const today = new Date();
+            const isSunday = today.getDay() === 0; // Sunday = 0
+            const sundayNotice = document.getElementById('sundayNotice');
             
-            // Live count update function
-            async function updateLiveCount() {
-                try {
-                    const response = await fetch('/api/attendance/live-count');
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        document.getElementById('liveStudentCount').textContent = data.total_present;
-                        document.getElementById('totalStudents').textContent = data.total_students;
-                        document.getElementById('attendancePercentage').textContent = data.attendance_percentage + '%';
-                        document.getElementById('lastUpdated').textContent = 'Updated: ' + data.last_updated;
-                        
-                        // Update slot status
-                        updateSlotStatus(data.current_slot, data.next_slot);
-                    }
-                } catch (error) {
-                    console.error('Error updating live count:', error);
-                }
+            if (isSunday && sundayNotice) {
+                sundayNotice.style.display = 'block';
+                console.log('📅 Today is Sunday - Non-working day notice displayed');
+            } else if (sundayNotice) {
+                sundayNotice.style.display = 'none';
             }
             
-            // Update slot status banner
-            function updateSlotStatus(currentSlot, nextSlot) {
-                const banner = document.getElementById('slotStatusBanner');
-                const icon = document.getElementById('slotStatusIcon');
-                const message = document.getElementById('slotStatusMessage');
-                const slotInfo = document.getElementById('currentSlotInfo');
+            return isSunday;
+        }
+        
+        // Live count update function with Sunday awareness
+        async function updateLiveCount() {
+            try {
+                const response = await fetch('/api/attendance/live-count');
+                const data = await response.json();
                 
-                if (currentSlot && currentSlot.is_active) {
-                    // Active slot
-                    banner.style.display = 'block';
-                    banner.className = 'mt-3 p-3 rounded-lg bg-green-100 border border-green-300';
-                    icon.textContent = '✅';
-                    message.textContent = `${currentSlot.slot_info.name} - ${currentSlot.time_remaining} minutes remaining`;
-                    slotInfo.textContent = `${currentSlot.slot_info.name} (Active)`;
-                    slotInfo.className = 'font-semibold text-green-600';
-                } else if (nextSlot) {
-                    // No active slot, show next
-                    banner.style.display = 'block';
-                    banner.className = 'mt-3 p-3 rounded-lg bg-blue-100 border border-blue-300';
-                    icon.textContent = '⏰';
-                    const hours = Math.floor(nextSlot.wait_minutes / 60);
-                    const minutes = nextSlot.wait_minutes % 60;
-                    message.textContent = `Next: ${nextSlot.slot_info.name} in ${hours}h ${minutes}m`;
-                    slotInfo.textContent = 'No Active Slot';
-                    slotInfo.className = 'font-semibold text-gray-600';
-                } else {
-                    // No slots today
-                    banner.style.display = 'none';
-                    slotInfo.textContent = 'No Slots Available';
-                    slotInfo.className = 'font-semibold text-gray-400';
-                }
-            }
-            
-            // Navigation functions (updated)
-            async function goHome() {
-                try {
-                    const response = await fetch('/api/session/status');
-                    const sessionData = await response.json();
+                if (data.success) {
+                    document.getElementById('liveStudentCount').textContent = data.total_present;
+                    document.getElementById('totalStudents').textContent = data.total_students;
+                    document.getElementById('attendancePercentage').textContent = data.attendance_percentage + '%';
+                    document.getElementById('lastUpdated').textContent = 'Updated: ' + data.last_updated;
                     
-                    if (sessionData.authenticated) {
-                        if (sessionData.user_type === 'admin') {
-                            window.location.href = '/dashboard';
-                        } else {
-                            showMessage('You are already on your home page!', 'info');
-                        }
-                    } else {
-                        window.location.href = '/login';
+                    // Update slot status
+                    updateSlotStatus(data.current_slot, data.next_slot);
+                    
+                    // Log Sunday status for debugging
+                    const isSunday = checkSundayStatus();
+                    if (isSunday) {
+                        console.log('📊 Sunday attendance statistics:', {
+                            present: data.total_present,
+                            percentage: data.attendance_percentage,
+                            note: 'Sunday attendance visible but not counted in statistics'
+                        });
                     }
-                } catch (error) {
-                    console.error('Navigation error:', error);
+                }
+            } catch (error) {
+                console.error('Error updating live count:', error);
+            }
+        }
+        
+        // Update slot status banner
+        function updateSlotStatus(currentSlot, nextSlot) {
+            const banner = document.getElementById('slotStatusBanner');
+            const icon = document.getElementById('slotStatusIcon');
+            const message = document.getElementById('slotStatusMessage');
+            const slotInfo = document.getElementById('currentSlotInfo');
+            
+            const isSunday = new Date().getDay() === 0;
+            
+            if (currentSlot && currentSlot.is_active) {
+                // Active slot
+                banner.style.display = 'block';
+                banner.className = 'mt-3 p-3 rounded-lg bg-green-100 border border-green-300';
+                icon.textContent = '✅';
+                
+                let timeMsg = `${currentSlot.slot_info.name} - ${currentSlot.time_remaining} minutes remaining`;
+                if (isSunday) {
+                    timeMsg += ' (Sunday - not counted in stats)';
+                }
+                
+                message.textContent = timeMsg;
+                slotInfo.textContent = `${currentSlot.slot_info.name} (Active)`;
+                slotInfo.className = isSunday ? 'font-semibold text-orange-600' : 'font-semibold text-green-600';
+                
+            } else if (nextSlot) {
+                // No active slot, show next
+                banner.style.display = 'block';
+                banner.className = 'mt-3 p-3 rounded-lg bg-blue-100 border border-blue-300';
+                icon.textContent = '⏰';
+                const hours = Math.floor(nextSlot.wait_minutes / 60);
+                const minutes = nextSlot.wait_minutes % 60;
+                message.textContent = `Next: ${nextSlot.slot_info.name} in ${hours}h ${minutes}m`;
+                slotInfo.textContent = 'No Active Slot';
+                slotInfo.className = 'font-semibold text-gray-600';
+                
+            } else {
+                // No slots today
+                banner.style.display = 'none';
+                slotInfo.textContent = 'No Slots Available';
+                slotInfo.className = 'font-semibold text-gray-400';
+            }
+        }
+        
+        // Navigation functions
+        async function goHome() {
+            try {
+                const response = await fetch('/api/session/status');
+                const sessionData = await response.json();
+                
+                if (sessionData.authenticated) {
+                    if (sessionData.user_type === 'admin') {
+                        window.location.href = '/dashboard';
+                    } else {
+                        showMessage('You are already on your home page!', 'info');
+                    }
+                } else {
                     window.location.href = '/login';
                 }
+            } catch (error) {
+                console.error('Navigation error:', error);
+                window.location.href = '/login';
             }
-            
-            async function logout() {
-                try {
-                    const response = await fetch('/api/logout', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    
-                    const result = await response.json();
-                    if (result.success) {
-                        window.location.href = '/login';
-                    } else {
-                        alert('Logout failed: ' + result.message);
+        }
+        
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
                     }
-                } catch (error) {
-                    console.error('Logout error:', error);
+                });
+                
+                const result = await response.json();
+                if (result.success) {
                     window.location.href = '/login';
-                }
-            }
-            
-            // Camera functions (updated)
-            async function startCamera() {
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    document.getElementById('video').srcObject = stream;
-                    
-                    document.getElementById('startBtn').disabled = true;
-                    document.getElementById('stopBtn').disabled = false;
-                    document.getElementById('captureBtn').disabled = false;
-                    
-                    showMessage('Camera started successfully!', 'success');
-                    
-                    // Start automatic detection every 3 seconds
-                    detectionInterval = setInterval(captureFrame, 3000);
-                    
-                    // Start live count updates every 10 seconds
-                    if (!liveCountInterval) {
-                        updateLiveCount(); // Initial update
-                        liveCountInterval = setInterval(updateLiveCount, 10000);
-                    }
-                    
-                } catch (error) {
-                    console.error('Camera error:', error);
-                    showMessage('Camera access failed: ' + error.message, 'error');
-                }
-            }
-            
-            function stopCamera() {
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                
-                if (detectionInterval) {
-                    clearInterval(detectionInterval);
-                    detectionInterval = null;
-                }
-                
-                document.getElementById('startBtn').disabled = false;
-                document.getElementById('stopBtn').disabled = true;
-                document.getElementById('captureBtn').disabled = true;
-                
-                showMessage('Camera stopped', 'info');
-            }
-            
-            // Enhanced detection result display
-            function displayDetectionResults(result) {
-                const resultsDiv = document.getElementById('detectionResults');
-                const outOfSlotDiv = document.getElementById('outOfSlotMessage');
-                const defaultMsg = document.getElementById('defaultDetectionMessage');
-                
-                // Hide default message
-                if (defaultMsg) defaultMsg.style.display = 'none';
-                
-                if (result.success && result.recognized_students && result.recognized_students.length > 0) {
-                    // Successful recognition within slot
-                    outOfSlotDiv.style.display = 'none';
-                    
-                    let html = '';
-                    result.recognized_students.forEach(student => {
-                        const statusColor = student.status === 'marked' ? 'green' : 'orange';
-                        html += `
-                            <div class="p-4 border-l-4 border-${statusColor}-500 bg-${statusColor}-50 rounded-lg">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <h4 class="font-semibold text-gray-800">${student.name}</h4>
-                                        <p class="text-sm text-gray-600">Confidence: ${(student.confidence * 100).toFixed(1)}%</p>
-                                        <p class="text-sm text-gray-600">Slot: ${student.slot_name || 'Current'}</p>
-                                    </div>
-                                    <div class="text-right">
-                                        <span class="px-3 py-1 rounded-full text-sm font-medium bg-${statusColor}-100 text-${statusColor}-800">
-                                            ${student.status === 'marked' ? '✅ Marked' : '⚠️ Already Present'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <p class="text-sm text-gray-600 mt-2">${student.message}</p>
-                            </div>
-                        `;
-                    });
-                    resultsDiv.innerHTML = html;
-                    showMessage(result.message, 'success');
-                    
-                    // Update live count immediately
-                    setTimeout(updateLiveCount, 1000);
-                    
-                } else if (result.outside_slot) {
-                    // Face detected but outside slot
-                    outOfSlotDiv.style.display = 'block';
-                    
-                    let detailsText = result.message;
-                    if (result.next_slot) {
-                        const hours = Math.floor(result.next_slot.wait_minutes / 60);
-                        const minutes = result.next_slot.wait_minutes % 60;
-                        detailsText += ` Next slot: ${result.next_slot.slot_info.name} in ${hours}h ${minutes}m`;
-                    }
-                    
-                    document.getElementById('outOfSlotDetails').textContent = detailsText;
-                    
-                    resultsDiv.innerHTML = `
-                        <div class="text-center text-gray-500 py-8">
-                            <p class="text-lg">👤 Face Detected</p>
-                            <p class="text-sm">Recognition successful, but outside attendance hours</p>
-                        </div>
-                    `;
-                    
-                    showMessage('Face detected outside attendance slot', 'warning');
-                    
                 } else {
-                    // No faces detected or other error
-                    outOfSlotDiv.style.display = 'none';
-                    resultsDiv.innerHTML = `
-                        <div class="text-center text-gray-500 py-8">
-                            <p class="text-lg">❌ ${result.message || 'No faces detected'}</p>
-                            <p class="text-sm">Please position yourself properly in front of the camera</p>
-                        </div>
-                    `;
-                    showMessage(result.message || 'No faces detected', 'warning');
+                    alert('Logout failed: ' + result.message);
                 }
+            } catch (error) {
+                console.error('Logout error:', error);
+                window.location.href = '/login';
             }
-            
-            // Enhanced capture function
-            async function captureFrame() {
-                const video = document.getElementById('video');
-                const canvas = document.getElementById('canvas');
-                const context = canvas.getContext('2d');
+        }
+        
+        // Camera functions
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById('video').srcObject = stream;
                 
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                context.drawImage(video, 0, 0);
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('captureBtn').disabled = false;
                 
-                const imageData = canvas.toDataURL('image/jpeg', 0.8);
-                
-                try {
-                    showMessage('Processing...', 'info');
+                const isSunday = checkSundayStatus();
+                const startMsg = isSunday ? 
+                    'Camera started! (Sunday - attendance visible but not counted)' : 
+                    'Camera started successfully!';
                     
-                    const response = await fetch('/api/detect_attendance_slots', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ image_data: imageData })
-                    });
-                    
-                    const result = await response.json();
-                    displayDetectionResults(result);
-                    
-                } catch (error) {
-                    console.error('Detection error:', error);
-                    showMessage('Detection failed: ' + error.message, 'error');
-                }
-            }
-            
-            function showMessage(message, type) {
-                const statusDiv = document.getElementById('statusMessage');
-                const colors = {
-                    success: 'bg-green-100 text-green-800',
-                    error: 'bg-red-100 text-red-800',
-                    warning: 'bg-yellow-100 text-yellow-800',
-                    info: 'bg-blue-100 text-blue-800'
-                };
+                showMessage(startMsg, isSunday ? 'warning' : 'success');
                 
-                statusDiv.className = `mt-4 p-4 rounded-lg text-center ${colors[type] || colors.info}`;
-                statusDiv.innerHTML = `<p>${message}</p>`;
-            }
-            
-            // Initialize page
-            document.addEventListener('DOMContentLoaded', function() {
-                showMessage('Click "Start Detection" to begin attendance marking', 'info');
-                updateLiveCount(); // Initial count update
+                // Start automatic detection every 3 seconds
+                detectionInterval = setInterval(captureFrame, 3000);
                 
                 // Start live count updates every 10 seconds
-                liveCountInterval = setInterval(updateLiveCount, 10000);
-            });
-            
-            // Cleanup on page unload
-            window.addEventListener('beforeunload', function() {
-                stopCamera();
-                if (liveCountInterval) {
-                    clearInterval(liveCountInterval);
+                if (!liveCountInterval) {
+                    updateLiveCount(); // Initial update
+                    liveCountInterval = setInterval(updateLiveCount, 10000);
                 }
-            });
-        </script>
+                
+            } catch (error) {
+                console.error('Camera error:', error);
+                showMessage('Camera access failed: ' + error.message, 'error');
+            }
+        }
         
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            if (detectionInterval) {
+                clearInterval(detectionInterval);
+                detectionInterval = null;
+            }
+            
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('captureBtn').disabled = true;
+            
+            showMessage('Camera stopped', 'info');
+        }
+        
+        // Enhanced detection result display with Sunday awareness
+        function displayDetectionResults(result) {
+            const resultsDiv = document.getElementById('detectionResults');
+            const outOfSlotDiv = document.getElementById('outOfSlotMessage');
+            const defaultMsg = document.getElementById('defaultDetectionMessage');
+            const isSunday = new Date().getDay() === 0;
+            
+            // Hide default message
+            if (defaultMsg) defaultMsg.style.display = 'none';
+            
+            if (result.success && result.recognized_students && result.recognized_students.length > 0) {
+                // Successful recognition within slot
+                outOfSlotDiv.style.display = 'none';
+                
+                let html = '';
+                result.recognized_students.forEach(student => {
+                    const statusColor = student.status === 'marked' ? 'green' : 'orange';
+                    const sundayNote = isSunday ? ' (Sunday - not counted in stats)' : '';
+                    
+                    html += `
+                        <div class="p-4 border-l-4 border-${statusColor}-500 bg-${statusColor}-50 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h4 class="font-semibold text-gray-800">${student.name}</h4>
+                                    <p class="text-sm text-gray-600">Confidence: ${(student.confidence * 100).toFixed(1)}%</p>
+                                    <p class="text-sm text-gray-600">Slot: ${student.slot_name || 'Current'}${sundayNote}</p>
+                                </div>
+                                <div class="text-right">
+                                    <span class="px-3 py-1 rounded-full text-sm font-medium bg-${statusColor}-100 text-${statusColor}-800">
+                                        ${student.status === 'marked' ? '✅ Marked' : '⚠️ Already Present'}
+                                    </span>
+                                    ${isSunday ? '<div class="text-xs text-orange-600 mt-1">Sunday attendance</div>' : ''}
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-600 mt-2">${student.message}</p>
+                        </div>
+                    `;
+                });
+                resultsDiv.innerHTML = html;
+                
+                const successMsg = isSunday ? 
+                    result.message + ' (Sunday - not counted in statistics)' : 
+                    result.message;
+                showMessage(successMsg, isSunday ? 'warning' : 'success');
+                
+                // Update live count immediately
+                setTimeout(updateLiveCount, 1000);
+                
+            } else if (result.outside_slot) {
+                // Face detected but outside slot
+                outOfSlotDiv.style.display = 'block';
+                
+                let detailsText = result.message;
+                if (result.next_slot) {
+                    const hours = Math.floor(result.next_slot.wait_minutes / 60);
+                    const minutes = result.next_slot.wait_minutes % 60;
+                    detailsText += ` Next slot: ${result.next_slot.slot_info.name} in ${hours}h ${minutes}m`;
+                }
+                
+                document.getElementById('outOfSlotDetails').textContent = detailsText;
+                
+                resultsDiv.innerHTML = `
+                    <div class="text-center text-gray-500 py-8">
+                        <p class="text-lg">👤 Face Detected</p>
+                        <p class="text-sm">Recognition successful, but outside attendance hours</p>
+                        ${isSunday ? '<p class="text-xs text-orange-600 mt-1">Sunday - non-working day</p>' : ''}
+                    </div>
+                `;
+                
+                showMessage('Face detected outside attendance slot', 'warning');
+                
+            } else {
+                // No faces detected or other error
+                outOfSlotDiv.style.display = 'none';
+                resultsDiv.innerHTML = `
+                    <div class="text-center text-gray-500 py-8">
+                        <p class="text-lg">❌ ${result.message || 'No faces detected'}</p>
+                        <p class="text-sm">Please position yourself properly in front of the camera</p>
+                    </div>
+                `;
+                showMessage(result.message || 'No faces detected', 'warning');
+            }
+        }
+        
+        // Enhanced capture function
+        async function captureFrame() {
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0);
+            
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            try {
+                showMessage('Processing...', 'info');
+                
+                const response = await fetch('/api/detect_attendance_slots', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image_data: imageData })
+                });
+                
+                const result = await response.json();
+                displayDetectionResults(result);
+                
+            } catch (error) {
+                console.error('Detection error:', error);
+                showMessage('Detection failed: ' + error.message, 'error');
+            }
+        }
+        
+        function showMessage(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            const colors = {
+                success: 'bg-green-100 text-green-800',
+                error: 'bg-red-100 text-red-800',
+                warning: 'bg-yellow-100 text-yellow-800',
+                info: 'bg-blue-100 text-blue-800'
+            };
+            
+            statusDiv.className = `mt-4 p-4 rounded-lg text-center ${colors[type] || colors.info}`;
+            statusDiv.innerHTML = `<p>${message}</p>`;
+        }
+        
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Live Attendance Detection - Monday-Saturday Working Schedule');
+            
+            // Check and display Sunday status
+            checkSundayStatus();
+            
+            const isSunday = new Date().getDay() === 0;
+            const initMsg = isSunday ? 
+                'Sunday detected - Attendance marking available but not counted in statistics' : 
+                'Click "Start Detection" to begin attendance marking';
+                
+            showMessage(initMsg, isSunday ? 'warning' : 'info');
+            updateLiveCount(); // Initial count update
+            
+            // Start live count updates every 10 seconds
+            liveCountInterval = setInterval(updateLiveCount, 10000);
+        });
+        
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            stopCamera();
+            if (liveCountInterval) {
+                clearInterval(liveCountInterval);
+            }
+        });
+    </script>
 </body>
 </html>

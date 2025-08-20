@@ -636,8 +636,8 @@ class AttendanceSystem:
                 INSERT INTO session_configs (course_id, session_type, start_time, end_time)
                 VALUES (?, ?, ?, ?), (?, ?, ?, ?)
             ''', (
-                course_id, 'morning', '08:30:00', '09:30:00',
-                course_id, 'afternoon', '12:45:00', '13:15:00'
+                    course_id, 'morning', '08:45:00', '09:30:00',
+                    course_id, 'afternoon', '13:45:00', '14:30:00'
             ))
         
         self.conn.commit()
@@ -760,29 +760,187 @@ if __name__ == "__main__":
                 INSERT INTO session_configs (course_id, session_type, start_time, end_time)
                 VALUES (?, ?, ?, ?), (?, ?, ?, ?)
             ''', (
-                course_id, 'morning', '08:30:00', '09:30:00',
-                course_id, 'afternoon', '12:45:00', '13:15:00'
+                course_id, 'morning', '08:45:00', '09:30:00',     # Change these
+                course_id, 'afternoon', '13:45:00', '14:30:00'   # Change these
             ))
-            
-            self.conn.commit()
-            return True, f"Course '{name}' created successfully"
             
         except Exception as e:
             return False, f"Failed to create course: {str(e)}"
 
+    def get_student_slot_attendance_data(self, student_id: int):
+        """Get comprehensive slot-based attendance data for a specific student"""
+        from datetime import date, timedelta, datetime
+        cursor = self.conn.cursor()
+
+        print(f"DEBUG: get_student_slot_attendance_data() - slot-based version")
+        print(f"[DEBUG] Getting attendance for student_id: {student_id}")
+
+        # Get student joining date
+        cursor.execute("SELECT joining_date FROM students WHERE id = ?", (student_id,))
+        joining_row = cursor.fetchone()
+        
+        if joining_row and joining_row[0]:
+            try:
+                start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date()
+            except:
+                start_date = date.today()
+        else:
+            start_date = date.today()
+
+        end_date = date.today()
+        print(f"[DEBUG] Date range: {start_date} to {end_date}")
+
+        # Get slot attendance records (the working data)
+        cursor.execute("""
+            SELECT date, slot_id, created_at
+            FROM slot_attendance 
+            WHERE student_id = ?
+            ORDER BY date, slot_id
+        """, (student_id,))
+        slot_records = cursor.fetchall()
+        print(f"[DEBUG] Found {len(slot_records)} slot records")
+
+        # Get holidays
+        cursor.execute("SELECT date, name, type FROM holidays ORDER BY date")
+        holidays = cursor.fetchall()
+        holiday_dates = []
+        for h in holidays:
+            try:
+                holiday_dates.append(datetime.strptime(h[0], '%Y-%m-%d').date())
+            except:
+                continue
+
+        # Process slot data
+        attendance_dict = {}
+        slot_summary = {}
+        
+        for record in slot_records:
+            date_str, slot_id, created_at = record
+            
+            if date_str not in slot_summary:
+                slot_summary[date_str] = {}
+            
+            # Convert slot_id to session_type for consistency
+            session_type = 'morning' if slot_id == 'morning' else 'afternoon'
+            slot_summary[date_str][session_type] = created_at
+
+        # Calculate attendance for each day
+        full_days = 0
+        half_days = 0
+        total_working_days = 0
+        
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y-%m-%d')
+            
+            # Skip only Sunday (weekday() == 6) and holidays
+            if current_date.weekday() == 6 or current_date in holiday_dates:
+                current_date += timedelta(days=1)
+                continue
+                
+            total_working_days += 1
+            
+            if date_str in slot_summary:
+                sessions = slot_summary[date_str]
+                has_morning = 'morning' in sessions
+                has_afternoon = 'afternoon' in sessions
+                
+                if has_morning and has_afternoon:
+                    attendance_dict[date_str] = 'present'  # Full day
+                    full_days += 1
+                elif has_morning or has_afternoon:
+                    attendance_dict[date_str] = 'partial'  # Half day
+                    half_days += 1
+                else:
+                    attendance_dict[date_str] = 'absent'
+            else:
+                attendance_dict[date_str] = 'absent'
+                
+            current_date += timedelta(days=1)
+
+        absent_days = total_working_days - full_days - half_days
+        
+        # Calculate percentage (full days + half days * 0.5)
+        effective_present_days = full_days + (half_days * 0.5)
+        attendance_percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0
+
+        print(f"[DEBUG] Stats - Full days: {full_days}, Half days: {half_days}, Absent: {absent_days}, Total working: {total_working_days}, Percentage: {attendance_percentage:.1f}%")
+
+        # Add session details to attendance_dict for calendar display
+        attendance_with_sessions = {}
+        for date_str, status in attendance_dict.items():
+            attendance_with_sessions[date_str] = {
+                'status': status,
+                'morning': slot_summary.get(date_str, {}).get('morning'),
+                'afternoon': slot_summary.get(date_str, {}).get('afternoon')
+            }
+
+        return {
+            'success': True,
+            'attendance': attendance_with_sessions,
+            'stats': {
+                'full_days': full_days,
+                'half_days': half_days,
+                'absent_days': absent_days,
+                'holidays': len(holiday_dates),
+                'percentage': round(attendance_percentage, 1),
+                'total_working_days': total_working_days
+            }
+        }
+
     def get_today_attendance(self):
-        """Get today's attendance"""
+        """Get today's session-based attendance"""
         today = datetime.now().date()
         cursor = self.conn.cursor()
+        
         cursor.execute('''
-            SELECT s.name, s.student_id, s.email, a.time_in
+            SELECT s.name, s.student_id, s.email, 
+                sa_morning.arrival_time as morning_time,
+                sa_afternoon.arrival_time as afternoon_time
             FROM students s
-            LEFT JOIN attendance a ON s.id = a.student_id AND a.date = ?
+            LEFT JOIN session_attendance sa_morning ON s.id = sa_morning.student_id 
+                AND sa_morning.date = ? AND sa_morning.session_type = 'morning'
+            LEFT JOIN session_attendance sa_afternoon ON s.id = sa_afternoon.student_id 
+                AND sa_afternoon.date = ? AND sa_afternoon.session_type = 'afternoon'
             WHERE s.status = 'active'
             ORDER BY s.name
-        ''', (today,))
+        ''', (today, today))
         
         return cursor.fetchall()
+    
+    def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
+        """Mark session attendance manually"""
+        cursor = self.conn.cursor()
+        
+        # Check if already marked for this session
+        cursor.execute('''
+            SELECT id FROM session_attendance 
+            WHERE student_id = ? AND date = ? AND session_type = ?
+        ''', (student_id, date_str, session_type))
+        
+        if cursor.fetchone():
+            return False, f"{session_type.title()} session attendance already marked for this date"
+        
+        # Check if holiday
+        cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
+        if cursor.fetchone():
+            return False, "Cannot mark attendance on a holiday"
+        
+        # Get active course
+        course = self.get_active_course()
+        if not course:
+            return False, "No active course found"
+        
+        # Mark session attendance
+        current_time = datetime.now().time().strftime('%H:%M:%S')
+        cursor.execute('''
+            INSERT INTO session_attendance 
+            (student_id, course_id, session_type, date, arrival_time, is_manual, manual_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (student_id, course[0], session_type, date_str, current_time, True, reason))
+        
+        self.conn.commit()
+        return True, f"{session_type.title()} session attendance marked successfully"
         
     def get_student_count(self):
         """Get total number of active students"""
@@ -840,103 +998,160 @@ if __name__ == "__main__":
         }
         
     def get_student_attendance_data(self, student_id: int):
-        """Get comprehensive attendance data for a specific student"""
+        """Get comprehensive session-based attendance data for a specific student"""
         from datetime import date, timedelta, datetime
         cursor = self.conn.cursor()
 
-        print("🚨 DEBUG: get_student_attendance_data() is running")
+        print(f"🚨 DEBUG: get_student_attendance_data() - session-based version")
         print(f"[DEBUG] Getting attendance for student_id: {student_id}")
 
-        # Get attendance records
+        # Get student joining date
+        cursor.execute("SELECT joining_date FROM students WHERE id = ?", (student_id,))
+        joining_row = cursor.fetchone()
+        
+        if joining_row and joining_row[0]:
+            try:
+                start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date()
+            except:
+                start_date = date.today()
+        else:
+            start_date = date.today()
+
+        # FIX: Define end_date properly
+        end_date = date.today()  # Only process up to today, not future dates
+        print(f"[DEBUG] Date range: {start_date} to {end_date}")
+
+        # Get session attendance records
         cursor.execute("""
-            SELECT date, time_in, is_manual, manual_reason
-            FROM attendance 
+            SELECT date, session_type, arrival_time, is_manual, manual_reason
+            FROM session_attendance 
             WHERE student_id = ?
-            ORDER BY date
+            ORDER BY date, session_type
         """, (student_id,))
-        attendance_records = cursor.fetchall()
-        print(f"[DEBUG] Found {len(attendance_records)} attendance records")
+        session_records = cursor.fetchall()
+        print(f"[DEBUG] Found {len(session_records)} session records")
 
         # Get holidays
         cursor.execute("SELECT date, name, type FROM holidays ORDER BY date")
         holidays = cursor.fetchall()
-        print(f"[DEBUG] Found {len(holidays)} holidays")
-
-        present_days = len(attendance_records)
-        # Use student's joining date directly
-        cursor.execute("SELECT joining_date FROM students WHERE id = ?", (student_id,))
-        joining_row = cursor.fetchone()
-        print(f"[DEBUG] Raw joining_row for student {student_id}: {joining_row}")
-
-        if joining_row and joining_row[0]:
-            try:
-                if isinstance(joining_row[0], str):
-                    start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date()
-                else:
-                    start_date = joining_row[0]
-                print(f"[DEBUG] Using joining date as start: {start_date}")
-            except Exception as e:
-                print(f"[DEBUG] Error parsing joining_date: {e}")
-                start_date = date.today()
-        else:
-            print(f"[DEBUG] No joining date found, using today")
-            start_date = date.today()
-
-        # End date is always today
-        end_date = date.today()
-        print(f"[DEBUG] Academic year: {start_date} to {end_date}")
-
-        # Count working days
-        total_working_days = 0
-        current_date = start_date
         holiday_dates = []
-
         for h in holidays:
             try:
                 holiday_dates.append(datetime.strptime(h[0], '%Y-%m-%d').date())
             except:
                 continue
 
-        while current_date <= min(end_date, date.today()):
-            if current_date.weekday() < 5 and current_date not in holiday_dates:
-                total_working_days += 1
-            current_date += timedelta(days=1)
-
-        print(f"[DEBUG] Total working days: {total_working_days}")
-
-        # Calculate percentage
-        attendance_percentage = (present_days / total_working_days * 100) if total_working_days > 0 else 0
-
-        # Format for calendar - create attendance dictionary
+        # Process session data
         attendance_dict = {}
-        for record in attendance_records:
-            attendance_dict[record[0]] = 'present'
+        session_summary = {}
+        
+        for record in session_records:
+            date_str, session_type, arrival_time, is_manual, manual_reason = record
+            
+            if date_str not in session_summary:
+                session_summary[date_str] = {}
+            
+            session_summary[date_str][session_type] = arrival_time
 
-        # Add absent days for working days only
+        # Calculate attendance for each day
+        full_days = 0
+        half_days = 0
+        total_working_days = 0
+        
         current_date = start_date
-        while current_date <= min(end_date, date.today()):
+        while current_date <= end_date:
             date_str = current_date.strftime('%Y-%m-%d')
-            if (current_date.weekday() < 5 and
-                current_date not in holiday_dates and
-                date_str not in attendance_dict):
+            
+            # Skip only Sunday (weekday() == 6) and holidays - Saturday is a working day
+            if current_date.weekday() == 6 or current_date in holiday_dates:
+                current_date += timedelta(days=1)
+                continue
+                
+            total_working_days += 1
+            
+            if date_str in session_summary:
+                sessions = session_summary[date_str]
+                has_morning = 'morning' in sessions
+                has_afternoon = 'afternoon' in sessions
+                
+                if has_morning and has_afternoon:
+                    attendance_dict[date_str] = 'present'  # Full day
+                    full_days += 1
+                elif has_morning or has_afternoon:
+                    attendance_dict[date_str] = 'partial'  # Half day
+                    half_days += 1
+                else:
+                    attendance_dict[date_str] = 'absent'
+            else:
                 attendance_dict[date_str] = 'absent'
+                
             current_date += timedelta(days=1)
 
-        absent_days = len([d for d in attendance_dict.values() if d == 'absent'])
+        absent_days = total_working_days - full_days - half_days
+        
+        # Calculate percentage (full days + half days * 0.5)
+        effective_present_days = full_days + (half_days * 0.5)
+        attendance_percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0
 
-        print(f"[DEBUG] Final stats - Present: {present_days}, Absent: {absent_days}, Holidays: {len(holiday_dates)}, Percentage: {attendance_percentage:.1f}%")
+        print(f"[DEBUG] Stats - Full days: {full_days}, Half days: {half_days}, Absent: {absent_days}, Total working: {total_working_days}, Percentage: {attendance_percentage:.1f}%")
+
+        # Add session details to attendance_dict for calendar display
+        attendance_with_sessions = {}
+        for date_str, status in attendance_dict.items():
+            attendance_with_sessions[date_str] = {
+                'status': status,
+                'morning': session_summary.get(date_str, {}).get('morning'),
+                'afternoon': session_summary.get(date_str, {}).get('afternoon')
+            }
 
         return {
             'success': True,
-            'attendance': attendance_dict,
+            'attendance': attendance_with_sessions,
             'stats': {
-                'present_days': present_days,
+                'full_days': full_days,
+                'half_days': half_days,
                 'absent_days': absent_days,
                 'holidays': len(holiday_dates),
                 'percentage': round(attendance_percentage, 1),
                 'total_working_days': total_working_days
             }
         }
+
+    def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
+        """Mark session attendance manually"""
+        cursor = self.conn.cursor()
+        
+        # Check if already marked for this session
+        cursor.execute('''
+            SELECT id FROM session_attendance 
+            WHERE student_id = ? AND date = ? AND session_type = ?
+        ''', (student_id, date_str, session_type))
+        
+        if cursor.fetchone():
+            return False, f"{session_type.title()} session attendance already marked for this date"
+        
+        # Check if holiday
+        cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
+        if cursor.fetchone():
+            return False, "Cannot mark attendance on a holiday"
+        
+        # Get active course
+        course = self.get_active_course()
+        if not course:
+            return False, "No active course found"
+        
+        # Mark session attendance
+        current_time = datetime.now().time().strftime('%H:%M:%S')
+        cursor.execute('''
+            INSERT INTO session_attendance 
+            (student_id, course_id, session_type, date, arrival_time, is_manual, manual_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (student_id, course[0], session_type, date_str, current_time, True, reason))
+        
+        self.conn.commit()
+        return True, f"{session_type.title()} session attendance marked successfully"
+
+
 
     def delete_holiday(self, holiday_id: int):
         """Delete a holiday"""
@@ -1294,6 +1509,17 @@ async def students_page(request: Request, session: Dict[str, Any] = Depends(requ
         "request": request,
         "face_recognition_available": FACE_RECOGNITION_AVAILABLE
     })
+
+@app.get("/api/attendance/student/{student_id}/slots")
+async def get_student_slot_attendance(student_id: int):
+    """Get detailed slot-based attendance data for a specific student"""
+    try:
+        data = attendance_system.get_student_slot_attendance_data(student_id)
+        return data
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+    
+
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
@@ -1743,6 +1969,7 @@ async def session_status(session: Optional[Dict[str, Any]] = Depends(get_current
         }
 
 
+
 @app.get("/api/navigation/home")
 async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
     """Smart home navigation based on user type"""
@@ -1759,16 +1986,38 @@ async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_
         return {"success": True, "redirect_url": "/attendance", "message": "You are already on your home page"}
     else:
         return {"success": False, "redirect_url": "/login", "message": "Invalid session"}
+    
 
-@app.post("/api/attendance/bulk-export")
-async def bulk_export_attendance(export_data: BulkExportRequest):
-    """Export bulk attendance data as CSV"""
+@app.post("/api/attendance/manual/session")
+async def mark_manual_session_attendance_api(data: dict = Body(...)):
+    """Mark session attendance manually"""
+    try:
+        success, message = attendance_system.mark_manual_session_attendance(
+            data['student_id'],
+            data['date'],
+            data['session_type'],
+            data.get('reason')
+        )
+        return {"success": success, "message": message}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/attendance/bulk-export")
+async def bulk_export_attendance(
+    start_date: str,
+    end_date: str,
+    format: str,
+    include_weekends: bool = False,
+    include_holidays: bool = False
+):
+    """Export bulk slot-based attendance data as CSV"""
     try:
         from fastapi.responses import StreamingResponse
         import csv
         
-        start_date = datetime.strptime(export_data.start_date, '%Y-%m-%d').date()
-        end_date = datetime.strptime(export_data.end_date, '%Y-%m-%d').date()
+        start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
         
         cursor = attendance_system.conn.cursor()
         
@@ -1778,126 +2027,166 @@ async def bulk_export_attendance(export_data: BulkExportRequest):
         
         # Get holidays if not including them
         holiday_dates = []
-        if not export_data.include_holidays:
+        if not include_holidays:
             cursor.execute('SELECT date FROM holidays')
             holiday_dates = [datetime.strptime(row[0], '%Y-%m-%d').date() for row in cursor.fetchall()]
         
         output = io.StringIO()
         writer = csv.writer(output)
         
-        if export_data.format == 'daily':
-            # Daily format - one row per date
-            writer.writerow(['Date', 'Day', 'Present Students', 'Absent Students', 'Total Students'])
+        if format == 'daily_summary':  # FIXED: was 'daily'
+            writer.writerow(['Date', 'Day', 'Total Students', 'Full Day Present', 'Half Day Present', 'Absent', 'Morning Sessions', 'Afternoon Sessions'])
             
-            current_date = start_date
-            while current_date <= end_date:
-                # Skip weekends if not included
-                if not export_data.include_weekends and current_date.weekday() >= 5:
+            current_date = start_date_obj  # FIXED: use _obj version
+            while current_date <= end_date_obj:  # FIXED: use _obj version
+                if not include_weekends and current_date.weekday() == 6:
                     current_date += timedelta(days=1)
                     continue
                 
-                # Skip holidays if not included
                 if current_date in holiday_dates:
                     current_date += timedelta(days=1)
                     continue
                 
-                # Get attendance for this date
-                cursor.execute('''
-                    SELECT COUNT(*) FROM attendance 
-                    WHERE date = ? AND student_id IN (SELECT id FROM students WHERE status = "active")
-                ''', (current_date.strftime('%Y-%m-%d'),))
-                present_count = cursor.fetchone()[0]
-                
-                absent_count = len(students) - present_count
+                date_str = current_date.strftime('%Y-%m-%d')
                 day_name = current_date.strftime('%A')
                 
+                # Count morning sessions (FROM SLOT_ATTENDANCE)
+                cursor.execute('''
+                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
+                    WHERE date = ? AND slot_id = 'morning'
+                ''', (date_str,))
+                morning_count = cursor.fetchone()[0]
+                
+                # Count afternoon sessions (FROM SLOT_ATTENDANCE)
+                cursor.execute('''
+                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
+                    WHERE date = ? AND slot_id = 'afternoon'
+                ''', (date_str,))
+                afternoon_count = cursor.fetchone()[0]
+                
+                # Count students with both sessions
+                cursor.execute('''
+                    SELECT student_id FROM slot_attendance 
+                    WHERE date = ? 
+                    GROUP BY student_id 
+                    HAVING COUNT(DISTINCT slot_id) = 2
+                ''', (date_str,))
+                full_day_records = cursor.fetchall()
+                full_day_count = len(full_day_records)
+                
+                # Total unique students
+                cursor.execute('''
+                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
+                    WHERE date = ?
+                ''', (date_str,))
+                total_present_students = cursor.fetchone()[0]
+                half_day_count = total_present_students - full_day_count
+                
+                absent_count = len(students) - total_present_students
+                
                 writer.writerow([
-                    current_date.strftime('%Y-%m-%d'),
-                    day_name,
-                    present_count,
-                    absent_count,
-                    len(students)
+                    date_str, day_name, len(students),
+                    full_day_count, half_day_count, absent_count,
+                    morning_count, afternoon_count
                 ])
                 
                 current_date += timedelta(days=1)
                 
-        elif export_data.format == 'student':
-            # Student-wise format
-            writer.writerow(['Student Name', 'Student ID', 'Email', 'Present Days', 'Absent Days', 'Attendance %'])
+        elif format == 'student_summary':  # FIXED: was 'student'
+            writer.writerow(['Student Name', 'Student ID', 'Email', 'Full Days', 'Half Days', 'Absent Days', 'Total Sessions', 'Attendance %'])
             
             for student in students:
                 student_id, name, student_id_str, email = student
                 
-                # Get attendance records for this student in date range
+                # Get slot data for this student (FROM SLOT_ATTENDANCE)
                 cursor.execute('''
-                    SELECT COUNT(*) FROM attendance 
+                    SELECT date, COUNT(DISTINCT slot_id) as session_count
+                    FROM slot_attendance 
                     WHERE student_id = ? AND date BETWEEN ? AND ?
-                ''', (student_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
-                present_days = cursor.fetchone()[0]
+                    GROUP BY date
+                ''', (student_id, start_date, end_date))  # FIXED: use string versions
                 
-                # Calculate total working days for this student
-                total_days = 0
-                current_date = start_date
-                while current_date <= end_date:
-                    if not export_data.include_weekends and current_date.weekday() >= 5:
+                daily_sessions = cursor.fetchall()
+                
+                full_days = sum(1 for _, count in daily_sessions if count == 2)
+                half_days = sum(1 for _, count in daily_sessions if count == 1)
+                
+                # Get total session count
+                cursor.execute('''
+                    SELECT COUNT(*) FROM slot_attendance 
+                    WHERE student_id = ? AND date BETWEEN ? AND ?
+                ''', (student_id, start_date, end_date))  # FIXED: use string versions
+                total_sessions = cursor.fetchone()[0]
+                
+                # Calculate working days
+                total_working_days = 0
+                current_date = start_date_obj  # FIXED: use _obj version
+                while current_date <= end_date_obj:  # FIXED: use _obj version
+                    if not include_weekends and current_date.weekday() == 6:
                         current_date += timedelta(days=1)
                         continue
                     if current_date in holiday_dates:
                         current_date += timedelta(days=1)
                         continue
-                    total_days += 1
+                    total_working_days += 1
                     current_date += timedelta(days=1)
                 
-                absent_days = total_days - present_days
-                percentage = (present_days / total_days * 100) if total_days > 0 else 0
+                absent_days = total_working_days - full_days - half_days
+                effective_present_days = full_days + (half_days * 0.5)
+                percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0
                 
                 writer.writerow([
-                    name,
-                    student_id_str,
-                    email,
-                    present_days,
-                    absent_days,
+                    name, student_id_str, email,
+                    full_days, half_days, absent_days, total_sessions,
                     f"{percentage:.1f}%"
                 ])
                 
-        else:  # summary format
-            writer.writerow(['Summary Report'])
+        else:  # 'session_detailed' format
+            writer.writerow(['Slot-Based Attendance Summary Report'])
             writer.writerow(['Date Range', f"{start_date} to {end_date}"])
             writer.writerow(['Total Students', len(students)])
             writer.writerow([])
-            writer.writerow(['Date', 'Present', 'Absent', 'Percentage'])
+            writer.writerow(['Date', 'Day', 'Full Day', 'Half Day', 'Absent', 'Morning', 'Afternoon', 'Attendance %'])
             
-            current_date = start_date
-            while current_date <= end_date:
-                if not export_data.include_weekends and current_date.weekday() >= 5:
+            current_date = start_date_obj  # FIXED: use _obj version
+            while current_date <= end_date_obj:  # FIXED: use _obj version
+                if not include_weekends and current_date.weekday() == 6:
                     current_date += timedelta(days=1)
                     continue
                 if current_date in holiday_dates:
                     current_date += timedelta(days=1)
                     continue
                 
-                cursor.execute('''
-                    SELECT COUNT(*) FROM attendance 
-                    WHERE date = ? AND student_id IN (SELECT id FROM students WHERE status = "active")
-                ''', (current_date.strftime('%Y-%m-%d'),))
-                present_count = cursor.fetchone()[0]
+                date_str = current_date.strftime('%Y-%m-%d')
+                day_name = current_date.strftime('%A')
                 
-                absent_count = len(students) - present_count
-                percentage = (present_count / len(students) * 100) if len(students) > 0 else 0
+                # Same calculations using slot_attendance
+                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id = "morning"', (date_str,))
+                morning_count = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id = "afternoon"', (date_str,))
+                afternoon_count = cursor.fetchone()[0]
+                
+                cursor.execute('SELECT student_id FROM slot_attendance WHERE date = ? GROUP BY student_id HAVING COUNT(DISTINCT slot_id) = 2', (date_str,))
+                full_day_count = len(cursor.fetchall())
+                
+                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ?', (date_str,))
+                total_present_students = cursor.fetchone()[0]
+                half_day_count = total_present_students - full_day_count
+                
+                absent_count = len(students) - total_present_students
+                effective_present = full_day_count + (half_day_count * 0.5)
+                percentage = (effective_present / len(students) * 100) if len(students) > 0 else 0
                 
                 writer.writerow([
-                    current_date.strftime('%Y-%m-%d'),
-                    present_count,
-                    absent_count,
-                    f"{percentage:.1f}%"
+                    date_str, day_name, full_day_count, half_day_count, absent_count,
+                    morning_count, afternoon_count, f"{percentage:.1f}%"
                 ])
                 
                 current_date += timedelta(days=1)
         
         output.seek(0)
-        
-        # Generate filename
-        filename = f"attendance_bulk_{export_data.format}_{start_date}_{end_date}.csv"
+        filename = f"slot_attendance_bulk_{format}_{start_date}_{end_date}.csv"
         
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode()),
@@ -1907,11 +2196,45 @@ async def bulk_export_attendance(export_data: BulkExportRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+    
+    
+@app.get("/api/students/{student_id}")
+async def get_student_details(student_id: int):
+    """Get individual student details including joining date"""
+    try:
+        cursor = attendance_system.conn.cursor()
+        cursor.execute('''
+            SELECT id, student_id, name, email, photo_count, verification_score, 
+                   joining_date, created_at, status
+            FROM students 
+            WHERE id = ? AND status = "active"
+        ''', (student_id,))
+        
+        student = cursor.fetchone()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found")
+        
+        return {
+            "success": True,
+            "student": {
+                "id": student[0],
+                "student_id": student[1],
+                "name": student[2],
+                "email": student[3],
+                "photo_count": student[4] or 0,
+                "verification_score": round(student[5] or 0, 3),
+                "joining_date": student[6],
+                "created_at": student[7],
+                "status": student[8]
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 
 @app.get("/api/attendance/export/{student_id}")
 async def export_student_attendance(student_id: int):
-    """Export individual student attendance as CSV"""
+    """Export individual student slot attendance as CSV"""
     try:
         from fastapi.responses import StreamingResponse
         import csv
@@ -1927,16 +2250,23 @@ async def export_student_attendance(student_id: int):
             raise HTTPException(status_code=404, detail="Student not found")
         
         student_name, student_id_str, email = student
+        print(f"[DEBUG] Exporting for student: {student_name} (ID: {student_id})")
         
-        # Get attendance records
+        # Debug: Check table structure
+        cursor.execute("PRAGMA table_info(slot_attendance)")
+        columns = cursor.fetchall()
+        print(f"[DEBUG] slot_attendance columns: {[col[1] for col in columns]}")
+        
+        # Get slot attendance records
         cursor.execute('''
-            SELECT date, time_in, is_manual, manual_reason
-            FROM attendance 
+            SELECT date, slot_id, created_at
+            FROM slot_attendance 
             WHERE student_id = ?
-            ORDER BY date DESC
+            ORDER BY date DESC, slot_id
         ''', (student_id,))
         
-        attendance_records = cursor.fetchall()
+        slot_records = cursor.fetchall()
+        print(f"[DEBUG] Found {len(slot_records)} slot records for export")
         
         # Create CSV content
         output = io.StringIO()
@@ -1945,31 +2275,46 @@ async def export_student_attendance(student_id: int):
         # Headers
         writer.writerow([
             'Student Name', 'Student ID', 'Email', 'Date', 'Day', 
-            'Status', 'Time In', 'Type', 'Reason'
+            'Session Type', 'Arrival Time', 'Status', 'Type', 'Reason'
         ])
         
-        # Add attendance records
-        for record in attendance_records:
-            date_str, time_in, is_manual, manual_reason = record
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-            day_name = date_obj.strftime('%A')
-            
+        # Add slot records
+        if slot_records:
+            for record in slot_records:
+                date_str, slot_id, created_at = record
+                print(f"[DEBUG] Processing record: {date_str}, {slot_id}, {created_at}")
+                
+                try:
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    day_name = date_obj.strftime('%A')
+                except:
+                    day_name = 'Unknown'
+                
+                # Convert slot_id to session_type
+                session_type = 'Morning' if slot_id == 'morning' else 'Afternoon'
+                
+                writer.writerow([
+                    student_name,
+                    student_id_str,
+                    email,
+                    date_str,
+                    day_name,
+                    session_type,
+                    created_at or '-',
+                    'Present',
+                    'Face Recognition',
+                    '-'
+                ])
+        else:
+            # Add a row indicating no data found
             writer.writerow([
-                student_name,
-                student_id_str,
-                email,
-                date_str,
-                day_name,
-                'Present',
-                time_in or '-',
-                'Manual' if is_manual else 'Automatic',
-                manual_reason or '-'
+                student_name, student_id_str, email, 
+                'No Data', 'No attendance records found', 
+                '-', '-', '-', '-', '-'
             ])
         
         output.seek(0)
-        
-        # Generate filename
-        filename = f"attendance_{student_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv"
+        filename = f"slot_attendance_{student_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.csv"
         
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode()),
@@ -1978,50 +2323,10 @@ async def export_student_attendance(student_id: int):
         )
         
     except Exception as e:
+        print(f"[ERROR] Export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
-
-@app.get("/api/attendance/export/bulk")
-async def bulk_export_attendance_get(
-    start_date: str,
-    end_date: str,
-    format: str = "daily",
-    include_weekends: bool = False,
-    include_holidays: bool = False
-):
-    """Export bulk attendance data as CSV (GET version)"""
-    # Convert query parameters to BulkExportRequest object
-    export_data = BulkExportRequest(
-        start_date=start_date,
-        end_date=end_date,
-        format=format,
-        include_weekends=include_weekends,
-        include_holidays=include_holidays
-    )
     
-    # Reuse your existing bulk export logic
-    return await bulk_export_attendance(export_data)
 
-
-@app.get("/api/attendance/export/bulk")
-async def bulk_export_attendance_get(
-    start_date: str,
-    end_date: str,
-    format: str = "daily",
-    include_weekends: bool = False,
-    include_holidays: bool = False
-):
-    """Export bulk attendance data as CSV (GET version)"""
-    # Convert query parameters to BulkExportRequest object
-    export_data = BulkExportRequest(
-        start_date=start_date,
-        end_date=end_date,
-        format=format,
-        include_weekends=include_weekends,
-        include_holidays=include_holidays
-    )
-    
-    # Reuse your existing bulk export logic
-    return await bulk_export_attendance(export_data)
 
 
 
@@ -2031,6 +2336,43 @@ add_phase1_api_endpoints(app, attendance_system)
 
 
 
+
+@app.get("/api/attendance/student/{student_id}/sessions")
+async def get_student_session_attendance(student_id: int):
+    """Get detailed session-based attendance data for a specific student"""
+    try:
+        data = attendance_system.get_student_attendance_data(student_id)
+        return data
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+    
+
+
+@app.get("/api/attendance/today/slots")
+async def get_today_slot_attendance():
+    """Get today's slot-based attendance (the working system)"""
+    try:
+        today = datetime.now().date()
+        cursor = attendance_system.conn.cursor()
+        
+        cursor.execute('''
+            SELECT s.name, s.student_id, s.email, 
+                   sa_morning.created_at as morning_time,
+                   sa_afternoon.created_at as afternoon_time
+            FROM students s
+            LEFT JOIN slot_attendance sa_morning ON s.id = sa_morning.student_id 
+                AND sa_morning.date = ? AND sa_morning.slot_id = 'morning'
+            LEFT JOIN slot_attendance sa_afternoon ON s.id = sa_afternoon.student_id 
+                AND sa_afternoon.date = ? AND sa_afternoon.slot_id = 'afternoon'  
+            WHERE s.status = 'active'
+            ORDER BY s.name
+        ''', (today, today))
+        
+        return cursor.fetchall()
+        
+    except Exception as e:
+        print(f"Error loading slot attendance: {e}")
+        return []
 
 @app.get("/api/attendance/live-count")
 async def get_live_attendance_count():
