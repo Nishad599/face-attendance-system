@@ -37,8 +37,6 @@ debug_photos/
 buffalo_l.zip
 buffalo_l/
 
-# Face encodings (regenerated from photos)
-face_encodings/
 
 # Scripts (can be recreated)
 backup_students.sh
@@ -46,8 +44,7 @@ create_backup_scripts.sh
 start_server.sh
 
 # OS files
-.DS_Store
-Thumbs.db
+
 fix.py
 sync_db_to_vm.sh
 *.backup_*

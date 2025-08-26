@@ -6,7 +6,7 @@
     <title>Attendance Management System</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
-    <style>
+   <style>
         /* Base styles */
         body {
             margin: 0;
@@ -25,7 +25,7 @@
             top: 0; left: 0; right: 0;
             width: 100%;
             z-index: 10000;
-            padding: 12px 0;
+            padding: 12px 0; 
         }
         .cdac-container {
             max-width: 1400px;
@@ -472,7 +472,7 @@
             font-weight: 700;
         }
 
-        .calendar-day.present {
+        .calendar-container .calendar-grid .calendar-day.present {
             background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             color: white;
         }
@@ -912,12 +912,6 @@
                         </div>
 
                         <div class="actions-bar">
-                            <button class="btn btn-success" onclick="markManualAttendance('morning')">
-                                ✓ Mark Morning Session
-                            </button>
-                            <button class="btn btn-success" onclick="markManualAttendance('afternoon')">
-                                ✓ Mark Afternoon Session
-                            </button>
                             <button class="btn btn-warning" onclick="showDatePicker()">
                                 📅 Mark by Date
                             </button>
@@ -1405,7 +1399,23 @@
                     // Process attendance for working days
                     else if (selectedStudent && isPastDate && dayOfWeek !== 0 && isAfterJoining) {
                         const sessionData = studentAttendanceData[dateString];
-                        
+
+                        if (dateString === '2025-08-01' || dateString === '2025-08-02' || dateString === '2025-08-04' || dateString === '2025-08-19') {
+                            console.log(`DEBUG ${dateString}:`, {
+                                sessionData: sessionData,
+                                hasMorning: sessionData?.morning,
+                                hasAfternoon: sessionData?.afternoon,
+                                morningTruthy: !!sessionData?.morning,
+                                afternoonTruthy: !!sessionData?.afternoon,
+                                isPastDate: isPastDate,
+                                isAfterJoining: isAfterJoining,
+                                dayOfWeek: dayOfWeek,
+                                selectedStudent: selectedStudent
+                            });
+                        }
+
+
+
                         if (sessionData) {
                             // Has session data
                             const sessionBadges = document.createElement('div');
@@ -1416,6 +1426,10 @@
                             
                             if (hasMorning && hasAfternoon) {
                                 dayElement.classList.add('present');
+                                if (dateString === '2025-08-01' || dateString === '2025-08-04' || dateString === '2025-08-19') {
+                                    console.log(`${dateString} - Adding 'present' class. Classes:`, dayElement.classList.toString());
+                                }
+
                                 dayElement.title = `Full Day Present\nMorning: ${sessionData.morning}\nAfternoon: ${sessionData.afternoon}`;
                                 
                                 const morningBadge = document.createElement('div');
@@ -1597,18 +1611,7 @@
             }
         }
 
-        // Enhanced manual attendance for sessions
-        function markManualAttendance(sessionType) {
-            if (!selectedStudent) {
-                alert('Please select a student first');
-                return;
-            }
-            
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('attendanceDate').value = today;
-            document.getElementById('sessionType').value = sessionType;
-            document.getElementById('manualAttendanceModal').style.display = 'block';
-        }
+
 
         function showDatePicker() {
             if (!selectedStudent) {

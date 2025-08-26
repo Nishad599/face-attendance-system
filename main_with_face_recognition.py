@@ -27,7 +27,11 @@ import secrets
 import hashlib
 from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
 from attendance_manager import create_slot_manager_instance
+import pytz
 
+# Convert to a specific timezone (e.g., Asia/Kolkata)
+timezone = pytz.timezone('Asia/Kolkata')
+localized_time = timezone.localize(datetime(2025, 8, 1))
 
 
 # Add system path for OpenCV
@@ -783,16 +787,17 @@ if __name__ == "__main__":
             try:
                 start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date()
             except:
-                start_date = date.today()
+                start_date = date(2025, 1, 1)  # Start of year if parsing fails
         else:
-            start_date = date.today()
+            start_date = date(2025, 1, 1)  
 
-        end_date = date.today()
+        timezone = pytz.timezone('Asia/Kolkata')
+        end_date = datetime.now(timezone).date()  # Ensure end_date is in the correct timezone
         print(f"[DEBUG] Date range: {start_date} to {end_date}")
 
         # Get slot attendance records (the working data)
         cursor.execute("""
-            SELECT date, slot_id, created_at
+            SELECT date, slot_id, time_marked
             FROM slot_attendance 
             WHERE student_id = ?
             ORDER BY date, slot_id
@@ -815,14 +820,14 @@ if __name__ == "__main__":
         slot_summary = {}
         
         for record in slot_records:
-            date_str, slot_id, created_at = record
+            date_str, slot_id, time_marked = record
             
             if date_str not in slot_summary:
                 slot_summary[date_str] = {}
             
             # Convert slot_id to session_type for consistency
             session_type = 'morning' if slot_id == 'morning' else 'afternoon'
-            slot_summary[date_str][session_type] = created_at
+            slot_summary[date_str][session_type] = time_marked
 
         # Calculate attendance for each day
         full_days = 0
@@ -837,7 +842,7 @@ if __name__ == "__main__":
             if current_date.weekday() == 6 or current_date in holiday_dates:
                 current_date += timedelta(days=1)
                 continue
-                
+                    
             total_working_days += 1
             
             if date_str in slot_summary:
@@ -888,11 +893,14 @@ if __name__ == "__main__":
             }
         }
 
+
+
     def get_today_attendance(self):
-        """Get today's session-based attendance"""
-        today = datetime.now().date()
+        """Get today's session-based attendance with proper timezone handling"""
+        timezone = pytz.timezone('Asia/Kolkata')  # Ensure to use your desired timezone
+        today = datetime.now(timezone).date()  # Localize to the right timezone
         cursor = self.conn.cursor()
-        
+
         cursor.execute('''
             SELECT s.name, s.student_id, s.email, 
                 sa_morning.arrival_time as morning_time,
@@ -905,17 +913,18 @@ if __name__ == "__main__":
             WHERE s.status = 'active'
             ORDER BY s.name
         ''', (today, today))
-        
+
         return cursor.fetchall()
+
     
     def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
-        """Mark session attendance manually"""
+        """Mark session attendance manually - FIXED to use slot_attendance"""
         cursor = self.conn.cursor()
         
-        # Check if already marked for this session
+        # Check if already marked for this session in slot_attendance
         cursor.execute('''
-            SELECT id FROM session_attendance 
-            WHERE student_id = ? AND date = ? AND session_type = ?
+            SELECT id FROM slot_attendance 
+            WHERE student_id = ? AND date = ? AND slot_id = ?
         ''', (student_id, date_str, session_type))
         
         if cursor.fetchone():
@@ -926,18 +935,13 @@ if __name__ == "__main__":
         if cursor.fetchone():
             return False, "Cannot mark attendance on a holiday"
         
-        # Get active course
-        course = self.get_active_course()
-        if not course:
-            return False, "No active course found"
-        
-        # Mark session attendance
+        # Mark session attendance in slot_attendance table (NOT session_attendance)
         current_time = datetime.now().time().strftime('%H:%M:%S')
         cursor.execute('''
-            INSERT INTO session_attendance 
-            (student_id, course_id, session_type, date, arrival_time, is_manual, manual_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (student_id, course[0], session_type, date_str, current_time, True, reason))
+            INSERT INTO slot_attendance 
+            (student_id, date, slot_id, time_marked, is_manual, manual_reason)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (student_id, date_str, session_type, current_time, True, reason))
         
         self.conn.commit()
         return True, f"{session_type.title()} session attendance marked successfully"
@@ -948,29 +952,7 @@ if __name__ == "__main__":
         cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
         return cursor.fetchone()[0]
            
-    def mark_manual_attendance(self, student_id: int, date_str: str, reason: str = None):
-        """Mark attendance manually"""
-        cursor = self.conn.cursor()
-        
-        # Check if exists
-        cursor.execute('SELECT id FROM attendance WHERE student_id = ? AND date = ?', 
-                      (student_id, date_str))
-        if cursor.fetchone():
-            return False, "Attendance already marked for this date"
-        
-        # Check if holiday
-        cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
-        if cursor.fetchone():
-            return False, "Cannot mark attendance on a holiday"
-        
-        # Mark attendance
-        cursor.execute('''
-            INSERT INTO attendance (student_id, date, time_in, is_manual, manual_reason)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (student_id, date_str, datetime.now().time().strftime('%H:%M:%S'), True, reason))
-        
-        self.conn.commit()
-        return True, "Attendance marked successfully"
+
 
     def add_holiday(self, date_str: str, name: str, holiday_type: str):
         """Add a holiday"""
@@ -1117,40 +1099,7 @@ if __name__ == "__main__":
             }
         }
 
-    def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
-        """Mark session attendance manually"""
-        cursor = self.conn.cursor()
-        
-        # Check if already marked for this session
-        cursor.execute('''
-            SELECT id FROM session_attendance 
-            WHERE student_id = ? AND date = ? AND session_type = ?
-        ''', (student_id, date_str, session_type))
-        
-        if cursor.fetchone():
-            return False, f"{session_type.title()} session attendance already marked for this date"
-        
-        # Check if holiday
-        cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
-        if cursor.fetchone():
-            return False, "Cannot mark attendance on a holiday"
-        
-        # Get active course
-        course = self.get_active_course()
-        if not course:
-            return False, "No active course found"
-        
-        # Mark session attendance
-        current_time = datetime.now().time().strftime('%H:%M:%S')
-        cursor.execute('''
-            INSERT INTO session_attendance 
-            (student_id, course_id, session_type, date, arrival_time, is_manual, manual_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (student_id, course[0], session_type, date_str, current_time, True, reason))
-        
-        self.conn.commit()
-        return True, f"{session_type.title()} session attendance marked successfully"
-
+   
 
 
     def delete_holiday(self, holiday_id: int):
@@ -1803,18 +1752,7 @@ async def get_student_attendance(student_id: int):
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-@app.post("/api/attendance/manual")
-async def mark_manual_attendance_api(attendance_data: ManualAttendance):
-    """Mark attendance manually for a student"""
-    try:
-        success, message = attendance_system.mark_manual_attendance(
-            attendance_data.student_id,
-            attendance_data.date,
-            attendance_data.reason
-        )
-        return {"success": success, "message": message}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+
 
 @app.get("/api/holidays")
 async def get_holidays_api():
