@@ -993,7 +993,7 @@ if __name__ == "__main__":
         
         if joining_row and joining_row[0]:
             try:
-                start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date()
+                start_date = datetime.strptime(joining_row[0], '%Y-%m-%d').date() + timedelta(days=1)
             except:
                 start_date = date.today()
         else:
@@ -1759,6 +1759,61 @@ async def get_holidays_api():
     """Get all holidays"""
     try:
         return attendance_system.get_holidays()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+    
+@app.get("/api/admin/session-config")
+async def get_session_configuration(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Get current session configuration"""
+    try:
+        manager = create_slot_manager_instance()
+        config = manager.get_session_configs()
+        return {"success": True, "config": config}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.put("/api/admin/session-config/{session_type}")
+async def update_session_configuration(
+    session_type: str, 
+    data: dict = Body(...),
+    session: Dict[str, Any] = Depends(require_admin_access)
+):
+    """Update session timing configuration"""
+    try:
+        manager = create_slot_manager_instance()
+        success, message = manager.update_session_timing(
+            session_type=session_type,
+            start_time=data['start_time'],
+            end_time=data['end_time']
+        )
+        return {"success": success, "message": message}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/admin/current-slots")
+async def get_current_slot_info(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Get current active slot and next slot information"""
+    try:
+        manager = create_slot_manager_instance()
+        current_slot = manager.get_current_slot()
+        next_slot = manager.get_next_slot()
+        
+        return {
+            "success": True,
+            "current_slot": current_slot,
+            "next_slot": next_slot,
+            "all_slots": manager.attendance_slots
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/admin/reload-slot-config")
+async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Reload slot configuration from database"""
+    try:
+        manager = create_slot_manager_instance()
+        manager.reload_config()
+        return {"success": True, "message": "Slot configuration reloaded successfully"}
     except Exception as e:
         return {"success": False, "message": str(e)}
 

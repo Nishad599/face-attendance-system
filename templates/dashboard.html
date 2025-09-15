@@ -173,9 +173,6 @@
             padding: 2rem 1rem;
         }
 
-
-
-        
         /* Navigation grid */
         .nav-grid {
             display: grid;
@@ -274,6 +271,7 @@
             padding: 2rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             border: 1px solid #e2e8f0;
+            margin-bottom: 2rem;
         }
 
         .section-header {
@@ -287,13 +285,13 @@
 
         .section-header h2 {
             font-size: 1.75rem;
-            color: black !important;;
+            color: black !important;
             margin: 0;
         }
 
-.datetime-info strong {
-    color: black !important;
-}
+        .datetime-info strong {
+            color: black !important;
+        }
 
         /* Working schedule info */
         .schedule-info {
@@ -351,7 +349,6 @@
             font-weight: 500;
         }
 
-
         /* Stats grid */
         .stats-grid {
             display: grid;
@@ -391,6 +388,223 @@
         .stat-card:nth-child(2) .stat-number { color: #10b981; }
         .stat-card:nth-child(3) .stat-number { color: #ef4444; }
         .stat-card:nth-child(4) .stat-number { color: #f59e0b; }
+
+        /* Session Configuration Styles */
+        .session-config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+            margin: 1.5rem 0;
+        }
+
+        .session-config-item {
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .session-config-item.active {
+            border-color: #10b981;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+        }
+
+        .session-config-item.inactive {
+            border-color: #ef4444;
+            background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
+            opacity: 0.7;
+        }
+
+        .session-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .session-header h4 {
+            margin: 0;
+            color: #1a202c;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-badge.active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .current-timing {
+            background: #eff6ff;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            color: #1e40af;
+            text-align: center;
+        }
+
+        .time-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .input-group input:disabled {
+            background: #f9fafb;
+            color: #6b7280;
+            cursor: not-allowed;
+        }
+
+        .btn-update {
+            width: 100%;
+            margin-top: 1rem;
+            padding: 0.875rem;
+            font-weight: 600;
+        }
+
+        .inactive-message {
+            text-align: center;
+            color: #6b7280;
+            font-style: italic;
+            padding: 1rem;
+            background: #f9fafb;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .session-info {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e5e7eb;
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        .info-item {
+            margin-bottom: 0.25rem;
+        }
+
+        /* Status Banner Styles */
+        .status-banner {
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .active-slot {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            color: #065f46;
+            border: 2px solid #10b981;
+        }
+
+        .next-slot {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+            border: 2px solid #f59e0b;
+        }
+
+        .no-slots {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #991b1b;
+            border: 2px solid #ef4444;
+        }
+
+        .status-icon {
+            font-size: 1.2rem;
+            margin-right: 0.5rem;
+        }
+
+        .time-info {
+            font-weight: 500;
+            margin-left: 0.5rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            justify-content: center;
+        }
+
+        /* Notification Styles */
+        .notification {
+            position: fixed;
+            top: 100px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 300px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .notification.success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+
+        .notification.error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+
+        .notification.info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        }
+
+        .notification button {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
 
         /* Mobile responsive */
         @media (max-width: 768px) {
@@ -454,6 +668,25 @@
             .stats-grid {
                 grid-template-columns: repeat(2, 1fr);
                 gap: 1rem;
+            }
+
+            .session-config-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            
+            .time-inputs {
+                grid-template-columns: 1fr;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+            }
+            
+            .notification {
+                left: 10px;
+                right: 10px;
+                min-width: auto;
             }
         }
     </style>
@@ -546,6 +779,25 @@
                 <div class="nav-card-desc">Edit student information and data</div>
                 <div class="btn btn-secondary">Manage</div>
             </a>
+        </div>
+
+        <!-- Session Configuration Management -->
+        <div class="attendance-section">
+            <div class="section-header">
+                <h2>⚙️ Attendance Slot Configuration</h2>
+                <div>
+                    <button class="btn btn-primary" onclick="loadSessionConfig()">🔄 Refresh</button>
+                    <button class="btn btn-success" onclick="testCurrentSlot()">🕐 Check Current</button>
+                </div>
+            </div>
+            
+            <div class="current-status" id="currentSlotStatus">
+                <!-- Will show current active slot status -->
+            </div>
+            
+            <div id="sessionConfigContainer">
+                <!-- Will be populated by JavaScript -->
+            </div>
         </div>
 
         <!-- Dashboard Overview -->
@@ -654,7 +906,6 @@
                     
                 } else {
                     console.error('Failed to load dashboard stats:', data.message);
-                    // Set default values on error
                     setDefaultStats();
                 }
                 
@@ -669,6 +920,234 @@
             document.getElementById('presentToday').textContent = '0';
             document.getElementById('absentToday').textContent = '0';
             document.getElementById('attendanceRate').textContent = '0%';
+        }
+
+        // Session Configuration Management Functions
+        async function loadSessionConfig() {
+            try {
+                const response = await fetch('/api/admin/session-config');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displaySessionConfig(data.config);
+                    await loadCurrentSlotStatus();
+                } else {
+                    alert('Failed to load session configuration: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error loading session configuration:', error);
+                alert('Error loading session configuration');
+            }
+        }
+
+        async function loadCurrentSlotStatus() {
+            try {
+                const response = await fetch('/api/admin/current-slots');
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayCurrentSlotStatus(data);
+                }
+            } catch (error) {
+                console.error('Error loading current slot status:', error);
+            }
+        }
+
+        function displayCurrentSlotStatus(data) {
+            const statusContainer = document.getElementById('currentSlotStatus');
+            const currentSlot = data.current_slot;
+            const nextSlot = data.next_slot;
+            
+            let statusHtml = '<div class="status-banner">';
+            
+            if (currentSlot) {
+                statusHtml += `
+                    <div class="active-slot">
+                        <span class="status-icon">🟢</span>
+                        <strong>ACTIVE SLOT:</strong> ${currentSlot.slot_info.name}
+                        <span class="time-info">(${currentSlot.time_remaining} minutes remaining)</span>
+                    </div>
+                `;
+            } else if (nextSlot) {
+                const hours = Math.floor(nextSlot.wait_minutes / 60);
+                const minutes = nextSlot.wait_minutes % 60;
+                statusHtml += `
+                    <div class="next-slot">
+                        <span class="status-icon">🟡</span>
+                        <strong>NEXT SLOT:</strong> ${nextSlot.slot_info.name}
+                        <span class="time-info">(in ${hours}h ${minutes}m)</span>
+                    </div>
+                `;
+            } else {
+                statusHtml += `
+                    <div class="no-slots">
+                        <span class="status-icon">🔴</span>
+                        <strong>NO ACTIVE SLOTS</strong>
+                        <span class="time-info">(Outside attendance hours)</span>
+                    </div>
+                `;
+            }
+            
+            statusHtml += '</div>';
+            statusContainer.innerHTML = statusHtml;
+        }
+
+        function displaySessionConfig(config) {
+            const container = document.getElementById('sessionConfigContainer');
+            
+            let html = '<div class="session-config-grid">';
+            
+            config.forEach(session => {
+                const startTime = session.start_time.substring(0, 5);
+                const endTime = session.end_time.substring(0, 5);
+                const isActive = session.is_active;
+                
+                html += `
+                    <div class="session-config-item ${isActive ? 'active' : 'inactive'}">
+                        <div class="session-header">
+                            <h4>${session.session_type.toUpperCase()} Session</h4>
+                            <span class="status-badge ${isActive ? 'active' : 'inactive'}">
+                                ${isActive ? 'Active' : 'Inactive'}
+                            </span>
+                        </div>
+                        
+                        <div class="current-timing">
+                            <strong>Current:</strong> ${startTime} - ${endTime}
+                        </div>
+                        
+                        <div class="time-inputs">
+                            <div class="input-group">
+                                <label>Start Time:</label>
+                                <input type="time" id="start_${session.session_type}" value="${startTime}" 
+                                       ${!isActive ? 'disabled' : ''}>
+                            </div>
+                            
+                            <div class="input-group">
+                                <label>End Time:</label>
+                                <input type="time" id="end_${session.session_type}" value="${endTime}"
+                                       ${!isActive ? 'disabled' : ''}>
+                            </div>
+                        </div>
+                        
+                        ${isActive ? `
+                            <button class="btn btn-success btn-update" onclick="updateSessionTiming('${session.session_type}')">
+                                💾 Update ${session.session_type} Session
+                            </button>
+                        ` : `
+                            <div class="inactive-message">Session is inactive</div>
+                        `}
+                        
+                        <div class="session-info">
+                            <div class="info-item">Course ID: ${session.course_id}</div>
+                            <div class="info-item">Configuration ID: ${session.id}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function updateSessionTiming(sessionType) {
+            const startTime = document.getElementById(`start_${sessionType}`).value;
+            const endTime = document.getElementById(`end_${sessionType}`).value;
+            
+            if (!startTime || !endTime) {
+                alert('Please fill both start and end times');
+                return;
+            }
+            
+            if (startTime >= endTime) {
+                alert('Start time must be before end time');
+                return;
+            }
+            
+            const confirmed = confirm(
+                `Are you sure you want to update ${sessionType} session timing to ${startTime} - ${endTime}?\n\n` +
+                `This will take effect immediately and may affect ongoing attendance marking.`
+            );
+            
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`/api/admin/session-config/${sessionType}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        start_time: startTime,
+                        end_time: endTime
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showNotification(result.message, 'success');
+                    await loadSessionConfig();
+                    await fetch('/api/admin/reload-slot-config', { method: 'POST' });
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error updating session:', error);
+                alert('Failed to update session configuration');
+            }
+        }
+
+        async function testCurrentSlot() {
+            try {
+                const response = await fetch('/api/admin/current-slots');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const currentSlot = data.current_slot;
+                    
+                    if (currentSlot) {
+                        alert(
+                            `Current Active Slot:\n` +
+                            `${currentSlot.slot_info.name}\n` +
+                            `Time Remaining: ${currentSlot.time_remaining} minutes\n` +
+                            `Slot Period: ${currentSlot.slot_info.start_time.slice(0,5)} - ${currentSlot.slot_info.end_time.slice(0,5)}`
+                        );
+                    } else {
+                        const nextSlot = data.next_slot;
+                        if (nextSlot) {
+                            const hours = Math.floor(nextSlot.wait_minutes / 60);
+                            const minutes = nextSlot.wait_minutes % 60;
+                            alert(
+                                `No Active Slot\n\n` +
+                                `Next Slot: ${nextSlot.slot_info.name}\n` +
+                                `Starts in: ${hours}h ${minutes}m\n` +
+                                `Slot Period: ${nextSlot.slot_info.start_time.slice(0,5)} - ${nextSlot.slot_info.end_time.slice(0,5)}`
+                            );
+                        } else {
+                            alert('No attendance slots available today');
+                        }
+                    }
+                    
+                    displayCurrentSlotStatus(data);
+                }
+            } catch (error) {
+                alert('Error checking current slot');
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <span>${message}</span>
+                <button onclick="this.parentElement.remove()">×</button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentElement) {
+                    notification.remove();
+                }
+            }, 5000);
         }
 
         // Enhanced logout functionality
@@ -686,18 +1165,14 @@
                     const result = await response.json();
                     
                     if (result.success) {
-                        // Clear any local storage/session storage
                         localStorage.clear();
                         sessionStorage.clear();
-                        
-                        // Redirect to login
                         window.location.href = '/login';
                     } else {
                         alert('Logout failed: ' + result.message);
                     }
                 } catch (error) {
                     console.error('Logout error:', error);
-                    // Force redirect to login even if API fails
                     window.location.href = '/login';
                 }
             }
@@ -712,7 +1187,6 @@
                 const result = await response.json();
                 
                 if (!result.authenticated) {
-                    // Session expired, redirect to login
                     console.log('Session expired, redirecting to login');
                     window.location.href = '/login';
                 }
@@ -723,19 +1197,17 @@
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Dashboard initialized with Monday-Saturday working schedule');
+            console.log('🚀 Dashboard initialized with configurable slot management');
             
-            // Check and display Sunday status
             checkSundayStatus();
-            
-            // Initialize time and stats
             updateDateTime();
             loadDashboardStats();
+            loadSessionConfig();
             
-            // Set up auto-refresh intervals
-            setInterval(updateDateTime, 1000);        // Update time every second
-            setInterval(loadDashboardStats, 30000);   // Refresh stats every 30 seconds
-            setInterval(checkSession, 5 * 60 * 1000); // Check session every 5 minutes
+            setInterval(updateDateTime, 1000);
+            setInterval(loadDashboardStats, 30000);
+            setInterval(loadCurrentSlotStatus, 30000);
+            setInterval(checkSession, 5 * 60 * 1000);
             
             const isSunday = new Date().getDay() === 0;
             if (isSunday) {
@@ -743,11 +1215,10 @@
             }
         });
 
-        // Check session on page visibility change
         document.addEventListener('visibilitychange', function() {
             if (!document.hidden) {
                 checkSession();
-                checkSundayStatus(); // Recheck Sunday status when page becomes visible
+                checkSundayStatus();
             }
         });
     </script>

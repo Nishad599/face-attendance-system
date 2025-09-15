@@ -1,7 +1,8 @@
 # attendance_manager.py
 """
-Enhanced Attendance Manager with Time-based Slots and Live Counting
+Enhanced Attendance Manager with Configurable Time-based Slots and Live Counting
 Handles attendance marking within specific time slots and provides real-time student count
+Now reads slot timings from session_configs database table for admin configurability
 """
 
 import sqlite3
@@ -14,30 +15,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AttendanceSlotManager:
-    """Manages time-based attendance slots and live student counting"""
+    """Manages configurable time-based attendance slots and live student counting"""
     
     def __init__(self, db_path: str = 'attendance.db'):
         self.db_path = db_path
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.init_slot_tables()
         
-        # Define attendance slots
-        self.attendance_slots = {
-            'morning': {
-                'name': 'Morning Session',
-                'start_time': time(8, 45),    # FIXED: 8:45 AM
-                'end_time': time(9, 30),      # 9:30 AM (unchanged)
-                'slot_id': 'morning'
-            },
-            'afternoon': {
-                'name': 'Afternoon Session', 
-                'start_time': time(13, 45),   # 1:45 PM (unchanged)
-                'end_time': time(14, 30),     # FIXED: 2:30 PM
-                'slot_id': 'afternoon'
-            }
-        }
-
-        logger.info("AttendanceSlotManager initialized with slots: Morning (8:45-9:30 AM), Afternoon (1:45-2:30 PM)")
+        # Load attendance slots from database instead of hardcoded values
+        self.attendance_slots = self.load_session_configs()
+        
+        # Ensure we have default configs if none exist
+        self.ensure_default_configs()
+        
+        # Log loaded configuration
+        slot_info = ", ".join([
+            f"{slot['name']} ({slot['start_time'].strftime('%H:%M')}-{slot['end_time'].strftime('%H:%M')})"
+            for slot in self.attendance_slots.values()
+        ])
+        logger.info(f"AttendanceSlotManager initialized with configurable slots: {slot_info}")
             
     def init_slot_tables(self):
         """Initialize database tables for slot-based attendance"""
@@ -75,6 +71,90 @@ class AttendanceSlotManager:
         
         self.conn.commit()
         logger.info("Slot attendance tables initialized")
+    
+    def load_session_configs(self):
+        """Load slot configuration from existing session_configs table"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT session_type, start_time, end_time 
+            FROM session_configs 
+            WHERE is_active = 1
+            ORDER BY start_time
+        ''')
+        
+        slots = {}
+        for row in cursor.fetchall():
+            session_type, start_time_str, end_time_str = row
+            
+            try:
+                start_time = datetime.strptime(start_time_str, '%H:%M:%S').time()
+                end_time = datetime.strptime(end_time_str, '%H:%M:%S').time()
+            except ValueError:
+                # Fallback for different time formats
+                start_time = datetime.strptime(start_time_str, '%H:%M').time()
+                end_time = datetime.strptime(end_time_str, '%H:%M').time()
+            
+            # Map session_type to slot_id and create display name
+            slot_id = session_type.lower()
+            name = f"{session_type.title()} Session"
+            
+            slots[slot_id] = {
+                'name': name,
+                'start_time': start_time,
+                'end_time': end_time,
+                'slot_id': slot_id
+            }
+        
+        return slots
+    
+    def ensure_default_configs(self):
+        """Ensure default session configurations exist"""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM session_configs WHERE is_active = 1')
+        
+        if cursor.fetchone()[0] == 0:
+            logger.info("No active session configs found, creating defaults")
+            
+            # Get or create default course
+            cursor.execute('SELECT id FROM courses WHERE is_active = 1 LIMIT 1')
+            course_row = cursor.fetchone()
+            
+            if course_row:
+                course_id = course_row[0]
+            else:
+                # Create default course
+                cursor.execute('''
+                    INSERT INTO courses (name, start_date, end_date, description)
+                    VALUES (?, ?, ?, ?)
+                ''', (
+                    "Default Course",
+                    "2025-01-01",
+                    "2025-12-31", 
+                    "Default course for attendance system"
+                ))
+                course_id = cursor.lastrowid
+            
+            # Create default session configs
+            cursor.execute('''
+                INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                VALUES 
+                (?, 'morning', '08:45:00', '09:30:00', 1),
+                (?, 'afternoon', '13:45:00', '14:30:00', 1)
+            ''', (course_id, course_id))
+            
+            self.conn.commit()
+            
+            # Reload slots after creating defaults
+            self.attendance_slots = self.load_session_configs()
+    
+    def reload_config(self):
+        """Reload slot configuration from database"""
+        self.attendance_slots = self.load_session_configs()
+        slot_info = ", ".join([
+            f"{slot['name']} ({slot['start_time'].strftime('%H:%M')}-{slot['end_time'].strftime('%H:%M')})"
+            for slot in self.attendance_slots.values()
+        ])
+        logger.info(f"Slot configuration reloaded: {slot_info}")
     
     def get_current_slot(self, check_time: Optional[datetime] = None) -> Optional[Dict]:
         """
@@ -135,6 +215,78 @@ class AttendanceSlotManager:
                     }
         
         return next_slot
+    
+    def update_session_timing(self, session_type: str, start_time: str, end_time: str):
+        """Update session timing in session_configs table"""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Validate time format and logic
+            try:
+                start_time_obj = datetime.strptime(start_time, '%H:%M').time()
+                end_time_obj = datetime.strptime(end_time, '%H:%M').time()
+            except ValueError:
+                return False, "Invalid time format. Use HH:MM format."
+            
+            if start_time_obj >= end_time_obj:
+                return False, "Start time must be before end time"
+            
+            # Check for overlapping slots
+            other_session = 'afternoon' if session_type == 'morning' else 'morning'
+            cursor.execute('''
+                SELECT start_time, end_time FROM session_configs 
+                WHERE session_type = ? AND is_active = 1
+            ''', (other_session,))
+            
+            other_row = cursor.fetchone()
+            if other_row:
+                other_start = datetime.strptime(other_row[0], '%H:%M:%S').time()
+                other_end = datetime.strptime(other_row[1], '%H:%M:%S').time()
+                
+                # Check for overlap
+                if not (end_time_obj <= other_start or start_time_obj >= other_end):
+                    return False, f"Time slot overlaps with {other_session} session"
+            
+            # Update existing session_configs table
+            cursor.execute('''
+                UPDATE session_configs 
+                SET start_time = ?, end_time = ?
+                WHERE session_type = ? AND is_active = 1
+            ''', (start_time + ':00', end_time + ':00', session_type))
+            
+            if cursor.rowcount > 0:
+                self.conn.commit()
+                # Reload configuration
+                self.reload_config()
+                return True, f"Session '{session_type}' updated successfully to {start_time}-{end_time}"
+            else:
+                return False, "Session not found"
+                
+        except Exception as e:
+            logger.error(f"Error updating session timing: {str(e)}")
+            return False, f"Error updating session: {str(e)}"
+    
+    def get_session_configs(self):
+        """Get current session configuration"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT id, course_id, session_type, start_time, end_time, is_active
+            FROM session_configs
+            ORDER BY start_time
+        ''')
+        
+        configs = []
+        for row in cursor.fetchall():
+            configs.append({
+                'id': row[0],
+                'course_id': row[1],
+                'session_type': row[2],
+                'start_time': row[3],
+                'end_time': row[4],
+                'is_active': bool(row[5])
+            })
+        
+        return configs
     
     def mark_attendance_with_slot(self, student_id: int, detection_confidence: float = 0.0, 
                                  force_slot: Optional[str] = None) -> Dict:
@@ -502,7 +654,7 @@ if __name__ == "__main__":
     # Test the AttendanceSlotManager
     manager = AttendanceSlotManager()
     
-    print("=== Attendance Slot Manager Test ===")
+    print("=== Configurable Attendance Slot Manager Test ===")
     
     # Test current slot
     current_slot = manager.get_current_slot()
@@ -518,5 +670,9 @@ if __name__ == "__main__":
     # Test live count
     count_data = manager.get_live_student_count()
     print(f"\nLive attendance count: {count_data}")
+    
+    # Test configuration
+    configs = manager.get_session_configs()
+    print(f"\nCurrent configurations: {configs}")
     
     print("\n=== Test completed ===")
