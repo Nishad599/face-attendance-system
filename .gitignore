@@ -49,3 +49,7 @@ fix.py
 sync_db_to_vm.sh
 *.backup_*
 fix_*.py
+*.db
+student_photos/
+__pycache__/
+*.pyc
