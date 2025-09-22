@@ -53,3 +53,18 @@ fix_*.py
 student_photos/
 __pycache__/
 *.pyc
+
+
+# Database files
+attendance.db
+attendance.db-journal
+attendance.db-wal
+attendance.db-shm
+
+
+
+# SQLite backup files
+*.db-backup
+*.sqlite
+*.sqlite3
+attendance.db

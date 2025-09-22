@@ -3,16 +3,37 @@
 Enhanced Attendance Manager with Configurable Time-based Slots and Live Counting
 Handles attendance marking within specific time slots and provides real-time student count
 Now reads slot timings from session_configs database table for admin configurability
+Fixed with proper IST timezone handling
 """
 
 import sqlite3
 from datetime import datetime, time
 from typing import Dict, List, Tuple, Optional
 import logging
+import pytz
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# IST timezone constant
+IST = pytz.timezone('Asia/Kolkata')
+
+def get_ist_time():
+    """Get current IST time"""
+    return datetime.now(IST)
+
+def get_ist_date_str():
+    """Get current IST date as string"""
+    return get_ist_time().date().strftime('%Y-%m-%d')
+
+def get_ist_time_str():
+    """Get current IST time as string"""
+    return get_ist_time().strftime('%H:%M:%S')
+
+def get_ist_timestamp_str():
+    """Get current IST timestamp as string"""
+    return get_ist_time().strftime('%Y-%m-%d %H:%M:%S')
 
 class AttendanceSlotManager:
     """Manages configurable time-based attendance slots and live student counting"""
@@ -46,11 +67,11 @@ class AttendanceSlotManager:
                 student_id INTEGER NOT NULL,
                 date DATE NOT NULL,
                 slot_id TEXT NOT NULL,
-                time_marked TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                time_marked TEXT NOT NULL,
                 detection_confidence REAL,
                 is_manual BOOLEAN DEFAULT FALSE,
                 manual_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL,
                 FOREIGN KEY (student_id) REFERENCES students (id),
                 UNIQUE(student_id, date, slot_id)
             )
@@ -65,7 +86,7 @@ class AttendanceSlotManager:
                 present_morning INTEGER DEFAULT 0,
                 present_afternoon INTEGER DEFAULT 0,
                 total_present INTEGER DEFAULT 0,
-                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_updated TEXT NOT NULL
             )
         ''')
         
@@ -161,13 +182,13 @@ class AttendanceSlotManager:
         Check if current time falls within any attendance slot
         
         Args:
-            check_time: Optional datetime to check, defaults to now
+            check_time: Optional datetime to check, defaults to IST now
             
         Returns:
             Dict with slot info if within slot, None otherwise
         """
         if check_time is None:
-            check_time = datetime.now()
+            check_time = get_ist_time()
         
         current_time = check_time.time()
         
@@ -191,7 +212,7 @@ class AttendanceSlotManager:
     def get_next_slot(self, check_time: Optional[datetime] = None) -> Optional[Dict]:
         """Get information about the next upcoming slot"""
         if check_time is None:
-            check_time = datetime.now()
+            check_time = get_ist_time()
             
         current_time = check_time.time()
         next_slot = None
@@ -302,8 +323,11 @@ class AttendanceSlotManager:
             Dict with success status and message
         """
         try:
-            current_time = datetime.now()
-            today_str = current_time.date().strftime('%Y-%m-%d')
+            # Use IST timezone consistently
+            current_time = get_ist_time()
+            today_str = get_ist_date_str()
+            current_timestamp = get_ist_timestamp_str()
+            current_time_only = get_ist_time_str()
             
             # Check if we're in a valid slot (unless forced)
             if force_slot:
@@ -372,19 +396,20 @@ class AttendanceSlotManager:
                     'slot_name': slot_name
                 }
             
-            # Mark attendance in slot_attendance table
+            # Mark attendance in slot_attendance table with explicit IST timestamps
             cursor.execute('''
                 INSERT INTO slot_attendance 
-                (student_id, date, slot_id, detection_confidence, is_manual)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (student_id, today_str, slot_id, detection_confidence, force_slot is not None))
+                (student_id, date, slot_id, time_marked, detection_confidence, is_manual, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, today_str, slot_id, current_timestamp, detection_confidence, 
+                  force_slot is not None, current_timestamp))
             
             # Also mark in main attendance table for compatibility
             cursor.execute('''
                 INSERT OR IGNORE INTO attendance 
                 (student_id, date, time_in, is_manual, manual_reason)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (student_id, today_str, current_time.time().strftime('%H:%M:%S'), 
+            ''', (student_id, today_str, current_time_only, 
                   force_slot is not None, f'{slot_name} slot attendance'))
             
             self.conn.commit()
@@ -392,7 +417,7 @@ class AttendanceSlotManager:
             # Update daily summary
             self.update_daily_summary(today_str)
             
-            logger.info(f"Attendance marked: {student_name} ({student_id_str}) - {slot_name}")
+            logger.info(f"Attendance marked: {student_name} ({student_id_str}) - {slot_name} at {current_timestamp}")
             
             return {
                 'success': True,
@@ -402,7 +427,7 @@ class AttendanceSlotManager:
                 'student_id': student_id_str,
                 'slot_name': slot_name,
                 'slot_id': slot_id,
-                'time_marked': current_time.strftime('%H:%M:%S'),
+                'time_marked': current_timestamp,
                 'confidence': detection_confidence
             }
             
@@ -419,13 +444,13 @@ class AttendanceSlotManager:
         Get live count of students present today
         
         Args:
-            date_str: Date to check, defaults to today
+            date_str: Date to check, defaults to IST today
             
         Returns:
             Dict with detailed attendance counts
         """
         if date_str is None:
-            date_str = datetime.now().date().strftime('%Y-%m-%d')
+            date_str = get_ist_date_str()
         
         try:
             cursor = self.conn.cursor()
@@ -474,7 +499,7 @@ class AttendanceSlotManager:
                 'attendance_percentage': round(attendance_percentage, 1),
                 'current_slot': current_slot,
                 'next_slot': next_slot,
-                'last_updated': datetime.now().strftime('%H:%M:%S')
+                'last_updated': get_ist_time_str()
             }
             
         except Exception as e:
@@ -514,12 +539,12 @@ class AttendanceSlotManager:
             ''', (date_str,))
             total_present = cursor.fetchone()[0]
             
-            # Update summary
+            # Update summary with IST timestamp
             cursor.execute('''
                 INSERT OR REPLACE INTO daily_attendance_summary
                 (date, total_students, present_morning, present_afternoon, total_present, last_updated)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (date_str, total_students, morning_count, afternoon_count, total_present))
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
             
             self.conn.commit()
             
@@ -529,7 +554,7 @@ class AttendanceSlotManager:
     def get_slot_attendance_details(self, date_str: Optional[str] = None) -> Dict:
         """Get detailed attendance information by slot"""
         if date_str is None:
-            date_str = datetime.now().date().strftime('%Y-%m-%d')
+            date_str = get_ist_date_str()
         
         try:
             cursor = self.conn.cursor()
@@ -675,4 +700,5 @@ if __name__ == "__main__":
     configs = manager.get_session_configs()
     print(f"\nCurrent configurations: {configs}")
     
+    print(f"\nCurrent IST time: {get_ist_timestamp_str()}")
     print("\n=== Test completed ===")

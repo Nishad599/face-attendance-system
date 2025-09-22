@@ -936,7 +936,9 @@ if __name__ == "__main__":
             return False, "Cannot mark attendance on a holiday"
         
         # Mark session attendance in slot_attendance table (NOT session_attendance)
-        current_time = datetime.now().time().strftime('%H:%M:%S')
+        timezone = pytz.timezone('Asia/Kolkata')
+        current_time = datetime.now(timezone).strftime('%H:%M:%S')
+
         cursor.execute('''
             INSERT INTO slot_attendance 
             (student_id, date, slot_id, time_marked, is_manual, manual_reason)
@@ -1546,7 +1548,9 @@ async def detect_attendance(image_data: DetectionImage):
                     student_name = attendance_system.known_face_names[best_match_index]
                     
                     # Check if already marked today
-                    today = datetime.now().date()
+                    timezone = pytz.timezone('Asia/Kolkata')
+                    today = datetime.now(timezone).date()
+                    current_time = datetime.now(timezone).strftime('%H:%M:%S')
                     cursor = attendance_system.conn.cursor()
                     cursor.execute('SELECT id FROM attendance WHERE student_id = ? AND date = ?', 
                                  (student_id, today))
@@ -2346,7 +2350,11 @@ async def get_today_slot_attendance():
     """Get today's slot-based attendance (the working system)"""
     try:
         today = datetime.now().date()
+        timezone = pytz.timezone('Asia/Kolkata')
+        today = datetime.now(timezone).date()
         cursor = attendance_system.conn.cursor()
+
+
         
         cursor.execute('''
             SELECT s.name, s.student_id, s.email, 
