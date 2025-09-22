@@ -68,3 +68,5 @@ attendance.db-shm
 *.sqlite
 *.sqlite3
 attendance.db
+attendance.db
+*.db
