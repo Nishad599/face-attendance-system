@@ -29,6 +29,7 @@ import pytz
 import csv
 from io import StringIO
 from analytics_manager import AnalyticsManager
+from anti_spoofing import anti_spoof_checker
 
 # Initialize managers
 attendance_manager = create_slot_manager_instance()
@@ -46,18 +47,18 @@ sys.path.insert(0, '/usr/lib/python3/dist-packages')
 try:
     import cv2
     OPENCV_AVAILABLE = True
-    print("✅ OpenCV available")
+    print("[OK] OpenCV available")
 except ImportError:
     OPENCV_AVAILABLE = False
-    print("❌ OpenCV not available")
+    print("[ERROR] OpenCV not available")
 
-try:
-    import face_recognition
-    FACE_RECOGNITION_AVAILABLE = True
-    print("✅ Face recognition available")
-except ImportError:
-    FACE_RECOGNITION_AVAILABLE = False
-    print("❌ Face recognition not available - using basic mode")
+from asian_face_model import INSIGHTFACE_AVAILABLE as FACE_RECOGNITION_AVAILABLE
+import numpy as np
+
+if FACE_RECOGNITION_AVAILABLE:
+    print("[OK] Face recognition available (InsightFace)")
+else:
+    print("[ERROR] Face recognition not available - using basic mode")
 
 class ManualAttendance(BaseModel):
     student_id: int
@@ -254,7 +255,7 @@ class AttendanceSystem:
     def load_student_faces(self):
         """Load all student face encodings from database with dimension detection"""
         if not hasattr(asian_face_recognizer, 'use_insightface') or not asian_face_recognizer.use_insightface:
-            print("⚠️  buffalo_l model not available")
+            print("[WARN]  buffalo_l model not available")
             return
         
         cursor = self.conn.cursor()
@@ -280,15 +281,15 @@ class AttendanceSystem:
             most_common_dim = max(set(embedding_dimensions), key=embedding_dimensions.count)
             if most_common_dim == 512:
                 self.embedding_method = "insightface"
-                print(f"📊 Loaded {len(self.known_face_encodings)} student faces (InsightFace 512D)")
+                print(f"[STATS] Loaded {len(self.known_face_encodings)} student faces (InsightFace 512D)")
             elif most_common_dim == 128:
                 self.embedding_method = "face_recognition"
-                print(f"📊 Loaded {len(self.known_face_encodings)} student faces (face_recognition 128D)")
+                print(f"[STATS] Loaded {len(self.known_face_encodings)} student faces (face_recognition 128D)")
             else:
-                print(f"⚠️  Unknown embedding dimension: {most_common_dim}")
+                print(f"[WARN]  Unknown embedding dimension: {most_common_dim}")
                 self.embedding_method = "unknown"
         else:
-            print("📊 No student faces loaded")
+            print("[STATS] No student faces loaded")
     
     def start_registration_session(self, name: str, email: str, student_id: str):
         """Start a new registration session"""
@@ -350,6 +351,13 @@ class AttendanceSystem:
 
             # Get buffalo_l face encoding (512D)
             face_data = detected_faces[0]
+            
+            # --- ANTI-SPOOFING GATE (Registration) ---
+            liveness = anti_spoof_checker.check(image_array, face_data['location'])
+            if not liveness['is_real']:
+                return None, f"Liveness check failed — live face required (score: {liveness['score']:.2f}). Photos and screens are not accepted."
+            # --- END ANTI-SPOOFING GATE ---
+            
             face_encoding = face_data['embedding']
             face_locations = [face_data['location']]  # For compatibility
 
@@ -464,8 +472,13 @@ class AttendanceSystem:
             
             # Calculate verification score
             if FACE_RECOGNITION_AVAILABLE:
-                distances = [face_recognition.face_distance([average_encoding], encoding)[0] 
-                            for encoding in encodings]
+                # Use cosine distance for InsightFace
+                distances = []
+                for encoding in encodings:
+                    face_norm = encoding / np.linalg.norm(encoding)
+                    avg_norm = average_encoding / np.linalg.norm(average_encoding)
+                    similarity = np.dot(face_norm, avg_norm)
+                    distances.append(1.0 - similarity)
                 verification_score = 1.0 - np.mean(distances)
             else:
                 verification_score = 0.8  # Default score
@@ -692,16 +705,16 @@ if __name__ == "__main__":
                 "-keyout", key_file, "-out", cert_file, "-days", "365", "-nodes",
                 "-subj", "/C=IN/ST=Maharashtra/L=Mumbai/O=CDAC/CN=10.212.13.129"
             ], check=True)
-            print("✅ SSL certificates generated!")
+            print("[OK] SSL certificates generated!")
         except subprocess.CalledProcessError:
-            print("❌ Failed to generate SSL certificates. Install OpenSSL first.")
-            print("📊 Running on HTTP: http://10.212.13.129:8000/")
+            print("[ERROR] Failed to generate SSL certificates. Install OpenSSL first.")
+            print("[STATS] Running on HTTP: http://10.212.13.129:8000/")
             uvicorn.run("main_with_face_recognition:app", host="10.212.13.129", port=8000)
             exit()
     
     # Run with HTTPS
     print("🔒 HTTPS Dashboard: https://10.212.13.129:8000/")
-    print("⚠️  You may see a security warning - click 'Advanced' → 'Proceed to 10.212.13.129 (unsafe)'")
+    print("[WARN]  You may see a security warning - click 'Advanced' → 'Proceed to 10.212.13.129 (unsafe)'")
     print("💡 Tip: Bookmark the HTTPS URL to avoid the warning next time")
     
     try:
@@ -713,8 +726,8 @@ if __name__ == "__main__":
             ssl_certfile=cert_file
         )
     except Exception as e:
-        print(f"❌ HTTPS failed: {e}")
-        print("📊 Falling back to HTTP: http://10.212.13.129:8000/")
+        print(f"[ERROR] HTTPS failed: {e}")
+        print("[STATS] Falling back to HTTP: http://10.212.13.129:8000/")
         uvicorn.run("main_with_face_recognition:app", host="10.212.13.129", port=8000)            FROM session_configs
             WHERE course_id = ? AND session_type = ? AND is_active = TRUE
         ''', (course[0], session_type))
@@ -1286,14 +1299,14 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
                 "redirect_url": "/attendance"  # Direct to attendance page
             }
         else:
-            print(f"❌ Failed login attempt for user: {username}")
+            print(f"[ERROR] Failed login attempt for user: {username}")
             return {
                 "success": False,
                 "message": "Invalid username or password"
             }
             
     except Exception as e:
-        print(f"❌ User login error: {str(e)}")
+        print(f"[ERROR] User login error: {str(e)}")
         return {
             "success": False,
             "message": f"Login failed: {str(e)}"
@@ -1533,8 +1546,31 @@ async def detect_attendance(image_data: DetectionImage):
         
         recognized_students = []
         unknown_faces = 0
+        spoofed_faces = 0
         
         for face_data in detected_faces:
+            # --- ANTI-SPOOFING GATE ---
+            liveness = anti_spoof_checker.check(image_array, face_data['location'])
+            if not liveness['is_real']:
+                spoofed_faces += 1
+                face_location = face_data['location']
+                recognized_students.append({
+                    "student_id": None,
+                    "name": "SPOOF DETECTED",
+                    "confidence": 0.0,
+                    "status": "spoof_detected",
+                    "message": f"Liveness check failed (score: {liveness['score']:.2f})",
+                    "liveness_score": liveness['score'],
+                    "location": {
+                        "top": int(face_location[0]),
+                        "right": int(face_location[1]),
+                        "bottom": int(face_location[2]),
+                        "left": int(face_location[3])
+                    }
+                })
+                continue
+            # --- END ANTI-SPOOFING GATE ---
+            
             face_encoding = face_data['embedding']
             
             # Find best match
@@ -2002,9 +2038,9 @@ async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, 
         attendance_system.conn.commit()
         
         # Build response message
-        message = f"✅ Added {added_count} student(s)"
+        message = f"[OK] Added {added_count} student(s)"
         if skipped_count > 0:
-            message += f", ⚠️ Skipped {skipped_count}"
+            message += f", [WARN] Skipped {skipped_count}"
         
         response_data = {
             "success": True,
@@ -2584,8 +2620,31 @@ async def detect_attendance_with_slots(image_data: DetectionImage):
         manager = create_slot_manager_instance()
         recognized_students = []
         unknown_faces = 0
+        spoofed_faces = 0
         
         for face_data in detected_faces:
+            # --- ANTI-SPOOFING GATE ---
+            liveness = anti_spoof_checker.check(image_array, face_data['location'])
+            if not liveness['is_real']:
+                spoofed_faces += 1
+                face_location = face_data['location']
+                recognized_students.append({
+                    "student_id": None,
+                    "name": "SPOOF DETECTED",
+                    "confidence": 0.0,
+                    "status": "spoof_detected",
+                    "message": f"Liveness check failed (score: {liveness['score']:.2f})",
+                    "liveness_score": liveness['score'],
+                    "location": {
+                        "top": int(face_location[0]),
+                        "right": int(face_location[1]),
+                        "bottom": int(face_location[2]),
+                        "left": int(face_location[3])
+                    }
+                })
+                continue
+            # --- END ANTI-SPOOFING GATE ---
+
             face_encoding = face_data['embedding']
             
             # Find best match (same logic as existing)
@@ -2622,6 +2681,7 @@ async def detect_attendance_with_slots(image_data: DetectionImage):
                             "confidence": float(best_similarity),
                             "status": "marked",
                             "message": attendance_result['message'],
+                            "liveness_score": liveness['score'],
                             "slot_name": attendance_result.get('slot_name', ''),
                             "location": {
                                 "top": int(face_location[0]),
@@ -2638,6 +2698,7 @@ async def detect_attendance_with_slots(image_data: DetectionImage):
                             "confidence": float(best_similarity),
                             "status": "already_marked",
                             "message": attendance_result['message'],
+                            "liveness_score": liveness['score'],
                             "slot_name": attendance_result.get('slot_name', ''),
                             "location": {
                                 "top": int(face_location[0]),
@@ -2723,16 +2784,16 @@ if __name__ == "__main__":
                 "-keyout", key_file, "-out", cert_file, "-days", "365", "-nodes",
                 "-subj", f"/C=IN/ST=Maharashtra/L=Mumbai/O=CDAC/CN={display_host}"
             ], check=True)
-            print("✅ SSL certificates generated!")
+            print("[OK] SSL certificates generated!")
         except subprocess.CalledProcessError:
-            print("❌ Failed to generate SSL certificates. Install OpenSSL first.")
-            print(f"📊 Running on HTTP: http://{display_host}:{port}/")
+            print("[ERROR] Failed to generate SSL certificates. Install OpenSSL first.")
+            print(f"[STATS] Running on HTTP: http://{display_host}:{port}/")
             uvicorn.run("main_with_face_recognition:app", host=host, port=port)
             exit()
     
     # Run with HTTPS
     print(f"🔒 HTTPS Dashboard: https://{display_host}:{port}/")
-    print("⚠️  You may see a security warning - click 'Advanced' → 'Proceed to site (unsafe)'")
+    print("[WARN]  You may see a security warning - click 'Advanced' → 'Proceed to site (unsafe)'")
     print("💡 Tip: Bookmark the HTTPS URL to avoid the warning next time")
     
     try:
@@ -2744,6 +2805,6 @@ if __name__ == "__main__":
             ssl_certfile=cert_file
         )
     except Exception as e:
-        print(f"❌ HTTPS failed: {e}")
-        print(f"📊 Falling back to HTTP: http://{display_host}:{port}/")
+        print(f"[ERROR] HTTPS failed: {e}")
+        print(f"[STATS] Falling back to HTTP: http://{display_host}:{port}/")
         uvicorn.run("main_with_face_recognition:app", host=host, port=port)

@@ -3,10 +3,10 @@ import numpy as np
 try:
     import insightface
     INSIGHTFACE_AVAILABLE = True
-    print("✅ InsightFace available")
+    print("[OK] InsightFace available")
 except ImportError:
     INSIGHTFACE_AVAILABLE = False
-    print("❌ InsightFace not available")
+    print("[ERROR] InsightFace not available")
 
 class AsianFaceRecognizer:
     def __init__(self):
@@ -22,32 +22,32 @@ class AsianFaceRecognizer:
                 self.insight_app = FaceAnalysis(name='buffalo_l')
                 self.insight_app.prepare(ctx_id=0, det_size=(640, 640))
                 self.use_insightface = True
-                print(f"🎯 buffalo_l w600k model loaded - {self.embedding_dim}D embeddings")
+                print(f"[MODEL] buffalo_l w600k model loaded - {self.embedding_dim}D embeddings")
                 
                 # Test the model to verify 512D output
                 test_frame = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
                 test_results = self.insight_app.get(test_frame)
                 if len(test_results) > 0:
                     test_embedding = test_results[0].embedding
-                    print(f"✅ buffalo_l test embedding shape: {test_embedding.shape}")
+                    print(f"[OK] buffalo_l test embedding shape: {test_embedding.shape}")
                     if len(test_embedding) != 512:
-                        print(f"⚠️  Warning: Expected 512D, got {len(test_embedding)}D")
+                        print(f"[WARN] Warning: Expected 512D, got {len(test_embedding)}D")
                 else:
-                    print("ℹ️  No faces in test image (normal)")
+                    print("[INFO] No faces in test image (normal)")
                     
             except Exception as e:
-                print(f"❌ buffalo_l model failed to load: {e}")
+                print(f"[ERROR] buffalo_l model failed to load: {e}")
                 self.use_insightface = False
         
         if not self.use_insightface:
-            raise Exception("❌ buffalo_l w600k model is required!")
+            raise Exception("[FATAL] buffalo_l w600k model is required!")
     
     def detect_faces_optimized(self, frame):
         """Detect faces and generate 512D embeddings using buffalo_l w600k"""
         faces = []
         
         if not self.use_insightface:
-            print("❌ buffalo_l model not available")
+            print("[ERROR] buffalo_l model not available")
             return faces
         
         try:
@@ -86,13 +86,13 @@ class AsianFaceRecognizer:
                                 'source': f'buffalo_l_w600k_512D',
                                 'embedding_norm': float(np.linalg.norm(embedding))
                             })
-                            print(f"[DEBUG] ✅ Valid 512D embedding: norm={np.linalg.norm(embedding):.3f}")
+                            print(f"[DEBUG] [OK] Valid 512D embedding: norm={np.linalg.norm(embedding):.3f}")
                         else:
-                            print(f"[DEBUG] ❌ Invalid embedding values")
+                            print(f"[DEBUG] [ERROR] Invalid embedding values")
                     else:
-                        print(f"[DEBUG] ❌ Wrong embedding dimension: {len(embedding)} (expected {self.embedding_dim})")
+                        print(f"[DEBUG] [ERROR] Wrong embedding dimension: {len(embedding)} (expected {self.embedding_dim})")
                 else:
-                    print(f"[DEBUG] ❌ No embedding found for face")
+                    print(f"[DEBUG] [ERROR] No embedding found for face")
                     
         except Exception as e:
             print(f"[ERROR] buffalo_l detection error: {e}")
@@ -166,5 +166,5 @@ class AsianFaceRecognizer:
             return [], []
 
 # Global buffalo_l w600k face recognizer
-print("🚀 Initializing buffalo_l w600k for 512D embeddings...")
+print("[INIT] Initializing buffalo_l w600k for 512D embeddings...")
 asian_face_recognizer = AsianFaceRecognizer()

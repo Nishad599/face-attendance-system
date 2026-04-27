@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
 </head>
+
 <body>
 
     <!-- Navbar -->
@@ -32,10 +34,10 @@
 
     <div class="app-page">
         <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / Register Student</div>
-<!-- Header (About Us style) -->
-    
-    
-        
+        <!-- Header (About Us style) -->
+
+
+
     </div>
 
 
@@ -154,14 +156,17 @@
                     <h4>Last photo taken:</h4>
                     <img id="preview-img" alt="Photo preview">
                     <div>
-                        <button class="btn btn-success" onclick="acceptPhoto()"><i class="fa-solid fa-check text-green-500"></i> Accept</button>
-                        <button class="btn btn-warning" onclick="retakePhoto()"><i class="fa-solid fa-arrows-rotate"></i> Retake</button>
+                        <button class="btn btn-success" onclick="acceptPhoto()"><i
+                                class="fa-solid fa-check text-green-500"></i> Accept</button>
+                        <button class="btn btn-warning" onclick="retakePhoto()"><i
+                                class="fa-solid fa-arrows-rotate"></i> Retake</button>
                     </div>
                 </div>
 
                 <div style="margin: 1rem 0;">
                     <button class="btn btn-success" onclick="capturePhoto()" id="capture-btn">📸 Take Photo</button>
-                    <button class="btn btn-warning" onclick="skipPhoto()" id="skip-btn" style="display: none;">⏭️ Skip This Photo</button>
+                    <button class="btn btn-warning" onclick="skipPhoto()" id="skip-btn" style="display: none;">⏭️ Skip
+                        This Photo</button>
                 </div>
 
                 {% else %}
@@ -379,7 +384,18 @@
                         setTimeout(completeRegistration, 1500);
                     }
                 } else {
-                    alert('Photo upload failed: ' + result.message);
+                    // Check for liveness failure
+                    const msg = result.message || '';
+                    if (msg.toLowerCase().includes('liveness')) {
+                        document.getElementById('capture-instructions').innerHTML =
+                            `<div class="status-error" style="background: #FFEBE6; color: #BF2600; padding: 12px; border-radius: 8px; border-left: 4px solid #DE350B;">
+                                <h4><i class="fa-solid fa-skull-crossbones"></i> Spoof Detected!</h4>
+                                <p>${msg}</p>
+                                <p style="margin-top: 8px;">Please use your real face — photos and screens are not accepted.</p>
+                            </div>`;
+                    } else {
+                        alert('Photo upload failed: ' + msg);
+                    }
                     retakePhoto();
                 }
             } catch (error) {
@@ -452,7 +468,7 @@
         }, 1000);
 
         // Cleanup camera when leaving page
-        window.addEventListener("beforeunload", function() {
+        window.addEventListener("beforeunload", function () {
             fetch("/api/cleanup_camera", { method: "POST" });
         });
         window.addEventListener('beforeunload', stopCamera);
@@ -496,11 +512,12 @@
 
         // Periodic checks
         setInterval(checkSession, 5 * 60 * 1000);
-        document.addEventListener('visibilitychange', function() {
+        document.addEventListener('visibilitychange', function () {
             if (!document.hidden) checkSession();
         });
     </script>
     </div>
 
 </body>
+
 </html>

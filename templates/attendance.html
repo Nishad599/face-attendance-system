@@ -451,12 +451,27 @@
                 outOfSlotDiv.style.display = 'none';
                 let html = '';
                 result.recognized_students.forEach(s => {
+                    // Handle spoof detection
+                    if (s.status === 'spoof_detected') {
+                        html += `<div class="result-item" style="border-left: 4px solid var(--color-danger); background: #FFEBE6;">
+                            <div class="d-flex justify-between align-center">
+                                <div>
+                                    <h4 style="color: var(--color-danger);"><i class="fa-solid fa-skull-crossbones"></i> SPOOF DETECTED</h4>
+                                    <p style="color: #BF2600;">Liveness score: ${(s.liveness_score * 100).toFixed(1)}% — Photo/screen attack blocked</p>
+                                </div>
+                                <span class="app-badge app-badge-danger">Blocked</span>
+                            </div>
+                            <p style="color: #BF2600;">${s.message}</p>
+                        </div>`;
+                        return;
+                    }
+
                     const cls = s.status === 'marked' ? '' : 'warning';
                     const sundayNote = isSunday ? ' (Sunday)' : '';
                     html += `<div class="result-item ${cls}">
                         <div class="d-flex justify-between align-center">
                             <div>
-                                <h4>${s.name}</h4>
+                                <h4><i class="fa-solid fa-shield-halved" style="color: var(--color-success);"></i> ${s.name}</h4>
                                 <p>Confidence: ${(s.confidence * 100).toFixed(1)}% · Slot: ${s.slot_name || 'Current'}${sundayNote}</p>
                             </div>
                             <span class="app-badge ${s.status === 'marked' ? 'app-badge-success' : 'app-badge-warning'}">
