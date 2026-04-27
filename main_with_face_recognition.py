@@ -826,13 +826,11 @@ if __name__ == "__main__":
             if date_str not in slot_summary:
                 slot_summary[date_str] = {}
             
-            # Convert slot_id to session_type for consistency
-            session_type = 'morning' if slot_id == 'morning' else 'afternoon'
-            slot_summary[date_str][session_type] = time_marked
+            slot_summary[date_str][slot_id] = time_marked
 
         # Calculate attendance for each day
         full_days = 0
-        half_days = 0
+        partial_days = 0
         total_working_days = 0
         
         current_date = start_date
@@ -848,15 +846,14 @@ if __name__ == "__main__":
             
             if date_str in slot_summary:
                 sessions = slot_summary[date_str]
-                has_morning = 'morning' in sessions
-                has_afternoon = 'afternoon' in sessions
+                slot_count = len([s for s in sessions.keys() if s.startswith('morning') or s.startswith('afternoon')])
                 
-                if has_morning and has_afternoon:
+                if slot_count == 4:
                     attendance_dict[date_str] = 'present'  # Full day
                     full_days += 1
-                elif has_morning or has_afternoon:
-                    attendance_dict[date_str] = 'partial'  # Half day
-                    half_days += 1
+                elif slot_count > 0:
+                    attendance_dict[date_str] = 'partial'  # Partial day
+                    partial_days += 1
                 else:
                     attendance_dict[date_str] = 'absent'
             else:
@@ -864,21 +861,31 @@ if __name__ == "__main__":
                 
             current_date += timedelta(days=1)
 
-        absent_days = total_working_days - full_days - half_days
+        absent_days = total_working_days - full_days - partial_days
         
-        # Calculate percentage (full days + half days * 0.5)
-        effective_present_days = full_days + (half_days * 0.5)
-        attendance_percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0
+        # Calculate percentage based on total slots attended
+        total_slots_attended = sum(
+            len([s for s in slot_summary.get(d, {}).keys() if s.startswith('morning') or s.startswith('afternoon')]) 
+            for d in attendance_dict.keys()
+        )
+        expected_slots = total_working_days * 4
+        attendance_percentage = (total_slots_attended / expected_slots * 100) if expected_slots > 0 else 0
 
-        print(f"[DEBUG] Stats - Full days: {full_days}, Half days: {half_days}, Absent: {absent_days}, Total working: {total_working_days}, Percentage: {attendance_percentage:.1f}%")
+        print(f"[DEBUG] Stats - Full days: {full_days}, Partial days: {partial_days}, Absent: {absent_days}, Total working: {total_working_days}, Percentage: {attendance_percentage:.1f}%")
 
         # Add session details to attendance_dict for calendar display
         attendance_with_sessions = {}
         for date_str, status in attendance_dict.items():
+            sess = slot_summary.get(date_str, {})
+            slot_count = len([s for s in sess.keys() if s.startswith('morning') or s.startswith('afternoon')])
+            
             attendance_with_sessions[date_str] = {
                 'status': status,
-                'morning': slot_summary.get(date_str, {}).get('morning'),
-                'afternoon': slot_summary.get(date_str, {}).get('afternoon')
+                'count': slot_count,
+                'm1': sess.get('morning_1'),
+                'm2': sess.get('morning_2'),
+                'a1': sess.get('afternoon_1'),
+                'a2': sess.get('afternoon_2')
             }
 
         return {
@@ -886,7 +893,7 @@ if __name__ == "__main__":
             'attendance': attendance_with_sessions,
             'stats': {
                 'full_days': full_days,
-                'half_days': half_days,
+                'half_days': partial_days,  # Kept as half_days to not break frontend var name blindly
                 'absent_days': absent_days,
                 'holidays': len(holiday_dates),
                 'percentage': round(attendance_percentage, 1),
