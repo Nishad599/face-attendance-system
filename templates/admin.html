@@ -1,231 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Your Page Title</title>
-
-    <!-- Fonts & your external stylesheet (kept as-is) -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
-
-    <style>
-        /* ===== Global base ===== */
-        html, body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        /* Space for fixed header on desktop */
-        body {
-            padding-top: 90px !important;
-        }
-
-        /* ===== CDAC NAVBAR STYLES (About Us style) ===== */
-        .cdac-header {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-bottom: 4px solid #0066cc;
-            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            width: 100%;
-            z-index: 10000;
-            padding: 12px 0;
-        }
-        .cdac-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            padding: 0 24px;
-        }
-
-        /* Logo Section (left) */
-        .cdac-logo-section {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex: 1;
-        }
-        .cdac-logo-wrapper {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            padding: 10px;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 60px;
-            min-height: 60px;
-            position: relative;
-        }
-        .cdac-logo-img {
-            height: 50px;
-            width: 50px;
-            object-fit: contain;
-            display: block;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 4px;
-        }
-        .cdac-fallback-logo {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 50px;
-            height: 50px;
-        }
-        .fallback-icon {
-            font-size: 32px;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .cdac-text-section {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .cdac-hindi {
-            font-size: 16px;
-            font-weight: 700;
-            color: #0066cc;
-            line-height: 1.2;
-            letter-spacing: 0.5px;
-        }
-        .cdac-english {
-            font-size: 13px;
-            font-weight: 600;
-            color: #004499;
-            line-height: 1.2;
-            letter-spacing: 0.3px;
-        }
-        .cdac-tagline {
-            font-size: 11px;
-            font-weight: 500;
-            color: #666;
-            line-height: 1.2;
-            font-style: italic;
-        }
-
-        /* Navigation (center) */
-        .cdac-navigation {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 0 0 auto;
-        }
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 16px;
-            color: #333;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            border: 2px solid transparent;
-        }
-        .nav-link:hover {
-            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
-            color: #0066cc;
-            border-color: #b3d9ff;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
-            text-decoration: none;
-        }
-        .nav-link.active {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            color: white;
-            border-color: #0066cc;
-        }
-        .nav-icon { font-size: 16px; }
-        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
-
-        /* User Section (right) */
-        .cdac-user-section { flex: 0 0 auto; }
-        .logout-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            letter-spacing: 0.3px;
-        }
-        .logout-button:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        /* ===== Mobile ===== */
-        @media (max-width: 768px) {
-            .cdac-header { position: relative; padding: 16px 0; }
-            body { padding-top: 0 !important; } /* remove offset when header is not fixed */
-            .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
-        }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Admin — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/dark_theme.css">
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
 
-    <!-- CDAC Header (About-Us style) -->
-    <header class="cdac-header">
-        <div class="cdac-container">
-            <!-- Left: Logo block -->
-            <div class="cdac-logo-section">
-                <div class="cdac-logo-wrapper">
-                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
-                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
-                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
-                    </div>
-                </div>
-                <div class="cdac-text-section">
-                    <div class="cdac-hindi">प्रगत संगणन विकास केंद</div>
-                    <div class="cdac-english">CENTER FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
-                    <div class="cdac-tagline">Face Recognition Attendance System</div>
-                </div>
-            </div>
-
-            <!-- Center: Nav -->
-            <nav class="cdac-navigation">
-                <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
-                    <span class="nav-text">HOME</span>
-                </a>
-                <a href="/about" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
-                    <span class="nav-text">ABOUT</span>
-                </a>
-                <a href="/contact" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
-                    <span class="nav-text">CONTACT</span>
-                </a>
-            </nav>
-
-            <!-- Right: Logout -->
-            <div class="cdac-user-section">
-                <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
-                    <span class="logout-text">Logout</span>
-                </button>
-            </div>
+    <!-- Navbar -->
+    <nav class="app-navbar">
+        <a href="/dashboard" class="app-navbar-brand">
+            <i class="fa-solid fa-users-viewfinder"></i>
+            CDAC Attendance
+        </a>
+        <div class="app-navbar-links">
+            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
         </div>
-    </header>
+        <div class="app-navbar-actions">
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / System Admin</div>
+<!-- CDAC Header (About-Us style) -->
+    
+    
+        
+    </div>
+
 
     <!-- ===== Main Content (kept your structure) ===== -->
     <div class="main-container">
@@ -237,9 +49,7 @@
         </div>
 
         <div class="container">
-            <div class="back-link">
-                <a href="/dashboard" class="btn btn-outline">← Back to Dashboard</a>
-            </div>
+            
 
             <div class="admin-grid">
                 <!-- System Status Card -->
@@ -529,5 +339,7 @@
             if (!document.hidden) checkSession();
         });
     </script>
+    </div>
+
 </body>
 </html>

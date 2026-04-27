@@ -635,10 +635,12 @@ class AttendanceSystem:
             
             cursor.execute('''
                 INSERT INTO session_configs (course_id, session_type, start_time, end_time)
-                VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)
             ''', (
-                    course_id, 'morning', '08:45:00', '09:30:00',
-                    course_id, 'afternoon', '13:45:00', '14:30:00'
+                    course_id, 'morning_1', '08:30:00', '09:30:00',
+                    course_id, 'morning_2', '11:00:00', '11:15:00',
+                    course_id, 'afternoon_1', '13:45:00', '14:00:00',
+                    course_id, 'afternoon_2', '16:15:00', '16:45:00'
             ))
         
         self.conn.commit()
@@ -759,10 +761,12 @@ if __name__ == "__main__":
             
             cursor.execute('''
                 INSERT INTO session_configs (course_id, session_type, start_time, end_time)
-                VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)
             ''', (
-                course_id, 'morning', '08:45:00', '09:30:00',     # Change these
-                course_id, 'afternoon', '13:45:00', '14:30:00'   # Change these
+                course_id, 'morning_1', '08:30:00', '09:30:00',
+                course_id, 'morning_2', '11:00:00', '11:15:00',
+                course_id, 'afternoon_1', '13:45:00', '14:00:00',
+                course_id, 'afternoon_2', '16:15:00', '16:45:00'
             ))
             
         except Exception as e:
@@ -2483,16 +2487,22 @@ async def get_today_slot_attendance():
         
         cursor.execute('''
             SELECT s.name, s.student_id, s.email, 
-                   sa_morning.created_at as morning_time,
-                   sa_afternoon.created_at as afternoon_time
+                   sa_m1.created_at as morning_1_time,
+                   sa_m2.created_at as morning_2_time,
+                   sa_a1.created_at as afternoon_1_time,
+                   sa_a2.created_at as afternoon_2_time
             FROM students s
-            LEFT JOIN slot_attendance sa_morning ON s.id = sa_morning.student_id 
-                AND sa_morning.date = ? AND sa_morning.slot_id = 'morning'
-            LEFT JOIN slot_attendance sa_afternoon ON s.id = sa_afternoon.student_id 
-                AND sa_afternoon.date = ? AND sa_afternoon.slot_id = 'afternoon'  
+            LEFT JOIN slot_attendance sa_m1 ON s.id = sa_m1.student_id 
+                AND sa_m1.date = ? AND sa_m1.slot_id = 'morning_1'
+            LEFT JOIN slot_attendance sa_m2 ON s.id = sa_m2.student_id 
+                AND sa_m2.date = ? AND sa_m2.slot_id = 'morning_2'
+            LEFT JOIN slot_attendance sa_a1 ON s.id = sa_a1.student_id 
+                AND sa_a1.date = ? AND sa_a1.slot_id = 'afternoon_1'
+            LEFT JOIN slot_attendance sa_a2 ON s.id = sa_a2.student_id 
+                AND sa_a2.date = ? AND sa_a2.slot_id = 'afternoon_2'
             WHERE s.status = 'active'
             ORDER BY s.name
-        ''', (today, today))
+        ''', (today, today, today, today))
         
         return cursor.fetchall()
         

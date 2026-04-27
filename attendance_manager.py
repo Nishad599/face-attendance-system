@@ -155,13 +155,15 @@ class AttendanceSlotManager:
                 ))
                 course_id = cursor.lastrowid
             
-            # Create default session configs
+            # Create default session configs for 4 slots
             cursor.execute('''
                 INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
                 VALUES 
-                (?, 'morning', '08:45:00', '09:30:00', 1),
-                (?, 'afternoon', '13:45:00', '14:30:00', 1)
-            ''', (course_id, course_id))
+                (?, 'morning_1', '08:30:00', '09:30:00', 1),
+                (?, 'morning_2', '11:00:00', '11:15:00', 1),
+                (?, 'afternoon_1', '13:45:00', '14:00:00', 1),
+                (?, 'afternoon_2', '16:15:00', '16:45:00', 1)
+            ''', (course_id, course_id, course_id, course_id))
             
             self.conn.commit()
             
@@ -461,15 +463,16 @@ class AttendanceSlotManager:
             
             # Get counts by slot
             cursor.execute('''
-                SELECT slot_id, COUNT(DISTINCT student_id) as count
-                FROM slot_attendance 
-                WHERE date = ?
-                GROUP BY slot_id
+                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
+                WHERE date = ? AND slot_id LIKE 'morning%'
             ''', (date_str,))
+            morning_count = cursor.fetchone()[0]
             
-            slot_counts = dict(cursor.fetchall())
-            morning_count = slot_counts.get('morning', 0)
-            afternoon_count = slot_counts.get('afternoon', 0)
+            cursor.execute('''
+                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
+                WHERE date = ? AND slot_id LIKE 'afternoon%'
+            ''', (date_str,))
+            afternoon_count = cursor.fetchone()[0]
             
             # Get unique students present (attended at least one slot)
             cursor.execute('''
@@ -523,13 +526,13 @@ class AttendanceSlotManager:
             
             cursor.execute('''
                 SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id = "morning"
+                WHERE date = ? AND slot_id LIKE "morning%"
             ''', (date_str,))
             morning_count = cursor.fetchone()[0]
             
             cursor.execute('''
                 SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id = "afternoon" 
+                WHERE date = ? AND slot_id LIKE "afternoon%" 
             ''', (date_str,))
             afternoon_count = cursor.fetchone()[0]
             
@@ -570,11 +573,9 @@ class AttendanceSlotManager:
             
             attendance_records = cursor.fetchall()
             
-            # Organize by slot
-            slots_data = {
-                'morning': [],
-                'afternoon': []
-            }
+            # Organize by slot dynamically
+            from collections import defaultdict
+            slots_data = defaultdict(list)
             
             for record in attendance_records:
                 name, student_id, slot_id, time_marked, confidence = record
@@ -585,12 +586,15 @@ class AttendanceSlotManager:
                     'confidence': confidence
                 })
             
+            morning_count = sum(len(lst) for slot, lst in slots_data.items() if slot.startswith('morning'))
+            afternoon_count = sum(len(lst) for slot, lst in slots_data.items() if slot.startswith('afternoon'))
+            
             return {
                 'success': True,
                 'date': date_str,
-                'slots': slots_data,
-                'morning_count': len(slots_data['morning']),
-                'afternoon_count': len(slots_data['afternoon'])
+                'slots': dict(slots_data),
+                'morning_count': morning_count,
+                'afternoon_count': afternoon_count
             }
             
         except Exception as e:

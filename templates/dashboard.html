@@ -1,1228 +1,303 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CDAC Attendance Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
-    <style>
-        /* ===== CDAC NAVBAR STYLES ===== */
-        .cdac-header {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-bottom: 4px solid #0066cc;
-            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            width: 100%;
-            z-index: 10000;
-            padding: 12px 0;
-        }
-        .cdac-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            padding: 0 24px;
-        }
-
-        /* Logo Section (left) */
-        .cdac-logo-section {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex: 1;
-        }
-        .cdac-logo-wrapper {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            padding: 10px;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 60px;
-            min-height: 60px;
-            position: relative;
-        }
-        .cdac-logo-img {
-            height: 50px;
-            width: 50px;
-            object-fit: contain;
-            display: block;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 4px;
-        }
-        .cdac-fallback-logo {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 50px;
-            height: 50px;
-        }
-        .fallback-icon {
-            font-size: 32px;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .cdac-text-section {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .cdac-hindi {
-            font-size: 16px;
-            font-weight: 700;
-            color: #0066cc;
-            line-height: 1.2;
-            letter-spacing: 0.5px;
-        }
-        .cdac-english {
-            font-size: 13px;
-            font-weight: 600;
-            color: #004499;
-            line-height: 1.2;
-            letter-spacing: 0.3px;
-        }
-        .cdac-tagline {
-            font-size: 11px;
-            font-weight: 500;
-            color: #666;
-            line-height: 1.2;
-            font-style: italic;
-        }
-
-        /* Navigation (center) */
-        .cdac-navigation {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 0 0 auto;
-        }
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 16px;
-            color: #333;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            border: 2px solid transparent;
-        }
-        .nav-link:hover {
-            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
-            color: #0066cc;
-            border-color: #b3d9ff;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
-            text-decoration: none;
-        }
-        .nav-link.active {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            color: white;
-            border-color: #0066cc;
-        }
-        .nav-icon { font-size: 16px; }
-        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
-
-        /* User Section (right) */
-        .cdac-user-section { flex: 0 0 auto; }
-        .logout-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            letter-spacing: 0.3px;
-        }
-        .logout-button:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        /* CRITICAL: Add top margin to body to account for fixed header */
-        body {
-            margin: 0;
-            padding: 0;
-            padding-top: 90px !important; /* Space for fixed header */
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
-            min-height: 100vh;
-        }
-
-        /* Container styles */
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 2rem 1rem;
-        }
-
-        /* Navigation grid */
-        .nav-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 2rem;
-            margin-bottom: 3rem;
-        }
-
-        .nav-card {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            text-decoration: none;
-            color: inherit;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-            border: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-        }
-
-        .nav-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .nav-card-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            display: block;
-        }
-
-        .nav-card-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1a202c;
-            margin-bottom: 0.5rem;
-        }
-
-        .nav-card-desc {
-            color: #64748b;
-            margin-bottom: 1.5rem;
-            line-height: 1.5;
-        }
-
-        /* Button styles */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0.75rem 1.5rem;
-            border-radius: 10px;
-            font-weight: 600;
-            text-decoration: none;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s;
-            min-width: 120px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            color: white;
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-        }
-
-        .btn-info {
-            background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%);
-            color: white;
-        }
-
-        .btn-secondary {
-            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
-            color: white;
-        }
-
-        .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            text-decoration: none;
-            color: white;
-        }
-
-        /* Attendance section */
-        .attendance-section {
-            background: white;
-            border-radius: 16px;
-            padding: 2rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            border: 1px solid #e2e8f0;
-            margin-bottom: 2rem;
-        }
-
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-
-        .section-header h2 {
-            font-size: 1.75rem;
-            color: black !important;
-            margin: 0;
-        }
-
-        .datetime-info strong {
-            color: black !important;
-        }
-
-        /* Working schedule info */
-        .schedule-info {
-            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-            border: 2px solid #3b82f6;
-            border-radius: 12px;
-            padding: 1rem 1.5rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .schedule-info h3 {
-            color: #1e40af;
-            margin: 0 0 0.5rem 0;
-            font-size: 1.1rem;
-            font-weight: 700;
-        }
-
-        .schedule-info p {
-            color: #1e40af;
-            margin: 0;
-            font-weight: 600;
-        }
-
-        /* Sunday notice */
-        .sunday-notice {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            border: 2px solid #f59e0b;
-            border-radius: 12px;
-            padding: 1rem 1.5rem;
-            margin-bottom: 1.5rem;
-            display: none;
-        }
-
-        .sunday-notice h3 {
-            color: #92400e;
-            margin: 0 0 0.5rem 0;
-            font-size: 1.1rem;
-            font-weight: 700;
-        }
-
-        .sunday-notice p {
-            color: #92400e;
-            margin: 0;
-            font-weight: 600;
-        }
-
-        /* DateTime info */
-        .datetime-info {
-            color: #000000 !important;
-            font-size: 0.95rem;
-            margin-bottom: 1.5rem;
-            padding: 0.75rem 1rem;
-            background: #f1f5f9;
-            border-radius: 8px;
-            font-weight: 500;
-        }
-
-        /* Stats grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            text-align: center;
-            border: 2px solid #e2e8f0;
-            transition: all 0.3s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-bottom: 0.5rem;
-            color: #1a202c;
-        }
-
-        .stat-label {
-            color: #64748b;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        /* Color coding for stats */
-        .stat-card:nth-child(1) .stat-number { color: #3b82f6; }
-        .stat-card:nth-child(2) .stat-number { color: #10b981; }
-        .stat-card:nth-child(3) .stat-number { color: #ef4444; }
-        .stat-card:nth-child(4) .stat-number { color: #f59e0b; }
-
-        /* Session Configuration Styles */
-        .session-config-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 2rem;
-            margin: 1.5rem 0;
-        }
-
-        .session-config-item {
-            border: 2px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 1.5rem;
-            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-        }
-
-        .session-config-item.active {
-            border-color: #10b981;
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
-        }
-
-        .session-config-item.inactive {
-            border-color: #ef4444;
-            background: linear-gradient(135deg, #fef2f2 0%, #ffffff 100%);
-            opacity: 0.7;
-        }
-
-        .session-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .session-header h4 {
-            margin: 0;
-            color: #1a202c;
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-
-        .status-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .status-badge.active {
-            background: #d1fae5;
-            color: #065f46;
-        }
-
-        .status-badge.inactive {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .current-timing {
-            background: #eff6ff;
-            padding: 0.75rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-            font-weight: 600;
-            color: #1e40af;
-            text-align: center;
-        }
-
-        .time-inputs {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: #374151;
-        }
-
-        .input-group input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.2s ease;
-        }
-
-        .input-group input:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        .input-group input:disabled {
-            background: #f9fafb;
-            color: #6b7280;
-            cursor: not-allowed;
-        }
-
-        .btn-update {
-            width: 100%;
-            margin-top: 1rem;
-            padding: 0.875rem;
-            font-weight: 600;
-        }
-
-        .inactive-message {
-            text-align: center;
-            color: #6b7280;
-            font-style: italic;
-            padding: 1rem;
-            background: #f9fafb;
-            border-radius: 8px;
-            margin-top: 1rem;
-        }
-
-        .session-info {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid #e5e7eb;
-            font-size: 0.875rem;
-            color: #6b7280;
-        }
-
-        .info-item {
-            margin-bottom: 0.25rem;
-        }
-
-        /* Status Banner Styles */
-        .status-banner {
-            margin: 1rem 0;
-            padding: 1rem;
-            border-radius: 12px;
-            font-weight: 600;
-        }
-
-        .active-slot {
-            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-            color: #065f46;
-            border: 2px solid #10b981;
-        }
-
-        .next-slot {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-            color: #92400e;
-            border: 2px solid #f59e0b;
-        }
-
-        .no-slots {
-            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
-            color: #991b1b;
-            border: 2px solid #ef4444;
-        }
-
-        .status-icon {
-            font-size: 1.2rem;
-            margin-right: 0.5rem;
-        }
-
-        .time-info {
-            font-weight: 500;
-            margin-left: 0.5rem;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1.5rem;
-            justify-content: center;
-        }
-
-        /* Notification Styles */
-        .notification {
-            position: fixed;
-            top: 100px;
-            right: 20px;
-            padding: 1rem 1.5rem;
-            border-radius: 8px;
-            color: white;
-            font-weight: 600;
-            z-index: 10000;
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            min-width: 300px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .notification.success {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        }
-
-        .notification.error {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        }
-
-        .notification.info {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-        }
-
-        .notification button {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 0.25rem;
-        }
-
-        /* Mobile responsive */
-        @media (max-width: 768px) {
-            body {
-                padding-top: 120px !important;
-            }
-
-            .cdac-container {
-                flex-direction: column;
-                gap: 10px;
-                text-align: center;
-                padding: 5px 15px;
-            }
-
-            .cdac-navigation {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 8px;
-            }
-
-            .nav-link {
-                font-size: 10px;
-                padding: 4px 8px;
-            }
-
-            .cdac-logo-img {
-                height: 35px;
-            }
-
-            .cdac-hindi {
-                font-size: 11px;
-            }
-
-            .cdac-english {
-                font-size: 9px;
-            }
-
-            .logout-button {
-                padding: 8px 12px;
-                font-size: 12px;
-            }
-
-            .container {
-                padding: 1rem 0.5rem;
-            }
-
-            .nav-grid {
-                grid-template-columns: 1fr;
-                gap: 1rem;
-            }
-
-            .nav-card {
-                padding: 1.5rem;
-            }
-
-            .section-header {
-                flex-direction: column;
-                text-align: center;
-            }
-
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 1rem;
-            }
-
-            .session-config-grid {
-                grid-template-columns: 1fr;
-                gap: 1rem;
-            }
-            
-            .time-inputs {
-                grid-template-columns: 1fr;
-            }
-            
-            .action-buttons {
-                flex-direction: column;
-            }
-            
-            .notification {
-                left: 10px;
-                right: 10px;
-                min-width: auto;
-            }
-        }
-    </style>
+    <title>Dashboard — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/dark_theme.css">
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
+
 <body>
-   <!-- CDAC Header -->
-    <header class="cdac-header">
-        <div class="cdac-container">
-            <!-- Left: Logo block -->
-            <div class="cdac-logo-section">
-                <div class="cdac-logo-wrapper">
-                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
-                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
-                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
+    <!-- Navbar -->
+    <nav class="app-navbar">
+        <a href="/dashboard" class="app-navbar-brand">
+            <i class="fa-solid fa-users-viewfinder"></i>
+            CDAC Attendance
+        </a>
+        <div class="app-navbar-links">
+            <a href="/dashboard" class="active"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
+        </div>
+        <div class="app-navbar-actions">
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <div class="app-page">
+        <!-- Page Header -->
+        <div class="app-page-header">
+            <h1>Dashboard</h1>
+            <p>
+                <span id="currentDate"></span> · <span id="currentDay"></span> · <span id="currentTime"></span>
+                <span id="workingDayStatus"></span>
+            </p>
+        </div>
+
+        <!-- Sunday Notice -->
+        <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
+            <i class="fa-solid fa-calendar-xmark"></i>
+            Today is Sunday — Non-working day. Attendance can be marked but won't count toward statistics.
+        </div>
+
+        <!-- Stats Row -->
+        <div class="app-grid-4 mb-24">
+            <div class="app-stat">
+                <div class="app-stat-value blue" id="totalStudents">0</div>
+                <div class="app-stat-label">Total Students</div>
+            </div>
+            <div class="app-stat">
+                <div class="app-stat-value green" id="presentToday">0</div>
+                <div class="app-stat-label">Present Today</div>
+            </div>
+            <div class="app-stat">
+                <div class="app-stat-value red" id="absentToday">0</div>
+                <div class="app-stat-label">Absent Today</div>
+            </div>
+            <div class="app-stat">
+                <div class="app-stat-value" id="attendanceRate">0%</div>
+                <div class="app-stat-label">Attendance Rate</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions Grid -->
+        <h2 class="mb-16">Quick Actions</h2>
+        <div class="app-grid mb-24">
+            <a href="/register" class="app-nav-card">
+                <div class="app-nav-card-icon blue"><i class="fa-solid fa-user-plus"></i></div>
+                <h3>Register Student</h3>
+                <p>Add new students with face recognition</p>
+            </a>
+            <a href="/attendance" class="app-nav-card">
+                <div class="app-nav-card-icon green"><i class="fa-solid fa-camera"></i></div>
+                <h3>Live Attendance</h3>
+                <p>Real-time face recognition attendance</p>
+            </a>
+            <a href="/attendance-management" class="app-nav-card">
+                <div class="app-nav-card-icon purple"><i class="fa-solid fa-chart-simple"></i></div>
+                <h3>Reports</h3>
+                <p>Comprehensive tracking & reports</p>
+            </a>
+            <a href="/students" class="app-nav-card">
+                <div class="app-nav-card-icon orange"><i class="fa-solid fa-clipboard-user"></i></div>
+                <h3>Manage Students</h3>
+                <p>Edit student info and data</p>
+            </a>
+        </div>
+
+        <!-- Slot Configuration (admin only) -->
+        <div id="adminZone" style="display:none;">
+            <div class="app-card">
+                <div class="app-card-header">
+                    <h3><i class="fa-solid fa-gear"></i> Attendance Slot Config</h3>
+                    <div class="d-flex gap-8">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadSessionConfig()">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                        </button>
+                        <button class="app-btn app-btn-primary app-btn-sm" onclick="testCurrentSlot()">
+                            <i class="fa-regular fa-clock"></i> Check Current
+                        </button>
                     </div>
                 </div>
-                <div class="cdac-text-section">
-                    <div class="cdac-hindi">प्रगत संगणन विकास केंद</div>
-                    <div class="cdac-english">CENTER FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
-                    <div class="cdac-tagline">Face Recognition Attendance System</div>
-                </div>
-            </div>
-
-            <!-- Center: Nav -->
-            <nav class="cdac-navigation">
-                <a href="/dashboard" class="nav-link active">
-                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
-                    <span class="nav-text">HOME</span>
-                </a>
-                <a href="/about" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
-                    <span class="nav-text">ABOUT</span>
-                </a>
-                <a href="/contact" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
-                    <span class="nav-text">CONTACT</span>
-                </a>
-            </nav>
-
-            <!-- Right: Logout -->
-            <div class="cdac-user-section">
-                <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
-                    <span class="logout-text">Logout</span>
-                </button>
-            </div>
-        </div>
-    </header>
-
-    <div class="container">
-        <!-- Working Schedule Information -->
-        <div class="schedule-info">
-            <h3><i class="fa-solid fa-calendar-days"></i> Working Schedule</h3>
-            <p>Working Days: Monday - Saturday | Non-Working Day: Sunday</p>
-        </div>
-
-        <!-- Sunday Notice (shown only on Sundays) -->
-        <div id="sundayNotice" class="sunday-notice">
-            <h3><i class="fa-solid fa-calendar-days"></i> Sunday - Non-Working Day</h3>
-            <p>Today is Sunday. Attendance can be marked but won't count toward statistics.</p>
-        </div>
-
-        <!-- Navigation Cards -->
-        <div class="nav-grid">
-            <a href="/register" class="nav-card">
-                <span class="nav-card-icon"><i class="fa-solid fa-user"></i></span>
-                <div class="nav-card-title">Register Student</div>
-                <div class="nav-card-desc">Add new students with face recognition</div>
-                <div class="btn btn-primary">Get Started</div>
-            </a>
-            
-            <a href="/attendance" class="nav-card">
-                <span class="nav-card-icon"><i class="fa-solid fa-camera"></i></span>
-                <div class="nav-card-title">Live Attendance</div>
-                <div class="nav-card-desc">Real-time face recognition attendance</div>
-                <div class="btn btn-success">Take Attendance</div>
-            </a>
-            
-            <a href="/attendance-management" class="nav-card">
-                <span class="nav-card-icon"><i class="fa-solid fa-chart-simple"></i></span>
-                <div class="nav-card-title">Attendance Management</div>
-                <div class="nav-card-desc">Comprehensive tracking, individual reports</div>
-                <div class="btn btn-info">View Reports</div>
-            </a>
-            
-            <a href="/students" class="nav-card">
-                <span class="nav-card-icon"><i class="fa-solid fa-clipboard-user"></i></span>
-                <div class="nav-card-title">Manage Students</div>
-                <div class="nav-card-desc">Edit student information and data</div>
-                <div class="btn btn-secondary">Manage</div>
-            </a>
-        </div>
-
-        <!-- Session Configuration Management -->
-        <div class="attendance-section">
-            <div class="section-header">
-                <h2><i class="fa-solid fa-gear"></i> Attendance Slot Configuration</h2>
-                <div>
-                    <button class="btn btn-primary" onclick="loadSessionConfig()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
-                    <button class="btn btn-success" onclick="testCurrentSlot()"><i class="fa-regular fa-clock"></i> Check Current</button>
-                </div>
-            </div>
-            
-            <div class="current-status" id="currentSlotStatus">
-                <!-- Will show current active slot status -->
-            </div>
-            
-            <div id="sessionConfigContainer">
-                <!-- Will be populated by JavaScript -->
-            </div>
-        </div>
-
-        <!-- Dashboard Overview -->
-        <div class="attendance-section">
-            <div class="section-header">
-                <h2><i class="fa-solid fa-chart-simple"></i> Dashboard Overview</h2>
-                <div>
-                    <a href="/admin" class="btn btn-secondary"><i class="fa-solid fa-gear"></i> Admin</a>
-                </div>
-            </div>
-            
-            <!-- DateTime info with working day indicator -->
-            <div class="datetime-info">
-                <strong>Date:</strong> <span id="currentDate"></span> | 
-                <strong>Time:</strong> <span id="currentTime"></span> | 
-                <strong>Day:</strong> <span id="currentDay"></span>
-                <span id="workingDayStatus"></span>
-            </div>
-            
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-number" id="totalStudents">0</div>
-                    <div class="stat-label">Total Students</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="presentToday">0</div>
-                    <div class="stat-label">Present Today</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="absentToday">0</div>
-                    <div class="stat-label">Absent Today</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number" id="attendanceRate">0%</div>
-                    <div class="stat-label">Attendance Rate (Mon-Sat)</div>
-                </div>
+                <div id="currentSlotStatus"></div>
+                <div id="sessionConfigContainer"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // Check if today is Sunday and show appropriate notices
         function checkSundayStatus() {
             const today = new Date();
-            const isSunday = today.getDay() === 0; // Sunday = 0
+            const isSunday = today.getDay() === 0;
             const sundayNotice = document.getElementById('sundayNotice');
-            
-            if (isSunday && sundayNotice) {
-                sundayNotice.style.display = 'block';
-                console.log('<i class="fa-solid fa-calendar-days"></i> Today is Sunday - Non-working day notice displayed');
-            } else if (sundayNotice) {
-                sundayNotice.style.display = 'none';
-            }
-            
+            if (isSunday && sundayNotice) sundayNotice.style.display = 'flex';
+            else if (sundayNotice) sundayNotice.style.display = 'none';
             return isSunday;
         }
 
-        // Function to update date/time display with working day status
         function updateDateTime() {
             const now = new Date();
             const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            const currentDay = days[now.getDay()];
-            const isSunday = now.getDay() === 0;
-            
             document.getElementById('currentDate').textContent = now.toLocaleDateString();
             document.getElementById('currentTime').textContent = now.toLocaleTimeString();
-            document.getElementById('currentDay').textContent = currentDay;
-            
-            const workingDayStatus = document.getElementById('workingDayStatus');
-            if (isSunday) {
-                workingDayStatus.textContent = ' (Non-Working Day)';
-                workingDayStatus.style.color = '#f59e0b';
-                workingDayStatus.style.fontWeight = 'bold';
+            document.getElementById('currentDay').textContent = days[now.getDay()];
+            const ws = document.getElementById('workingDayStatus');
+            if (now.getDay() === 0) {
+                ws.textContent = ' · Non-Working Day';
+                ws.style.color = 'var(--color-warning)';
             } else {
-                workingDayStatus.textContent = ' (Working Day)';
-                workingDayStatus.style.color = '#10b981';
-                workingDayStatus.style.fontWeight = 'bold';
+                ws.textContent = ' · Working Day';
+                ws.style.color = 'var(--color-success)';
             }
         }
 
-        // Function to load dashboard statistics with Sunday awareness
         async function loadDashboardStats() {
             try {
-                const response = await fetch('/api/dashboard/stats');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const stats = data.stats;
-                    const isSunday = new Date().getDay() === 0;
-                    
-                    // Update dashboard stats
-                    document.getElementById('totalStudents').textContent = stats.total_students;
-                    document.getElementById('presentToday').textContent = stats.present_today;
-                    document.getElementById('absentToday').textContent = stats.absent_today;
-                    document.getElementById('attendanceRate').textContent = stats.attendance_rate + '%';
-                    
-                    // Log Sunday-specific information
-                    if (isSunday) {
-                        console.log('<i class="fa-solid fa-chart-simple"></i> Sunday Dashboard Stats:', {
-                            ...stats,
-                            note: 'Today is Sunday - attendance visible but statistics based on Mon-Sat working days'
-                        });
-                    } else {
-                        console.log('<i class="fa-solid fa-chart-simple"></i> Dashboard stats loaded:', stats);
-                    }
-                    
-                } else {
-                    console.error('Failed to load dashboard stats:', data.message);
-                    setDefaultStats();
+                const r = await fetch('/api/dashboard/stats');
+                const d = await r.json();
+                if (d.success) {
+                    document.getElementById('totalStudents').textContent = d.stats.total_students;
+                    document.getElementById('presentToday').textContent = d.stats.present_today;
+                    document.getElementById('absentToday').textContent = d.stats.absent_today;
+                    document.getElementById('attendanceRate').textContent = d.stats.attendance_rate + '%';
                 }
-                
-            } catch (error) {
-                console.error('Error loading dashboard stats:', error);
-                setDefaultStats();
-            }
+            } catch (e) { console.error('Stats error:', e); }
         }
 
-        function setDefaultStats() {
-            document.getElementById('totalStudents').textContent = '0';
-            document.getElementById('presentToday').textContent = '0';
-            document.getElementById('absentToday').textContent = '0';
-            document.getElementById('attendanceRate').textContent = '0%';
-        }
-
-        // Session Configuration Management Functions
         async function loadSessionConfig() {
             try {
-                const response = await fetch('/api/admin/session-config');
-                const data = await response.json();
-                
-                if (data.success) {
-                    displaySessionConfig(data.config);
+                const r = await fetch('/api/admin/session-config');
+                const d = await r.json();
+                if (d.success) {
+                    displaySessionConfig(d.config);
                     await loadCurrentSlotStatus();
-                } else {
-                    alert('Failed to load session configuration: ' + data.message);
                 }
-            } catch (error) {
-                console.error('Error loading session configuration:', error);
-                alert('Error loading session configuration');
-            }
+            } catch (e) { console.error('Config error:', e); }
         }
 
         async function loadCurrentSlotStatus() {
             try {
-                const response = await fetch('/api/admin/current-slots');
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayCurrentSlotStatus(data);
-                }
-            } catch (error) {
-                console.error('Error loading current slot status:', error);
-            }
+                const r = await fetch('/api/admin/current-slots');
+                const d = await r.json();
+                if (d.success) displayCurrentSlotStatus(d);
+            } catch (e) { }
         }
 
         function displayCurrentSlotStatus(data) {
-            const statusContainer = document.getElementById('currentSlotStatus');
-            const currentSlot = data.current_slot;
-            const nextSlot = data.next_slot;
-            
-            let statusHtml = '<div class="status-banner">';
-            
-            if (currentSlot) {
-                statusHtml += `
-                    <div class="active-slot">
-                        <span class="status-icon"><i class="fa-solid fa-circle text-emerald-500"></i></span>
-                        <strong>ACTIVE SLOT:</strong> ${currentSlot.slot_info.name}
-                        <span class="time-info">(${currentSlot.time_remaining} minutes remaining)</span>
-                    </div>
-                `;
-            } else if (nextSlot) {
-                const hours = Math.floor(nextSlot.wait_minutes / 60);
-                const minutes = nextSlot.wait_minutes % 60;
-                statusHtml += `
-                    <div class="next-slot">
-                        <span class="status-icon">🟡</span>
-                        <strong>NEXT SLOT:</strong> ${nextSlot.slot_info.name}
-                        <span class="time-info">(in ${hours}h ${minutes}m)</span>
-                    </div>
-                `;
+            const el = document.getElementById('currentSlotStatus');
+            const cs = data.current_slot, ns = data.next_slot;
+            if (cs) {
+                el.innerHTML = `<div class="active-slot"><i class="fa-solid fa-circle-check"></i> <strong>ACTIVE:</strong> ${cs.slot_info.name} <span class="time-info">(${cs.time_remaining} min remaining)</span></div>`;
+            } else if (ns) {
+                const h = Math.floor(ns.wait_minutes / 60), m = ns.wait_minutes % 60;
+                el.innerHTML = `<div class="next-slot"><i class="fa-regular fa-clock"></i> <strong>NEXT:</strong> ${ns.slot_info.name} <span class="time-info">(in ${h}h ${m}m)</span></div>`;
             } else {
-                statusHtml += `
-                    <div class="no-slots">
-                        <span class="status-icon"><i class="fa-solid fa-circle text-rose-500"></i></span>
-                        <strong>NO ACTIVE SLOTS</strong>
-                        <span class="time-info">(Outside attendance hours)</span>
-                    </div>
-                `;
+                el.innerHTML = `<div class="no-slots"><i class="fa-solid fa-circle-xmark"></i> <strong>NO ACTIVE SLOTS</strong> <span class="time-info">(Outside attendance hours)</span></div>`;
             }
-            
-            statusHtml += '</div>';
-            statusContainer.innerHTML = statusHtml;
         }
 
         function displaySessionConfig(config) {
             const container = document.getElementById('sessionConfigContainer');
-            
             let html = '<div class="session-config-grid">';
-            
             config.forEach(session => {
-                const startTime = session.start_time.substring(0, 5);
-                const endTime = session.end_time.substring(0, 5);
-                const isActive = session.is_active;
-                
+                const st = session.start_time.substring(0, 5);
+                const et = session.end_time.substring(0, 5);
+                const active = session.is_active;
                 html += `
-                    <div class="session-config-item ${isActive ? 'active' : 'inactive'}">
+                    <div class="session-config-item ${active ? 'active' : 'inactive'}">
                         <div class="session-header">
                             <h4>${session.session_type.toUpperCase()} Session</h4>
-                            <span class="status-badge ${isActive ? 'active' : 'inactive'}">
-                                ${isActive ? 'Active' : 'Inactive'}
-                            </span>
+                            <span class="app-badge ${active ? 'app-badge-success' : 'app-badge-neutral'}">${active ? 'Active' : 'Inactive'}</span>
                         </div>
-                        
-                        <div class="current-timing">
-                            <strong>Current:</strong> ${startTime} - ${endTime}
-                        </div>
-                        
+                        <div class="current-timing"><strong>Current:</strong> ${st} - ${et}</div>
                         <div class="time-inputs">
-                            <div class="input-group">
-                                <label>Start Time:</label>
-                                <input type="time" id="start_${session.session_type}" value="${startTime}" 
-                                       ${!isActive ? 'disabled' : ''}>
+                            <div class="app-form-group">
+                                <label class="app-form-label">Start</label>
+                                <input type="time" class="app-form-input" id="start_${session.session_type}" value="${st}" ${!active ? 'disabled' : ''}>
                             </div>
-                            
-                            <div class="input-group">
-                                <label>End Time:</label>
-                                <input type="time" id="end_${session.session_type}" value="${endTime}"
-                                       ${!isActive ? 'disabled' : ''}>
+                            <div class="app-form-group">
+                                <label class="app-form-label">End</label>
+                                <input type="time" class="app-form-input" id="end_${session.session_type}" value="${et}" ${!active ? 'disabled' : ''}>
                             </div>
                         </div>
-                        
-                        ${isActive ? `
-                            <button class="btn btn-success btn-update" onclick="updateSessionTiming('${session.session_type}')">
-                                💾 Update ${session.session_type} Session
-                            </button>
-                        ` : `
-                            <div class="inactive-message">Session is inactive</div>
-                        `}
-                        
-                        <div class="session-info">
-                            <div class="info-item">Course ID: ${session.course_id}</div>
-                            <div class="info-item">Configuration ID: ${session.id}</div>
-                        </div>
-                    </div>
-                `;
+                        ${active ? `<button class="app-btn app-btn-success app-btn-block btn-update" onclick="updateSessionTiming('${session.session_type}')"><i class="fa-solid fa-floppy-disk"></i> Update</button>` : '<div class="inactive-message">Session is inactive</div>'}
+                    </div>`;
             });
-            
             html += '</div>';
             container.innerHTML = html;
         }
 
         async function updateSessionTiming(sessionType) {
-            const startTime = document.getElementById(`start_${sessionType}`).value;
-            const endTime = document.getElementById(`end_${sessionType}`).value;
-            
-            if (!startTime || !endTime) {
-                alert('Please fill both start and end times');
-                return;
-            }
-            
-            if (startTime >= endTime) {
-                alert('Start time must be before end time');
-                return;
-            }
-            
-            const confirmed = confirm(
-                `Are you sure you want to update ${sessionType} session timing to ${startTime} - ${endTime}?\n\n` +
-                `This will take effect immediately and may affect ongoing attendance marking.`
-            );
-            
-            if (!confirmed) return;
-            
+            const st = document.getElementById(`start_${sessionType}`).value;
+            const et = document.getElementById(`end_${sessionType}`).value;
+            if (!st || !et) { alert('Please fill both times'); return; }
+            if (st >= et) { alert('Start must be before end'); return; }
+            if (!confirm(`Update ${sessionType} to ${st} - ${et}? This takes effect immediately.`)) return;
             try {
-                const response = await fetch(`/api/admin/session-config/${sessionType}`, {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        start_time: startTime,
-                        end_time: endTime
-                    })
+                const r = await fetch(`/api/admin/session-config/${sessionType}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start_time: st, end_time: et })
                 });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    showNotification(result.message, 'success');
+                const d = await r.json();
+                if (d.success) {
+                    showNotification(d.message, 'success');
                     await loadSessionConfig();
                     await fetch('/api/admin/reload-slot-config', { method: 'POST' });
-                } else {
-                    alert('Error: ' + result.message);
-                }
-            } catch (error) {
-                console.error('Error updating session:', error);
-                alert('Failed to update session configuration');
-            }
+                } else alert('Error: ' + d.message);
+            } catch (e) { alert('Failed to update'); }
         }
 
         async function testCurrentSlot() {
             try {
-                const response = await fetch('/api/admin/current-slots');
-                const data = await response.json();
-                
-                if (data.success) {
-                    const currentSlot = data.current_slot;
-                    
-                    if (currentSlot) {
-                        alert(
-                            `Current Active Slot:\n` +
-                            `${currentSlot.slot_info.name}\n` +
-                            `Time Remaining: ${currentSlot.time_remaining} minutes\n` +
-                            `Slot Period: ${currentSlot.slot_info.start_time.slice(0,5)} - ${currentSlot.slot_info.end_time.slice(0,5)}`
-                        );
-                    } else {
-                        const nextSlot = data.next_slot;
-                        if (nextSlot) {
-                            const hours = Math.floor(nextSlot.wait_minutes / 60);
-                            const minutes = nextSlot.wait_minutes % 60;
-                            alert(
-                                `No Active Slot\n\n` +
-                                `Next Slot: ${nextSlot.slot_info.name}\n` +
-                                `Starts in: ${hours}h ${minutes}m\n` +
-                                `Slot Period: ${nextSlot.slot_info.start_time.slice(0,5)} - ${nextSlot.slot_info.end_time.slice(0,5)}`
-                            );
-                        } else {
-                            alert('No attendance slots available today');
-                        }
-                    }
-                    
-                    displayCurrentSlotStatus(data);
-                }
-            } catch (error) {
-                alert('Error checking current slot');
-            }
+                const r = await fetch('/api/admin/current-slots');
+                const d = await r.json();
+                if (!d.success) return;
+                const cs = d.current_slot;
+                if (cs) alert(`Active: ${cs.slot_info.name}\nRemaining: ${cs.time_remaining} min\nPeriod: ${cs.slot_info.start_time.slice(0, 5)} - ${cs.slot_info.end_time.slice(0, 5)}`);
+                else if (d.next_slot) {
+                    const h = Math.floor(d.next_slot.wait_minutes / 60), m = d.next_slot.wait_minutes % 60;
+                    alert(`No active slot\n\nNext: ${d.next_slot.slot_info.name}\nStarts in: ${h}h ${m}m`);
+                } else alert('No slots available today');
+                displayCurrentSlotStatus(d);
+            } catch (e) { alert('Error checking slot'); }
         }
 
         function showNotification(message, type = 'info') {
-            const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            notification.innerHTML = `
-                <span>${message}</span>
-                <button onclick="this.parentElement.remove()">×</button>
-            `;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                if (notification.parentElement) {
-                    notification.remove();
-                }
-            }, 5000);
+            const toast = document.createElement('div');
+            toast.className = `app-toast app-toast-${type}`;
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
         }
 
-        // Enhanced logout functionality
         async function performLogout() {
-            if (confirm('Are you sure you want to logout?')) {
-                try {
-                    const response = await fetch('/api/logout', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        credentials: 'include'
-                    });
-                    
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        localStorage.clear();
-                        sessionStorage.clear();
-                        window.location.href = '/login';
-                    } else {
-                        alert('Logout failed: ' + result.message);
-                    }
-                } catch (error) {
-                    console.error('Logout error:', error);
-                    window.location.href = '/login';
-                }
-            }
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
         }
 
-        // Enhanced session checking
         async function checkSession() {
             try {
-                const response = await fetch('/api/session/status', {
-                    credentials: 'include'
-                });
-                const result = await response.json();
-                
-                if (!result.authenticated) {
-                    console.log('Session expired, redirecting to login');
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.log('Session check failed:', error);
-            }
+                const r = await fetch('/api/session/status', { credentials: 'include' });
+                const d = await r.json();
+                if (!d.authenticated) window.location.href = '/login';
+            } catch (e) { }
         }
 
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('<i class="fa-solid fa-rocket"></i> Dashboard initialized with configurable slot management');
-            
+        document.addEventListener('DOMContentLoaded', function () {
             checkSundayStatus();
             updateDateTime();
             loadDashboardStats();
-            loadSessionConfig();
-            
+
+            // Show admin zone if admin
+            fetch('/api/session/status').then(r => r.json()).then(d => {
+                if (d.user_type === 'admin') {
+                    document.getElementById('adminZone').style.display = 'block';
+                    loadSessionConfig();
+                }
+            });
+
             setInterval(updateDateTime, 1000);
             setInterval(loadDashboardStats, 30000);
-            setInterval(loadCurrentSlotStatus, 30000);
             setInterval(checkSession, 5 * 60 * 1000);
-            
-            const isSunday = new Date().getDay() === 0;
-            if (isSunday) {
-                console.log('<i class="fa-solid fa-calendar-days"></i> Sunday Dashboard Mode: Statistics based on Mon-Sat working days');
-            }
         });
 
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                checkSession();
-                checkSundayStatus();
-            }
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) { checkSession(); checkSundayStatus(); }
         });
     </script>
 </body>
+
 </html>

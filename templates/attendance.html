@@ -1,436 +1,358 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Attendance Detection - CDAC</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Live Attendance — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
     <style>
-        body {
-            background: linear-gradient(135deg, #0891b2 0%, #0e7490 50%, #155e75 100%);
-            min-height: 100vh;
-            margin: 0;
-            padding: 0;
-        }
-        .navbar-gradient {
-            background: linear-gradient(135deg, #0891b2, #0e7490);
-        }
-        .detection-card {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        /* Page-specific layout for camera + results side by side */
+        .att-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
         }
 
-        /* ===== CDAC NAVBAR STYLES ===== */
-        .cdac-header {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-bottom: 4px solid #0066cc;
-            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            width: 100%;
-            z-index: 10000;
-            padding: 12px 0;
-        }
-        .cdac-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            padding: 0 24px;
+        @media (max-width: 900px) {
+            .att-layout {
+                grid-template-columns: 1fr;
+            }
         }
 
-        /* Logo Section (left) */
-        .cdac-logo-section {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex: 1;
-        }
-        .cdac-logo-wrapper {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            padding: 10px;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 60px;
-            min-height: 60px;
-            position: relative;
-        }
-        .cdac-logo-img {
-            height: 50px;
-            width: 50px;
-            object-fit: contain;
-            display: block;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 4px;
-        }
-        .cdac-fallback-logo {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 50px;
-            height: 50px;
-        }
-        .fallback-icon {
-            font-size: 32px;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .cdac-text-section {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .cdac-hindi {
-            font-size: 16px;
-            font-weight: 700;
-            color: #0066cc;
-            line-height: 1.2;
-            letter-spacing: 0.5px;
-        }
-        .cdac-english {
-            font-size: 13px;
-            font-weight: 600;
-            color: #004499;
-            line-height: 1.2;
-            letter-spacing: 0.3px;
-        }
-        .cdac-tagline {
-            font-size: 11px;
-            font-weight: 500;
-            color: #666;
-            line-height: 1.2;
-            font-style: italic;
+        .att-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
         }
 
-        /* Navigation (center) */
-        .cdac-navigation {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 0 0 auto;
-        }
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 16px;
-            color: #333;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            border: 2px solid transparent;
-        }
-        .nav-link:hover {
-            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
-            color: #0066cc;
-            border-color: #b3d9ff;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
-            text-decoration: none;
-        }
-        .nav-link.active {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            color: white;
-            border-color: #0066cc;
-        }
-        .nav-icon { font-size: 16px; }
-        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
-
-        /* User Section (right) */
-        .cdac-user-section { flex: 0 0 auto; }
-        .logout-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            letter-spacing: 0.3px;
-        }
-        .logout-button:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        /* Working schedule indicator */
-        .schedule-info {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            color: rgba(255, 255, 255, 0.9);
-            margin-top: 8px;
-        }
-
-        /* Status indicators for Sunday */
-        .sunday-notice {
-            background: #fef3c7;
-            border: 2px solid #f59e0b;
-            color: #92400e;
-            padding: 12px;
-            border-radius: 8px;
-            margin: 16px 0;
-            font-weight: 600;
+        .att-stat-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 14px;
             text-align: center;
         }
 
-        /* Adjust for mobile */
-        @media (max-width: 768px) {
-            .cdac-container {
-                flex-direction: column;
-                gap: 10px;
-                text-align: center;
-                padding: 5px 15px;
-            }
+        .att-stat-box .val {
+            font-size: 1.71rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
 
-            .cdac-navigation {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 8px;
-            }
+        .att-stat-box .lbl {
+            font-size: 0.79rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
 
-            .nav-link {
-                font-size: 10px;
-                padding: 4px 8px;
-            }
+        .att-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+        }
 
-            .cdac-logo-img {
-                height: 35px;
-            }
+        .att-section h2 {
+            font-size: 1.14rem;
+            margin-bottom: 12px;
+        }
 
-            .cdac-hindi {
-                font-size: 11px;
-            }
+        .att-section p.sub {
+            color: var(--text-secondary);
+            font-size: 0.93rem;
+            margin-bottom: 16px;
+        }
 
-            .cdac-english {
-                font-size: 9px;
-            }
+        .att-video {
+            width: 100%;
+            background: #1a1a2e;
+            border-radius: var(--border-radius);
+            display: block;
+            min-height: 240px;
+            object-fit: cover;
+        }
 
-            .logout-button {
-                padding: 8px 12px;
-                font-size: 12px;
-            }
+        .att-btns {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .att-btns .app-btn {
+            flex: 1;
+            min-width: 100px;
+            justify-content: center;
+        }
+
+        .result-item {
+            padding: 12px 16px;
+            border-left: 4px solid var(--color-success);
+            background: #E3FCEF;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .result-item.warning {
+            border-color: var(--color-warning);
+            background: #FFFAE6;
+        }
+
+        .result-item.error {
+            border-color: var(--color-danger);
+            background: #FFEBE6;
+        }
+
+        .result-item h4 {
+            margin-bottom: 2px;
+        }
+
+        .result-item p {
+            font-size: 0.86rem;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .att-empty {
+            text-align: center;
+            color: var(--text-secondary);
+            padding: 32px 16px;
+        }
+
+        .att-empty i {
+            font-size: 2rem;
+            color: var(--text-subtle);
+            margin-bottom: 8px;
+        }
+
+        .slot-banner {
+            padding: 10px 16px;
+            border-radius: var(--border-radius);
+            font-weight: 500;
+            font-size: 0.93rem;
+            margin-bottom: 16px;
+        }
+
+        .slot-banner.active {
+            background: #E3FCEF;
+            color: #006644;
+            border-left: 4px solid var(--color-success);
+        }
+
+        .slot-banner.next {
+            background: #DEEBFF;
+            color: #0747A6;
+            border-left: 4px solid var(--color-primary);
+        }
+
+        .slot-banner.none {
+            background: #FFEBE6;
+            color: #BF2600;
+            border-left: 4px solid var(--color-danger);
+        }
+
+        .slot-banner.sunday {
+            background: #FFFAE6;
+            color: #FF8B00;
+            border-left: 4px solid var(--color-warning);
+        }
+
+        #statusMessage {
+            padding: 10px 16px;
+            border-radius: var(--border-radius);
+            font-size: 0.93rem;
+            text-align: center;
+            margin-top: 12px;
+        }
+
+        .status-success {
+            background: #E3FCEF;
+            color: #006644;
+        }
+
+        .status-error {
+            background: #FFEBE6;
+            color: #BF2600;
+        }
+
+        .status-warning {
+            background: #FFFAE6;
+            color: #FF8B00;
+        }
+
+        .status-info {
+            background: #DEEBFF;
+            color: #0747A6;
+        }
+
+        .att-instructions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            text-align: center;
+        }
+
+        .att-instructions .step {
+            padding: 16px;
+        }
+
+        .att-instructions .step i {
+            font-size: 1.5rem;
+            color: var(--color-primary);
+            margin-bottom: 8px;
+        }
+
+        .att-instructions .step h4 {
+            font-size: 0.93rem;
+            margin-bottom: 4px;
+        }
+
+        .att-instructions .step p {
+            font-size: 0.79rem;
+            color: var(--text-secondary);
+            margin: 0;
         }
     </style>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
+
 <body>
-   <!-- CDAC Header -->
-    <header class="cdac-header">
-        <div class="cdac-container">
-            <!-- Left: Logo block -->
-            <div class="cdac-logo-section">
-                <div class="cdac-logo-wrapper">
-                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
-                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
-                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
-                    </div>
-                </div>
-                <div class="cdac-text-section">
-                    <div class="cdac-hindi">प्रगत संगणन विकास केंद</div>
-                    <div class="cdac-english">CENTER FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
-                    <div class="cdac-tagline">Face Recognition Attendance System</div>
-                </div>
+    <!-- Navbar -->
+    <nav class="app-navbar">
+        <a href="/dashboard" class="app-navbar-brand">
+            <i class="fa-solid fa-users-viewfinder"></i>
+            CDAC Attendance
+        </a>
+        <div class="app-navbar-links">
+            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance" class="active"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
+        </div>
+        <div class="app-navbar-actions">
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <!-- Page Header -->
+        <div class="app-page-header">
+            <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / Live Attendance</div>
+            <h1><i class="fa-solid fa-video"></i> Live Attendance Detection</h1>
+            <p>Automatic face recognition attendance system</p>
+        </div>
+
+        <!-- Sunday Notice -->
+        <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
+            <i class="fa-solid fa-calendar-xmark"></i>
+            Today is Sunday — Non-working day. Attendance can be marked but won't count toward statistics.
+        </div>
+
+        <!-- Slot Status -->
+        <div id="slotStatusBanner"></div>
+
+        <!-- Live Stats Row -->
+        <div class="att-stats">
+            <div class="att-stat-box">
+                <div class="val text-success" id="liveStudentCount">0</div>
+                <div class="lbl">Students Present</div>
             </div>
-
-            <!-- Center: Nav -->
-            <nav class="cdac-navigation">
-                <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
-                    <span class="nav-text">HOME</span>
-                </a>
-                <a href="/about" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
-                    <span class="nav-text">ABOUT</span>
-                </a>
-                <a href="/contact" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
-                    <span class="nav-text">CONTACT</span>
-                </a>
-            </nav>
-
-            <!-- Right: Logout -->
-            <div class="cdac-user-section">
-                <button class="logout-button" onclick="logout()" title="Logout">
-                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
-                    <span class="logout-text">Logout</span>
-                </button>
+            <div class="att-stat-box">
+                <div class="val" style="color:var(--color-primary)" id="totalStudents">0</div>
+                <div class="lbl">Total Students</div>
+            </div>
+            <div class="att-stat-box">
+                <div class="val" style="color:#6554C0" id="attendancePercentage">0%</div>
+                <div class="lbl">Attendance %</div>
+            </div>
+            <div class="att-stat-box">
+                <div id="currentSlotInfo" class="fw-600" style="font-size:0.93rem;">Checking...</div>
+                <div class="lbl">Current Slot</div>
+                <div class="text-xs text-muted" id="lastUpdated"></div>
             </div>
         </div>
-    </header>
 
-    <!-- Main Content -->
-    <div class="navbar-gradient text-white py-6" style="margin-top: 80px;">
-        <div class="max-w-7xl mx-auto px-4 text-center">
-            <h1 class="text-3xl font-bold mb-2"><i class="fa-solid fa-video"></i> Live Attendance Detection</h1>
-            <p class="text-lg opacity-90">Automatic face recognition attendance system</p>
-            <div class="schedule-info">
-                <i class="fa-solid fa-calendar-days"></i> Working Days: Monday - Saturday | 🚫 Sunday: Non-working day
-            </div>
-        </div>
-        
-        <!-- Live Student Count Section -->
-        <div class="max-w-7xl mx-auto px-4 py-4">
-            <div class="detection-card p-4 mb-4">
-                <div class="flex justify-between items-center">
-                    <div class="flex items-center space-x-4">
-                        <div class="text-center">
-                            <div class="text-3xl font-bold text-green-600" id="liveStudentCount">-</div>
-                            <div class="text-sm text-gray-600">Students Present</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-2xl font-bold text-blue-600" id="totalStudents">-</div>
-                            <div class="text-sm text-gray-600">Total Students</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-purple-600" id="attendancePercentage">-</div>
-                            <div class="text-sm text-gray-600">Attendance % (Mon-Sat)</div>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-sm text-gray-600">Current Slot:</div>
-                        <div class="font-semibold" id="currentSlotInfo">Checking...</div>
-                        <div class="text-xs text-gray-500" id="lastUpdated">-</div>
-                    </div>
-                </div>
-                
-                <!-- Sunday Notice -->
-                <div id="sundayNotice" class="sunday-notice" style="display: none;">
-                    <i class="fa-solid fa-calendar-days"></i> Today is Sunday - Non-working day. Attendance marking is available but won't count toward statistics.
-                </div>
-                
-                <!-- Slot Status Banner -->
-                <div class="mt-3 p-3 rounded-lg" id="slotStatusBanner" style="display: none;">
-                    <div class="flex items-center">
-                        <span id="slotStatusIcon" class="mr-2 text-xl"></span>
-                        <span id="slotStatusMessage" class="font-medium"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Attendance Detection Interface -->
-    <div class="max-w-7xl mx-auto px-4 py-8">
-        <div class="grid lg:grid-cols-2 gap-8">
-            
-            <!-- Camera Feed Card -->
-            <div class="detection-card p-6">
-                <div class="text-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2"><i class="fa-solid fa-camera"></i> Camera Feed</h2>
-                    <p class="text-gray-600">Position yourself in front of the camera</p>
-                </div>
-                
-                <div class="relative">
-                    <video id="video" autoplay muted class="w-full h-64 bg-gray-900 rounded-lg object-cover"></video>
-                    <canvas id="canvas" style="display: none;"></canvas>
-                </div>
-                
-                <div class="mt-6 flex justify-center space-x-4">
-                    <button id="startBtn" onclick="startCamera()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
-                        ▶️ Start Detection
+        <!-- Camera + Results Side by Side -->
+        <div class="att-layout">
+            <!-- Camera Feed -->
+            <div class="att-section">
+                <h2><i class="fa-solid fa-camera"></i> Camera Feed</h2>
+                <p class="sub">Position yourself in front of the camera</p>
+                <video id="video" autoplay muted class="att-video"></video>
+                <canvas id="canvas" style="display:none;"></canvas>
+                <div class="att-btns">
+                    <button id="startBtn" onclick="startCamera()" class="app-btn app-btn-success">
+                        <i class="fa-solid fa-play"></i> Start
                     </button>
-                    <button id="stopBtn" onclick="stopCamera()" class="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors" disabled>
-                        ⏹️ Stop Detection
+                    <button id="stopBtn" onclick="stopCamera()" class="app-btn app-btn-danger" disabled>
+                        <i class="fa-solid fa-stop"></i> Stop
                     </button>
-                    <button id="captureBtn" onclick="captureFrame()" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors" disabled>
-                        📸 Manual Capture
+                    <button id="captureBtn" onclick="captureFrame()" class="app-btn app-btn-primary" disabled>
+                        <i class="fa-solid fa-camera"></i> Capture
                     </button>
                 </div>
             </div>
-            
-            <!-- Detection Results Card -->
-            <div class="detection-card p-6">
-                <div class="text-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2"><i class="fa-solid fa-chart-simple"></i> Detection Results</h2>
-                    <p class="text-gray-600">Real-time attendance marking</p>
-                </div>
-                
-                <div id="detectionResults" class="space-y-4">
-                    <div class="text-center text-gray-500 py-8" id="defaultDetectionMessage">
-                        <p class="text-lg">🔍 Waiting for face detection...</p>
-                        <p class="text-sm">Stand in front of the camera to mark attendance</p>
-                        <p class="text-xs text-gray-400 mt-2">Attendance slots: Morning (8:30-9:30 AM), Afternoon (1:45-2:00 PM)</p>
-                        <p class="text-xs text-blue-600 mt-1">Working days: Monday - Saturday</p>
+
+            <!-- Detection Results -->
+            <div class="att-section">
+                <h2><i class="fa-solid fa-chart-simple"></i> Detection Results</h2>
+                <p class="sub">Real-time attendance marking</p>
+
+                <div id="detectionResults">
+                    <div class="att-empty" id="defaultDetectionMessage">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <p style="font-size:1rem; margin-bottom:4px;">Waiting for face detection...</p>
+                        <p style="font-size:0.86rem;">Stand in front of the camera to mark attendance</p>
                     </div>
                 </div>
-                
-                <!-- Out of Slot Message Area -->
-                <div id="outOfSlotMessage" class="mt-4 p-4 rounded-lg bg-yellow-100 border border-yellow-300" style="display: none;">
-                    <div class="flex items-center">
-                        <span class="text-yellow-600 mr-2">⏰</span>
-                        <div>
-                            <div class="font-semibold text-yellow-800">Face Detected - Outside Attendance Slot</div>
-                            <div class="text-sm text-yellow-700" id="outOfSlotDetails"></div>
-                        </div>
-                    </div>
+
+                <!-- Out of Slot Message -->
+                <div id="outOfSlotMessage" class="slot-banner sunday" style="display:none;">
+                    <i class="fa-regular fa-clock"></i>
+                    <strong>Face Detected — Outside Attendance Slot</strong>
+                    <div id="outOfSlotDetails" style="font-size:0.86rem; margin-top:4px;"></div>
                 </div>
-                
-                <div id="statusMessage" class="mt-4 p-4 rounded-lg bg-gray-100 text-center">
-                    <p class="text-gray-600">Ready to detect faces</p>
+
+                <div id="statusMessage" class="status-info">
+                    <p>Ready to detect faces</p>
                 </div>
             </div>
         </div>
-        
-        <!-- User Instructions -->
-        <div class="detection-card p-6 mt-8">
-            <h3 class="text-xl font-bold text-gray-800 mb-4"><i class="fa-solid fa-clipboard-user"></i> Instructions</h3>
-            <div class="grid md:grid-cols-3 gap-6 text-center">
-                <div class="p-4">
-                    <div class="text-3xl mb-2"><i class="fa-solid fa-user"></i></div>
-                    <h4 class="font-semibold text-gray-800 mb-2">Position Yourself</h4>
-                    <p class="text-gray-600 text-sm">Stand directly in front of the camera with good lighting</p>
+
+        <!-- Instructions -->
+        <div class="att-section">
+            <h2><i class="fa-solid fa-clipboard-list"></i> Instructions</h2>
+            <div class="att-instructions mt-16">
+                <div class="step">
+                    <i class="fa-solid fa-user"></i>
+                    <h4>Position Yourself</h4>
+                    <p>Stand in front of the camera with good lighting</p>
                 </div>
-                <div class="p-4">
-                    <div class="text-3xl mb-2"><i class="fa-solid fa-camera"></i></div>
-                    <h4 class="font-semibold text-gray-800 mb-2">Look at Camera</h4>
-                    <p class="text-gray-600 text-sm">Face the camera directly for best recognition accuracy</p>
+                <div class="step">
+                    <i class="fa-solid fa-camera"></i>
+                    <h4>Look at Camera</h4>
+                    <p>Face the camera directly for best accuracy</p>
                 </div>
-                <div class="p-4">
-                    <div class="text-3xl mb-2"><i class="fa-solid fa-check text-green-500"></i></div>
-                    <h4 class="font-semibold text-gray-800 mb-2">Attendance Marked</h4>
-                    <p class="text-gray-600 text-sm">System will automatically mark your attendance when recognized</p>
+                <div class="step">
+                    <i class="fa-solid fa-check"></i>
+                    <h4>Attendance Marked</h4>
+                    <p>The system will automatically mark your attendance</p>
                 </div>
             </div>
-            
-            <!-- Working Schedule Information -->
-            <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <h4 class="font-semibold text-blue-800 mb-2"><i class="fa-solid fa-calendar-days"></i> Working Schedule</h4>
-                <div class="grid md:grid-cols-2 gap-4 text-sm">
-                    <div>
-                        <strong class="text-blue-700">Working Days:</strong>
-                        <ul class="text-blue-600 mt-1">
-                            <li>• Monday - Saturday</li>
-                            <li>• Attendance counts toward statistics</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <strong class="text-blue-700">Non-Working Day:</strong>
-                        <ul class="text-blue-600 mt-1">
-                            <li>• Sunday</li>
-                            <li>• Attendance visible but not counted</li>
-                        </ul>
-                    </div>
+
+            <div class="app-alert app-alert-info mt-16">
+                <i class="fa-solid fa-calendar-days"></i>
+                <div>
+                    <strong>Working Schedule:</strong> Monday — Saturday. Sunday attendance is visible but not counted
+                    in statistics.
                 </div>
             </div>
         </div>
@@ -440,343 +362,185 @@
         let stream = null;
         let detectionInterval = null;
         let liveCountInterval = null;
-        
-        // Check if today is Sunday and show notice
+
         function checkSundayStatus() {
             const today = new Date();
-            const isSunday = today.getDay() === 0; // Sunday = 0
+            const isSunday = today.getDay() === 0;
             const sundayNotice = document.getElementById('sundayNotice');
-            
-            if (isSunday && sundayNotice) {
-                sundayNotice.style.display = 'block';
-                console.log('<i class="fa-solid fa-calendar-days"></i> Today is Sunday - Non-working day notice displayed');
-            } else if (sundayNotice) {
-                sundayNotice.style.display = 'none';
-            }
-            
+            if (isSunday && sundayNotice) sundayNotice.style.display = 'flex';
+            else if (sundayNotice) sundayNotice.style.display = 'none';
             return isSunday;
         }
-        
-        // Live count update function with Sunday awareness
+
         async function updateLiveCount() {
             try {
                 const response = await fetch('/api/attendance/live-count');
                 const data = await response.json();
-                
                 if (data.success) {
                     document.getElementById('liveStudentCount').textContent = data.total_present;
                     document.getElementById('totalStudents').textContent = data.total_students;
                     document.getElementById('attendancePercentage').textContent = data.attendance_percentage + '%';
                     document.getElementById('lastUpdated').textContent = 'Updated: ' + data.last_updated;
-                    
-                    // Update slot status
                     updateSlotStatus(data.current_slot, data.next_slot);
-                    
-                    // Log Sunday status for debugging
-                    const isSunday = checkSundayStatus();
-                    if (isSunday) {
-                        console.log('<i class="fa-solid fa-chart-simple"></i> Sunday attendance statistics:', {
-                            present: data.total_present,
-                            percentage: data.attendance_percentage,
-                            note: 'Sunday attendance visible but not counted in statistics'
-                        });
-                    }
+                    checkSundayStatus();
                 }
             } catch (error) {
                 console.error('Error updating live count:', error);
             }
         }
-        
-        // Update slot status banner
+
         function updateSlotStatus(currentSlot, nextSlot) {
             const banner = document.getElementById('slotStatusBanner');
-            const icon = document.getElementById('slotStatusIcon');
-            const message = document.getElementById('slotStatusMessage');
             const slotInfo = document.getElementById('currentSlotInfo');
-            
             const isSunday = new Date().getDay() === 0;
-            
+
             if (currentSlot && currentSlot.is_active) {
-                // Active slot
-                banner.style.display = 'block';
-                banner.className = 'mt-3 p-3 rounded-lg bg-green-100 border border-green-300';
-                icon.textContent = '<i class="fa-solid fa-check text-green-500"></i>';
-                
-                let timeMsg = `${currentSlot.slot_info.name} - ${currentSlot.time_remaining} minutes remaining`;
-                if (isSunday) {
-                    timeMsg += ' (Sunday - not counted in stats)';
-                }
-                
-                message.textContent = timeMsg;
+                let timeMsg = `${currentSlot.slot_info.name} — ${currentSlot.time_remaining} min remaining`;
+                if (isSunday) timeMsg += ' (Sunday)';
+                banner.innerHTML = `<div class="slot-banner active"><i class="fa-solid fa-circle-check"></i> <strong>ACTIVE:</strong> ${timeMsg}</div>`;
                 slotInfo.textContent = `${currentSlot.slot_info.name} (Active)`;
-                slotInfo.className = isSunday ? 'font-semibold text-orange-600' : 'font-semibold text-green-600';
-                
+                slotInfo.style.color = isSunday ? 'var(--color-warning)' : 'var(--color-success)';
             } else if (nextSlot) {
-                // No active slot, show next
-                banner.style.display = 'block';
-                banner.className = 'mt-3 p-3 rounded-lg bg-blue-100 border border-blue-300';
-                icon.textContent = '⏰';
-                const hours = Math.floor(nextSlot.wait_minutes / 60);
-                const minutes = nextSlot.wait_minutes % 60;
-                message.textContent = `Next: ${nextSlot.slot_info.name} in ${hours}h ${minutes}m`;
+                const h = Math.floor(nextSlot.wait_minutes / 60), m = nextSlot.wait_minutes % 60;
+                banner.innerHTML = `<div class="slot-banner next"><i class="fa-regular fa-clock"></i> <strong>NEXT:</strong> ${nextSlot.slot_info.name} in ${h}h ${m}m</div>`;
                 slotInfo.textContent = 'No Active Slot';
-                slotInfo.className = 'font-semibold text-gray-600';
-                
+                slotInfo.style.color = 'var(--text-secondary)';
             } else {
-                // No slots today
-                banner.style.display = 'none';
+                banner.innerHTML = '';
                 slotInfo.textContent = 'No Slots Available';
-                slotInfo.className = 'font-semibold text-gray-400';
+                slotInfo.style.color = 'var(--text-subtle)';
             }
         }
-        
-        // Navigation functions
-        async function goHome() {
-            try {
-                const response = await fetch('/api/session/status');
-                const sessionData = await response.json();
-                
-                if (sessionData.authenticated) {
-                    if (sessionData.user_type === 'admin') {
-                        window.location.href = '/dashboard';
-                    } else {
-                        showMessage('You are already on your home page!', 'info');
-                    }
-                } else {
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.error('Navigation error:', error);
-                window.location.href = '/login';
-            }
-        }
-        
-        async function logout() {
-            try {
-                const response = await fetch('/api/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    window.location.href = '/login';
-                } else {
-                    alert('Logout failed: ' + result.message);
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                window.location.href = '/login';
-            }
-        }
-        
-        // Camera functions
+
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 document.getElementById('video').srcObject = stream;
-                
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('captureBtn').disabled = false;
-                
                 const isSunday = checkSundayStatus();
-                const startMsg = isSunday ? 
-                    'Camera started! (Sunday - attendance visible but not counted)' : 
-                    'Camera started successfully!';
-                    
-                showMessage(startMsg, isSunday ? 'warning' : 'success');
-                
-                // Start automatic detection every 3 seconds
+                showMessage(isSunday ? 'Camera started! (Sunday — not counted)' : 'Camera started!', isSunday ? 'warning' : 'success');
                 detectionInterval = setInterval(captureFrame, 3000);
-                
-                // Start live count updates every 10 seconds
                 if (!liveCountInterval) {
-                    updateLiveCount(); // Initial update
+                    updateLiveCount();
                     liveCountInterval = setInterval(updateLiveCount, 10000);
                 }
-                
             } catch (error) {
-                console.error('Camera error:', error);
                 showMessage('Camera access failed: ' + error.message, 'error');
             }
         }
-        
+
         function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            
-            if (detectionInterval) {
-                clearInterval(detectionInterval);
-                detectionInterval = null;
-            }
-            
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+            if (detectionInterval) { clearInterval(detectionInterval); detectionInterval = null; }
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('captureBtn').disabled = true;
-            
             showMessage('Camera stopped', 'info');
         }
-        
-        // Enhanced detection result display with Sunday awareness
+
         function displayDetectionResults(result) {
             const resultsDiv = document.getElementById('detectionResults');
             const outOfSlotDiv = document.getElementById('outOfSlotMessage');
             const defaultMsg = document.getElementById('defaultDetectionMessage');
             const isSunday = new Date().getDay() === 0;
-            
-            // Hide default message
             if (defaultMsg) defaultMsg.style.display = 'none';
-            
+
             if (result.success && result.recognized_students && result.recognized_students.length > 0) {
-                // Successful recognition within slot
                 outOfSlotDiv.style.display = 'none';
-                
                 let html = '';
-                result.recognized_students.forEach(student => {
-                    const statusColor = student.status === 'marked' ? 'green' : 'orange';
-                    const sundayNote = isSunday ? ' (Sunday - not counted in stats)' : '';
-                    
-                    html += `
-                        <div class="p-4 border-l-4 border-${statusColor}-500 bg-${statusColor}-50 rounded-lg">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <h4 class="font-semibold text-gray-800">${student.name}</h4>
-                                    <p class="text-sm text-gray-600">Confidence: ${(student.confidence * 100).toFixed(1)}%</p>
-                                    <p class="text-sm text-gray-600">Slot: ${student.slot_name || 'Current'}${sundayNote}</p>
-                                </div>
-                                <div class="text-right">
-                                    <span class="px-3 py-1 rounded-full text-sm font-medium bg-${statusColor}-100 text-${statusColor}-800">
-                                        ${student.status === 'marked' ? '<i class="fa-solid fa-check text-green-500"></i> Marked' : '<i class="fa-solid fa-triangle-exclamation"></i> Already Present'}
-                                    </span>
-                                    ${isSunday ? '<div class="text-xs text-orange-600 mt-1">Sunday attendance</div>' : ''}
-                                </div>
+                result.recognized_students.forEach(s => {
+                    const cls = s.status === 'marked' ? '' : 'warning';
+                    const sundayNote = isSunday ? ' (Sunday)' : '';
+                    html += `<div class="result-item ${cls}">
+                        <div class="d-flex justify-between align-center">
+                            <div>
+                                <h4>${s.name}</h4>
+                                <p>Confidence: ${(s.confidence * 100).toFixed(1)}% · Slot: ${s.slot_name || 'Current'}${sundayNote}</p>
                             </div>
-                            <p class="text-sm text-gray-600 mt-2">${student.message}</p>
+                            <span class="app-badge ${s.status === 'marked' ? 'app-badge-success' : 'app-badge-warning'}">
+                                ${s.status === 'marked' ? 'Marked' : 'Already Present'}
+                            </span>
                         </div>
-                    `;
+                        <p>${s.message}</p>
+                    </div>`;
                 });
                 resultsDiv.innerHTML = html;
-                
-                const successMsg = isSunday ? 
-                    result.message + ' (Sunday - not counted in statistics)' : 
-                    result.message;
-                showMessage(successMsg, isSunday ? 'warning' : 'success');
-                
-                // Update live count immediately
+                showMessage(result.message + (isSunday ? ' (Sunday)' : ''), isSunday ? 'warning' : 'success');
                 setTimeout(updateLiveCount, 1000);
-                
             } else if (result.outside_slot) {
-                // Face detected but outside slot
                 outOfSlotDiv.style.display = 'block';
-                
-                let detailsText = result.message;
+                let details = result.message;
                 if (result.next_slot) {
-                    const hours = Math.floor(result.next_slot.wait_minutes / 60);
-                    const minutes = result.next_slot.wait_minutes % 60;
-                    detailsText += ` Next slot: ${result.next_slot.slot_info.name} in ${hours}h ${minutes}m`;
+                    const h = Math.floor(result.next_slot.wait_minutes / 60), m = result.next_slot.wait_minutes % 60;
+                    details += ` Next: ${result.next_slot.slot_info.name} in ${h}h ${m}m`;
                 }
-                
-                document.getElementById('outOfSlotDetails').textContent = detailsText;
-                
-                resultsDiv.innerHTML = `
-                    <div class="text-center text-gray-500 py-8">
-                        <p class="text-lg"><i class="fa-solid fa-user"></i> Face Detected</p>
-                        <p class="text-sm">Recognition successful, but outside attendance hours</p>
-                        ${isSunday ? '<p class="text-xs text-orange-600 mt-1">Sunday - non-working day</p>' : ''}
-                    </div>
-                `;
-                
-                showMessage('Face detected outside attendance slot', 'warning');
-                
+                document.getElementById('outOfSlotDetails').textContent = details;
+                resultsDiv.innerHTML = '<div class="att-empty"><i class="fa-solid fa-user"></i><p>Face detected, but outside attendance hours</p></div>';
+                showMessage('Face detected outside slot', 'warning');
             } else {
-                // No faces detected or other error
                 outOfSlotDiv.style.display = 'none';
-                resultsDiv.innerHTML = `
-                    <div class="text-center text-gray-500 py-8">
-                        <p class="text-lg"><i class="fa-solid fa-xmark text-red-500"></i> ${result.message || 'No faces detected'}</p>
-                        <p class="text-sm">Please position yourself properly in front of the camera</p>
-                    </div>
-                `;
+                resultsDiv.innerHTML = `<div class="att-empty"><i class="fa-solid fa-xmark" style="color:var(--color-danger)"></i><p>${result.message || 'No faces detected'}</p><p style="font-size:0.79rem;">Position yourself properly in front of the camera</p></div>`;
                 showMessage(result.message || 'No faces detected', 'warning');
             }
         }
-        
-        // Enhanced capture function
+
         async function captureFrame() {
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
-            const context = canvas.getContext('2d');
-            
+            const ctx = canvas.getContext('2d');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            context.drawImage(video, 0, 0);
-            
+            ctx.drawImage(video, 0, 0);
             const imageData = canvas.toDataURL('image/jpeg', 0.8);
-            
             try {
                 showMessage('Processing...', 'info');
-                
-                const response = await fetch('/api/detect_attendance_slots', {
+                const r = await fetch('/api/detect_attendance_slots', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ image_data: imageData })
                 });
-                
-                const result = await response.json();
+                const result = await r.json();
                 displayDetectionResults(result);
-                
             } catch (error) {
-                console.error('Detection error:', error);
                 showMessage('Detection failed: ' + error.message, 'error');
             }
         }
-        
+
         function showMessage(message, type) {
-            const statusDiv = document.getElementById('statusMessage');
-            const colors = {
-                success: 'bg-green-100 text-green-800',
-                error: 'bg-red-100 text-red-800',
-                warning: 'bg-yellow-100 text-yellow-800',
-                info: 'bg-blue-100 text-blue-800'
-            };
-            
-            statusDiv.className = `mt-4 p-4 rounded-lg text-center ${colors[type] || colors.info}`;
-            statusDiv.innerHTML = `<p>${message}</p>`;
+            const el = document.getElementById('statusMessage');
+            el.className = `status-${type || 'info'}`;
+            el.style.padding = '10px 16px';
+            el.style.borderRadius = '8px';
+            el.style.textAlign = 'center';
+            el.style.marginTop = '12px';
+            el.innerHTML = `<p style="margin:0">${message}</p>`;
         }
-        
-        // Initialize page
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('<i class="fa-solid fa-rocket"></i> Live Attendance Detection - Monday-Saturday Working Schedule');
-            
-            // Check and display Sunday status
+
+        async function performLogout() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
             checkSundayStatus();
-            
             const isSunday = new Date().getDay() === 0;
-            const initMsg = isSunday ? 
-                'Sunday detected - Attendance marking available but not counted in statistics' : 
-                'Click "Start Detection" to begin attendance marking';
-                
-            showMessage(initMsg, isSunday ? 'warning' : 'info');
-            updateLiveCount(); // Initial count update
-            
-            // Start live count updates every 10 seconds
+            showMessage(isSunday ? 'Sunday — attendance visible but not counted' : 'Click "Start" to begin', isSunday ? 'warning' : 'info');
+            updateLiveCount();
             liveCountInterval = setInterval(updateLiveCount, 10000);
         });
-        
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function() {
+
+        window.addEventListener('beforeunload', function () {
             stopCamera();
-            if (liveCountInterval) {
-                clearInterval(liveCountInterval);
-            }
+            if (liveCountInterval) clearInterval(liveCountInterval);
         });
     </script>
 </body>
+
 </html>

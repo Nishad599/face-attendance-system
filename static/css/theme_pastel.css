@@ -1,0 +1,449 @@
+/* Pastel Dark Theme UI System */
+:root {
+    --bg-dark: #1b1e2e;
+    --nav-bg: #ffffff;
+    --text-primary: #ffffff;
+    --text-secondary: #8e9bb3;
+
+    /* Pastel Palette */
+    --pastel-purple: #ae8af7;
+    --pastel-coral: #fb988a;
+    --pastel-yellow: #f8cd53;
+    --pastel-blue: #7dcbf8;
+    --pastel-mint: #83e8c3;
+    --pastel-teal: #6edfd9;
+}
+
+/* Base Body Styles */
+body {
+    background-color: var(--bg-dark) !important;
+    background-image: none !important;
+    color: var(--text-primary) !important;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+    margin: 0;
+    padding: 0;
+    padding-bottom: 90px;
+    /* Space for bottom nav */
+}
+
+/* Turn off all old tailwind background colors to ensure our dark bg shows */
+.bg-white,
+.bg-gray-50,
+.bg-gray-100,
+.bg-blue-50,
+.bg-cyan-100 {
+    background-color: transparent !important;
+}
+
+.text-gray-600,
+.text-gray-800,
+.text-gray-900 {
+    color: var(--text-primary) !important;
+}
+
+/* Minimal Header */
+.minimal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 24px 12px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.minimal-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.minimal-header-left i {
+    cursor: pointer;
+    color: var(--text-primary);
+}
+
+.header-title {
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+    flex-grow: 1;
+}
+
+.minimal-header-right i {
+    font-size: 20px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+/* Dashboard Progress Hero Area */
+.progress-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 24px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.progress-hero h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+}
+
+.progress-hero p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0 0 24px 0;
+}
+
+/* Pastel Grid - Fully Fluid Responsive */
+.pastel-grid {
+    display: grid;
+    /* This will automatically switch between 2 columns on mobile, 3 on tablet, and 4+ on desktop! */
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 16px;
+    padding: 16px 24px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+    .pastel-grid {
+        gap: 24px;
+        padding: 24px;
+        /* On larger screens, ensure cards don't get too absurdly wide before wrapping */
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+}
+
+/* Card Styling */
+.pastel-card {
+    border-radius: 24px;
+    padding: 28px 16px;
+    text-align: center;
+    color: white !important;
+    text-decoration: none !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: none !important;
+    min-height: 160px;
+    position: relative;
+    overflow: hidden;
+}
+
+.pastel-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+    opacity: 0.95;
+    color: white !important;
+}
+
+/* 3 dots in upper right corner of cards like reference */
+.pastel-card::after {
+    content: '\f142';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    font-size: 14px;
+    opacity: 0.5;
+}
+
+.pastel-card i {
+    font-size: 38px;
+    margin-bottom: 16px;
+    opacity: 0.95;
+}
+
+.pastel-card h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 6px 0;
+    line-height: 1.2;
+}
+
+.pastel-card p {
+    font-size: 12px;
+    opacity: 0.85;
+    margin: 0;
+    font-weight: 500;
+}
+
+/* Pastel Colors */
+.bg-pastel-purple {
+    background-color: var(--pastel-purple) !important;
+}
+
+.bg-pastel-coral {
+    background-color: var(--pastel-coral) !important;
+}
+
+.bg-pastel-yellow {
+    background-color: var(--pastel-yellow) !important;
+    color: #5a4a15 !important;
+}
+
+.bg-pastel-yellow h3,
+.bg-pastel-yellow p,
+.bg-pastel-yellow i {
+    color: #5a4a15 !important;
+}
+
+.bg-pastel-blue {
+    background-color: var(--pastel-blue) !important;
+    color: #1a4d6f !important;
+}
+
+.bg-pastel-blue h3,
+.bg-pastel-blue p,
+.bg-pastel-blue i {
+    color: #1a4d6f !important;
+}
+
+.bg-pastel-mint {
+    background-color: var(--pastel-mint) !important;
+    color: #1d5f49 !important;
+}
+
+.bg-pastel-mint h3,
+.bg-pastel-mint p,
+.bg-pastel-mint i {
+    color: #1d5f49 !important;
+}
+
+.bg-pastel-teal {
+    background-color: var(--pastel-teal) !important;
+    color: #1d5f49 !important;
+}
+
+.bg-pastel-teal h3,
+.bg-pastel-teal p,
+.bg-pastel-teal i {
+    color: #1d5f49 !important;
+}
+
+/* Bottom Navigation Pill */
+.pastel-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: var(--nav-bg);
+    border-radius: 30px 30px 0 0;
+    display: flex;
+    justify-content: space-around;
+    padding: 16px 20px 24px;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+    z-index: 10000;
+}
+
+@media (min-width: 600px) {
+    .pastel-bottom-nav {
+        border-radius: 40px;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        max-width: 400px;
+        padding: 16px 24px;
+    }
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-decoration: none !important;
+    color: #a0aec0;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.nav-item i {
+    font-size: 22px;
+    margin-bottom: 6px;
+    color: #4a5568;
+}
+
+.nav-item.active {
+    color: var(--pastel-coral);
+}
+
+.nav-item.active i {
+    color: var(--bg-dark);
+}
+
+.nav-item:hover {
+    color: var(--pastel-coral);
+}
+
+/* Secondary Pages Specifics */
+.clean-container {
+    padding: 0 24px 24px;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.clean-card {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 24px;
+    padding: 24px;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.clean-input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 0 !important;
+    color: white !important;
+    padding: 12px 0 !important;
+    font-size: 15px !important;
+    width: 100%;
+}
+
+.clean-input:focus {
+    border-bottom: 2px solid var(--pastel-mint) !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+.btn-pastel {
+    background-color: var(--pastel-mint);
+    color: var(--bg-dark);
+    border-radius: 30px;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 14px 24px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(131, 232, 195, 0.4);
+    transition: all 0.2s ease;
+    width: 100%;
+    text-align: center;
+    margin-top: 24px;
+}
+
+.btn-pastel:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(131, 232, 195, 0.6);
+}
+
+/* Session Config Specifics for Pastel Theme */
+.session-config-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.session-config-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.session-config-item.active {
+    border-color: var(--pastel-mint);
+}
+
+.session-config-item.inactive {
+    opacity: 0.5;
+}
+
+.session-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.session-header h4 {
+    margin: 0;
+    font-size: 14px;
+}
+
+.status-badge {
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.status-badge.active {
+    color: var(--bg-dark);
+    background: var(--pastel-mint);
+    font-weight: 700;
+}
+
+.status-badge.inactive {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.current-timing {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.time-inputs {
+    display: flex;
+    gap: 12px;
+}
+
+.input-group {
+    flex: 1;
+}
+
+.input-group label {
+    display: block;
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.input-group input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2) !important;
+    border: none !important;
+    color: white !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    box-sizing: border-box;
+    font-size: 14px;
+}
+
+.btn-update {
+    width: 100%;
+    background: var(--pastel-teal);
+    color: var(--bg-dark);
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.inactive-message {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin-top: 12px;
+}
+
+.session-info {
+    display: none;
+}

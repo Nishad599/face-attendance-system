@@ -255,7 +255,8 @@ select:focus {
 .bg-gray-50,
 .bg-gray-100,
 .bg-orange-100,
-.bg-cyan-100 {
+.bg-cyan-100,
+.bg-blue-50 {
     background-color: transparent !important;
     background: transparent !important;
 }
@@ -268,5 +269,51 @@ select:focus {
 }
 
 h2.text-gray-800 {
+    color: #f8fafc !important;
+}
+
+/* Attendance Dashboard Specific High-Contrast Fixes */
+.detection-card {
+    background: rgba(30, 41, 59, 0.4) !important;
+    color: #f1f5f9 !important;
+}
+
+#liveStudentCount,
+#totalStudents,
+#attendancePercentage,
+#currentSlotInfo {
+    color: #38bdf8 !important;
+    text-shadow: 0 0 15px rgba(56, 189, 248, 0.3) !important;
+}
+
+.text-gray-600,
+.text-gray-500,
+.text-gray-400,
+#lastUpdated,
+.text-sm.text-gray-600 {
+    color: #94a3b8 !important;
+}
+
+.bg-green-100,
+.bg-blue-100,
+.bg-yellow-100,
+.bg-gray-100 {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.text-green-600,
+.text-blue-600,
+.text-purple-600,
+.text-yellow-600 {
+    color: #38bdf8 !important;
+}
+
+#statusMessage p,
+#defaultDetectionMessage p {
+    color: #cbd5e1 !important;
+}
+
+#slotStatusMessage {
     color: #f8fafc !important;
 }

@@ -1,849 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance Management System</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
-   <style>
-        /* Base styles */
-        body {
-            margin: 0;
-            padding: 0;
-            padding-top: 70px;
-            font-family: 'Inter', sans-serif;
-            background-color: #f8fafc;
-        }
-
-        /* ===== CDAC NAVBAR STYLES (About Us style) ===== */
-        .cdac-header {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-bottom: 4px solid #0066cc;
-            box-shadow: 0 4px 12px rgba(0, 102, 204, 0.15);
-            position: fixed;
-            top: 0; left: 0; right: 0;
-            width: 100%;
-            z-index: 10000;
-            padding: 12px 0; 
-        }
-        .cdac-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 20px;
-            padding: 0 24px;
-        }
-
-        /* Logo Section (left) */
-        .cdac-logo-section {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex: 1;
-        }
-        .cdac-logo-wrapper {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            padding: 10px;
-            border-radius: 12px;
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 60px;
-            min-height: 60px;
-            position: relative;
-        }
-        .cdac-logo-img {
-            height: 50px;
-            width: 50px;
-            object-fit: contain;
-            display: block;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 4px;
-        }
-        .cdac-fallback-logo {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 50px;
-            height: 50px;
-        }
-        .fallback-icon {
-            font-size: 32px;
-            color: white;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .cdac-text-section {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .cdac-hindi {
-            font-size: 16px;
-            font-weight: 700;
-            color: #0066cc;
-            line-height: 1.2;
-            letter-spacing: 0.5px;
-        }
-        .cdac-english {
-            font-size: 13px;
-            font-weight: 600;
-            color: #004499;
-            line-height: 1.2;
-            letter-spacing: 0.3px;
-        }
-        .cdac-tagline {
-            font-size: 11px;
-            font-weight: 500;
-            color: #666;
-            line-height: 1.2;
-            font-style: italic;
-        }
-
-        /* Navigation (center) */
-        .cdac-navigation {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 0 0 auto;
-        }
-        .nav-link {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 16px;
-            color: #333;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 600;
-            border-radius: 8px;
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            border: 2px solid transparent;
-        }
-        .nav-link:hover {
-            background: linear-gradient(135deg, #e6f3ff 0%, #cce6ff 100%);
-            color: #0066cc;
-            border-color: #b3d9ff;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 102, 204, 0.15);
-            text-decoration: none;
-        }
-        .nav-link.active {
-            background: linear-gradient(135deg, #0066cc 0%, #004499 100%);
-            color: white;
-            border-color: #0066cc;
-        }
-        .nav-icon { font-size: 16px; }
-        .nav-text { font-size: 13px; letter-spacing: 0.5px; }
-
-        /* User Section (right) */
-        .cdac-user-section { flex: 0 0 auto; }
-        .logout-button {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 700;
-            font-size: 14px;
-            box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
-            transition: all 0.3s ease;
-            letter-spacing: 0.3px;
-        }
-        .logout-button:hover {
-            background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%);
-            transform: translateY(-3px);
-            box-shadow: 0 6px 16px rgba(220, 53, 69, 0.4);
-        }
-
-        /* Main content styles */
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem 1rem;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        .header-content h1 {
-            font-size: 2.5rem;
-            color: #1a202c;
-            margin: 0;
-        }
-
-        .header-content p {
-            color: black;
-            font-size: 1.1rem;
-            margin: 0.5rem 0 0 0;
-        }
-
-        .container {
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-        }
-
-        .back-link {
-            padding: 1rem 2rem;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            text-decoration: none;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn-outline {
-            background: transparent;
-            color: #64748b;
-            border: 2px solid #e2e8f0;
-        }
-
-        .btn-outline:hover {
-            background: #f8fafc;
-            color: #1a202c;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            color: white;
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-        }
-
-        .btn-warning {
-            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-            color: white;
-        }
-
-        /* Navigation tabs */
-        .nav-tabs {
-            display: flex;
-            border-bottom: 1px solid #e2e8f0;
-            background: #f8fafc;
-        }
-
-        .nav-tab {
-            flex: 1;
-            padding: 1rem 1.5rem;
-            background: transparent;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            color: #64748b;
-            transition: all 0.2s;
-        }
-
-        .nav-tab:hover {
-            background: #e2e8f0;
-            color: #1a202c;
-        }
-
-        .nav-tab.active {
-            background: white;
-            color: #3b82f6;
-            border-bottom: 3px solid #3b82f6;
-        }
-
-        /* Tab content */
-        .tab-content {
-            display: none;
-            padding: 2rem;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        /* Cards */
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        /* Student selector */
-        .student-selector {
-            margin-bottom: 2rem;
-        }
-
-        .student-select {
-            width: 100%;
-            padding: 0.875rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            font-size: 1rem;
-            background: white;
-        }
-
-        /* Attendance overview */
-        .attendance-overview {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            padding: 1.5rem;
-            border-radius: 12px;
-            text-align: center;
-            border: 1px solid #e2e8f0;
-        }
-
-        .stat-number {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-number.present { color: #10b981; }
-        .stat-number.absent { color: #ef4444; }
-        .stat-number.partial { color: #f59e0b; }
-        .stat-number.holiday { color: #f59e0b; }
-        .stat-number.percentage { color: #3b82f6; }
-
-        .stat-label {
-            color: #64748b;
-            font-weight: 600;
-        }
-
-        /* Session indicators */
-        .session-indicators {
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .session-indicator {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            text-align: center;
-            line-height: 20px;
-            font-size: 10px;
-            font-weight: bold;
-            color: white;
-        }
-
-        .session-indicator.present { background: #10b981; }
-        .session-indicator.late { background: #f59e0b; }
-        .session-indicator.absent { background: #ef4444; }
-
-        /* Status colors */
-        .status-present { color: #10b981; font-weight: 600; }
-        .status-partial { color: #f59e0b; font-weight: 600; }
-        .status-absent { color: #ef4444; font-weight: 600; }
-
-        /* Session status */
-        .session-status {
-            min-height: 80px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .status-indicator {
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            text-align: center;
-        }
-
-        .status-indicator.active {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-        }
-
-        .status-indicator.inactive {
-            background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-            color: white;
-        }
-
-        /* Actions bar */
-        .actions-bar {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-        }
-
-        /* Calendar */
-        .calendar-container {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid #e2e8f0;
-        }
-
-        .calendar-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .calendar-nav {
-            background: #f1f5f9;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-
-        .calendar-nav:hover {
-            background: #e2e8f0;
-        }
-
-        .calendar-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #1a202c;
-        }
-
-        .calendar-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 1px;
-            background: #e2e8f0;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-
-        .calendar-day-header {
-            background: #f1f5f9;
-            padding: 0.75rem;
-            text-align: center;
-            font-weight: 600;
-            color: #64748b;
-            font-size: 0.875rem;
-        }
-
-        .calendar-day {
-            background: white;
-            padding: 0.75rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-            min-height: 50px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-        }
-
-        .calendar-day:hover {
-            background: #f8fafc;
-        }
-
-        .calendar-day.today {
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-            color: white;
-            font-weight: 700;
-        }
-
-        .calendar-container .calendar-grid .calendar-day.present {
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-        }
-
-        .calendar-day.absent {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-            color: white;
-        }
-
-        .calendar-day.partial {
-            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-            color: white;
-        }
-
-        .calendar-day.holiday {
-            background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%);
-            color: #92400e;
-        }
-
-        .calendar-day.weekend {
-            background: #f3f4f6;
-            color: #6b7280;
-        }
-
-        .calendar-day.other-month {
-            color: #cbd5e1;
-        }
-
-        /* Session timing display in calendar */
-        .session-timing {
-            font-size: 0.7rem;
-            margin-top: 2px;
-            opacity: 0.9;
-        }
-
-        .session-badges {
-            display: flex;
-            gap: 2px;
-            margin-top: 2px;
-        }
-
-        .session-badge {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.8);
-        }
-
-        .session-badge.morning { background: #10b981; }
-        .session-badge.afternoon { background: #3b82f6; }
-        .session-badge.partial { background: #f59e0b; }
-
-        /* Legend */
-        .legend {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.875rem;
-        }
-
-        .legend-color {
-            width: 16px;
-            height: 16px;
-            border-radius: 4px;
-        }
-
-        /* Table styles */
-        .attendance-table-container {
-            overflow-x: auto;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .attendance-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-        }
-
-        .attendance-table th {
-            background: #f8fafc;
-            padding: 1rem;
-            text-align: left;
-            font-weight: 600;
-            color: #374151;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .attendance-table td {
-            padding: 1rem;
-            border-bottom: 1px solid #f1f5f9;
-        }
-
-        .attendance-table tr:hover {
-            background: #f8fafc;
-        }
-
-        /* Enhanced session display */
-        .session-details {
-            display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .session-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.25rem;
-            padding: 0.25rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-
-        .session-chip.morning {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .session-chip.afternoon {
-            background: #dbeafe;
-            color: #1d4ed8;
-        }
-
-        .session-chip.partial {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: #64748b;
-        }
-
-        .empty-state-icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-        }
-
-        .empty-state h3 {
-            font-size: 1.5rem;
-            color: #1a202c;
-            margin: 0 0 0.5rem 0;
-        }
-
-        /* Modal styles */
-        .modal {
-            display: none;
-            position: fixed;
-            z-index: 10001;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(2px);
-        }
-
-        .modal.show {
-            display: block !important;
-        }
-
-        .modal-content {
-            background: white;
-            margin: 5% auto;
-            padding: 2rem;
-            width: 90%;
-            max-width: 500px;
-            border-radius: 20px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            position: relative;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        .modal-header h3 {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: #1a202c;
-            margin: 0;
-        }
-
-        .close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            cursor: pointer;
-            color: #64748b;
-        }
-
-        .close:hover {
-            color: #1a202c;
-        }
-
-        /* Form styles */
-        .form-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: #374151;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 0.875rem 1rem;
-            border: 2px solid #e2e8f0;
-            border-radius: 10px;
-            font-size: 1rem;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
-        }
-
-        /* Mobile responsiveness */
-        @media (max-width: 768px) {
-            body {
-                padding-top: 0;
-            }
-
-            .cdac-header {
-                position: relative;
-            }
-
-            .cdac-container {
-                flex-direction: column;
-                gap: 10px;
-                text-align: center;
-                padding: 5px 15px;
-            }
-
-            .cdac-navigation {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 8px;
-            }
-
-            .nav-link {
-                font-size: 10px;
-                padding: 4px 8px;
-            }
-
-            .cdac-logo-img {
-                height: 35px;
-            }
-
-            .cdac-hindi {
-                font-size: 11px;
-            }
-
-            .cdac-english {
-                font-size: 9px;
-            }
-
-            .logout-button {
-                padding: 8px 12px;
-                font-size: 12px;
-            }
-
-            .main-container {
-                padding: 1rem 0.5rem;
-            }
-
-            .nav-tabs {
-                overflow-x: auto;
-                flex-wrap: nowrap;
-            }
-
-            .nav-tab {
-                white-space: nowrap;
-                min-width: 120px;
-            }
-
-            .tab-content {
-                padding: 1rem;
-            }
-
-            .attendance-overview {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .actions-bar {
-                flex-direction: column;
-            }
-
-            .legend {
-                justify-content: flex-start;
-                gap: 0.5rem;
-            }
-
-            .legend-item {
-                font-size: 0.75rem;
-            }
-        }
-    </style>
+    <title>Attendance Reports — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/css/dark_theme.css">
+    <link rel="stylesheet" href="/static/css/app.css">
 </head>
+
 <body>
 
-    <!-- CDAC Header (About-Us style) -->
-    <header class="cdac-header">
-        <div class="cdac-container">
-            <!-- Left: Logo block -->
-            <div class="cdac-logo-section">
-                <div class="cdac-logo-wrapper">
-                    <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
-                         onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
-                    <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
-                    </div>
-                </div>
-                <div class="cdac-text-section">
-                    <div class="cdac-hindi">प्रगत संगणन विकास केंद</div>
-                    <div class="cdac-english">CENTER FOR DEVELOPMENT OF ADVANCED COMPUTING</div>
-                    <div class="cdac-tagline">Face Recognition Attendance System</div>
-                </div>
-            </div>
-
-            <!-- Center: Nav -->
-            <nav class="cdac-navigation">
-                <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
-                    <span class="nav-text">HOME</span>
-                </a>
-                <a href="/about" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
-                    <span class="nav-text">ABOUT</span>
-                </a>
-                <a href="/contact" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
-                    <span class="nav-text">CONTACT</span>
-                </a>
-            </nav>
-
-            <!-- Right: Logout -->
-            <div class="cdac-user-section">
-                <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
-                    <span class="logout-text">Logout</span>
-                </button>
-            </div>
+    <!-- Navbar -->
+    <nav class="app-navbar">
+        <a href="/dashboard" class="app-navbar-brand">
+            <i class="fa-solid fa-users-viewfinder"></i>
+            CDAC Attendance
+        </a>
+        <div class="app-navbar-links">
+            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management" class="active"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
         </div>
-    </header>
+        <div class="app-navbar-actions">
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / Attendance Reports</div>
+        <!-- CDAC Header (About-Us style) -->
+
+
+
+    </div>
+
 
     <div class="main-container">
         <div class="header">
@@ -852,12 +48,10 @@
                 <p>Comprehensive student attendance tracking and analytics</p>
             </div>
         </div>
-        
+
         <div class="container">
-            <div class="back-link">
-                <a href="/dashboard" class="btn btn-outline">← Back to Dashboard</a>
-            </div>
-            
+
+
             <div class="nav-tabs">
                 <button class="nav-tab active" onclick="switchTab('individual')">
                     <i class="fa-solid fa-user"></i> Individual Attendance
@@ -936,15 +130,18 @@
                             </div>
                             <div class="legend">
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);"></div>
+                                    <div class="legend-color"
+                                        style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);"></div>
                                     <span>Full Day (Both Sessions)</span>
                                 </div>
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);"></div>
+                                    <div class="legend-color"
+                                        style="background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);"></div>
                                     <span>Half Day (One Session)</span>
                                 </div>
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);"></div>
+                                    <div class="legend-color"
+                                        style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);"></div>
                                     <span>Absent</span>
                                 </div>
                                 <div class="legend-item">
@@ -952,11 +149,13 @@
                                     <span>Sunday (Weekend)</span>
                                 </div>
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%);"></div>
+                                    <div class="legend-color"
+                                        style="background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%);"></div>
                                     <span>Holiday</span>
                                 </div>
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);"></div>
+                                    <div class="legend-color"
+                                        style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);"></div>
                                     <span>Today</span>
                                 </div>
                             </div>
@@ -966,7 +165,8 @@
                     <div id="noStudentSelected" class="empty-state">
                         <div class="empty-state-icon"><i class="fa-solid fa-user"></i></div>
                         <h3>Select a Student</h3>
-                        <p>Choose a student from the dropdown to view their comprehensive attendance history with session details</p>
+                        <p>Choose a student from the dropdown to view their comprehensive attendance history with
+                            session details</p>
                     </div>
                 </div>
             </div>
@@ -975,35 +175,34 @@
             <div id="today-tab" class="tab-content">
                 <div class="today-attendance-section">
                     <h2 style="margin-bottom: 1rem;"><i class="fa-solid fa-clipboard-user"></i> Today's Attendance</h2>
-                    
+
                     <!-- Search and Filter Bar -->
-                    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                    <div
+                        style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
                         <div style="flex: 1;">
-                            <input 
-                                type="text" 
-                                id="attendanceSearch" 
+                            <input type="text" id="attendanceSearch"
                                 placeholder="🔍 Search students by name, ID, or email..."
                                 style="width: 100%; padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem;"
-                                oninput="filterAttendanceTable()"
-                            >
+                                oninput="filterAttendanceTable()">
                         </div>
                         <div>
-                            <select 
-                                id="statusFilter" 
+                            <select id="statusFilter"
                                 style="padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; min-width: 140px;"
-                                onchange="filterAttendanceTable()"
-                            >
+                                onchange="filterAttendanceTable()">
                                 <option value="all"><i class="fa-solid fa-chart-simple"></i> All Students</option>
-                                <option value="present"><i class="fa-solid fa-check text-green-500"></i> Present Students</option>
+                                <option value="present"><i class="fa-solid fa-check text-green-500"></i> Present
+                                    Students</option>
                                 <option value="partial">🔸 Partial Attendance</option>
-                                <option value="absent"><i class="fa-solid fa-xmark text-red-500"></i> Absent Students</option>
+                                <option value="absent"><i class="fa-solid fa-xmark text-red-500"></i> Absent Students
+                                </option>
                             </select>
                         </div>
-                        <div id="searchResultCount" style="color: #64748b; font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px; display: flex; align-items: center;">
+                        <div id="searchResultCount"
+                            style="color: #64748b; font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px; display: flex; align-items: center;">
                             <!-- Will show "X of Y students" -->
                         </div>
                     </div>
-                    
+
                     <div class="attendance-table-container">
                         <table class="attendance-table">
                             <thead>
@@ -1011,15 +210,18 @@
                                     <th>Student Name</th>
                                     <th>Student ID</th>
                                     <th>Email</th>
-                                    <th>Sessions Attended</th>
                                     <th>Status</th>
-                                    <th>Morning Time</th>
-                                    <th>Afternoon Time</th>
+                                    <th>Morn 1 (8:30)</th>
+                                    <th>Morn 2 (11:00)</th>
+                                    <th>Aft 1 (1:45)</th>
+                                    <th>Aft 2 (4:15)</th>
                                     <th>Date</th>
                                 </tr>
                             </thead>
                             <tbody id="todayAttendanceTableBody">
-                                <tr><td colspan="8" style="text-align: center;">Loading...</td></tr>
+                                <tr>
+                                    <td colspan="8" style="text-align: center;">Loading...</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -1043,13 +245,14 @@
             <!-- Holiday Management Tab -->
             <div id="holidays-tab" class="tab-content">
                 <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
                         <h2>🗓️ Holiday Management</h2>
                         <button class="btn btn-primary" onclick="showAddHolidayModal()">
                             + Add Holiday
                         </button>
                     </div>
-                    
+
                     <div id="holidaysList">
                         <!-- Holidays will be loaded here -->
                     </div>
@@ -1180,11 +383,11 @@
             // Remove active class from all tabs
             document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
+
             // Add active class to clicked tab and corresponding content
             event.target.classList.add('active');
             document.getElementById(tabName + '-tab').classList.add('active');
-            
+
             // Load data based on tab
             if (tabName === 'holidays') {
                 loadHolidays();
@@ -1194,27 +397,27 @@
         }
 
         // Initialize page
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             console.log('Page loaded, initializing...');
-            
+
             loadStudents();
             loadHolidays();
             loadTodayAttendance();
-            
+
             // Set default dates for export
             const today = new Date().toISOString().split('T')[0];
             const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-            
+
             const exportStartDate = document.getElementById('exportStartDate');
             const exportEndDate = document.getElementById('exportEndDate');
-            
+
             if (exportStartDate && exportEndDate) {
                 exportStartDate.value = firstDayOfMonth;
                 exportEndDate.value = today;
-                
+
                 exportStartDate.addEventListener('change', updateDateRangePreview);
                 exportEndDate.addEventListener('change', updateDateRangePreview);
-                
+
                 updateDateRangePreview();
             }
         });
@@ -1224,10 +427,10 @@
             try {
                 const response = await fetch('/api/students/list');
                 const data = await response.json();
-                
+
                 const select = document.getElementById('studentSelect');
                 select.innerHTML = '<option value="">Choose a student...</option>';
-                
+
                 if (data.success && data.students) {
                     data.students.forEach(student => {
                         const option = document.createElement('option');
@@ -1244,22 +447,22 @@
         // FIXED: Single loadStudentAttendance function with proper API calls
         async function loadStudentAttendance() {
             const studentId = document.getElementById('studentSelect').value;
-            
+
             if (!studentId) {
                 document.getElementById('studentAttendanceContent').style.display = 'none';
                 document.getElementById('noStudentSelected').style.display = 'block';
                 return;
             }
-            
+
             selectedStudent = studentId;
             document.getElementById('noStudentSelected').style.display = 'none';
             document.getElementById('studentAttendanceContent').style.display = 'block';
-            
+
             try {
                 // Get student info first (for joining date)
                 const studentResponse = await fetch(`/api/students/${studentId}`);
                 const studentData = await studentResponse.json();
-                
+
                 if (!studentData.success) {
                     console.error('Failed to fetch student data:', studentData.message);
                     window.studentJoiningDate = null;
@@ -1268,11 +471,11 @@
                     window.studentJoiningDate = studentData.student?.joining_date || null;
                     console.log('Joining date set to:', window.studentJoiningDate);
                 }
-                
+
                 // Get attendance data
                 const response = await fetch(`/api/attendance/student/${studentId}/slots`);
                 const data = await response.json();
-                
+
                 if (data.success) {
                     studentAttendanceData = data.attendance || {};
                     updateAttendanceStats(data.stats || {});
@@ -1303,13 +506,13 @@
             const statusElement = document.getElementById('currentSessionStatus');
             const now = new Date();
             const currentTime = now.getHours() * 60 + now.getMinutes();
-            
+
             // Session windows from the database
             const sessions = [
                 { name: 'Morning', start: 8 * 60 + 45, end: 9 * 60 + 30 }, // 8:45 AM - 9:30 AM
                 { name: 'Afternoon', start: 13 * 60 + 45, end: 14 * 60 + 30 } // 1:45 PM - 2:30 PM
             ];
-            
+
             let currentSession = null;
             for (let session of sessions) {
                 if (currentTime >= session.start && currentTime <= session.end) {
@@ -1317,7 +520,7 @@
                     break;
                 }
             }
-            
+
             if (currentSession) {
                 statusElement.className = 'status-indicator active';
                 statusElement.innerHTML = `<div class="current-session">${currentSession.name} Session</div>`;
@@ -1332,7 +535,7 @@
             console.log('updateCalendar() called');
             console.log('selectedStudent:', selectedStudent);
             console.log('window.studentJoiningDate:', window.studentJoiningDate);
-            
+
             const calendarGrid = document.getElementById('calendarGrid');
             calendarGrid.innerHTML = '';
 
@@ -1361,7 +564,7 @@
             for (let i = 0; i < 42; i++) {
                 const dayElement = document.createElement('div');
                 dayElement.className = 'calendar-day';
-                
+
                 const dayNumber = document.createElement('div');
                 dayNumber.textContent = currentCalendarDate.getDate();
                 dayElement.appendChild(dayNumber);
@@ -1374,11 +577,11 @@
 
                 // FIXED: Proper joining date logic
                 const joiningDate = window.studentJoiningDate ? new Date(window.studentJoiningDate) : null;
-                
+
                 if (joiningDate) {
                     joiningDate.setHours(0, 0, 0, 0);
                 }
-                
+
                 // CORRECTED LOGIC:
                 // If NO joining date set: process all past working days (original behavior)
                 // If joining date IS set: only process days >= joining date
@@ -1416,16 +619,14 @@
                             });
                         }
 
-
-
                         if (sessionData) {
                             // Has session data
                             const sessionBadges = document.createElement('div');
                             sessionBadges.className = 'session-badges';
-                            
+
                             const hasMorning = sessionData.morning;
                             const hasAfternoon = sessionData.afternoon;
-                            
+
                             if (hasMorning && hasAfternoon) {
                                 dayElement.classList.add('present');
                                 if (dateString === '2025-08-01' || dateString === '2025-08-04' || dateString === '2025-08-19') {
@@ -1433,11 +634,11 @@
                                 }
 
                                 dayElement.title = `Full Day Present\nMorning: ${sessionData.morning}\nAfternoon: ${sessionData.afternoon}`;
-                                
+
                                 const morningBadge = document.createElement('div');
                                 morningBadge.className = 'session-badge morning';
                                 sessionBadges.appendChild(morningBadge);
-                                
+
                                 const afternoonBadge = document.createElement('div');
                                 afternoonBadge.className = 'session-badge afternoon';
                                 sessionBadges.appendChild(afternoonBadge);
@@ -1446,7 +647,7 @@
                                 const sessionName = hasMorning ? 'Morning' : 'Afternoon';
                                 const sessionTime = hasMorning ? sessionData.morning : sessionData.afternoon;
                                 dayElement.title = `Half Day Present\n${sessionName}: ${sessionTime}`;
-                                
+
                                 const badge = document.createElement('div');
                                 badge.className = `session-badge ${hasMorning ? 'morning' : 'afternoon'}`;
                                 sessionBadges.appendChild(badge);
@@ -1454,7 +655,7 @@
                                 dayElement.classList.add('absent');
                                 dayElement.title = 'Absent - No sessions attended';
                             }
-                            
+
                             dayElement.appendChild(sessionBadges);
                         } else {
                             // No session data for this working day = absent
@@ -1467,7 +668,7 @@
                 calendarGrid.appendChild(dayElement);
                 currentCalendarDate.setDate(currentCalendarDate.getDate() + 1);
             }
-            
+
             console.log('updateCalendar() completed successfully');
         }
 
@@ -1499,11 +700,11 @@
             try {
                 const response = await fetch('/api/attendance/today/slots');
                 const data = await response.json();
-                
+
                 allStudentsData = data || [];
                 filteredStudentsData = [...allStudentsData];
                 displayTodayAttendance();
-                
+
             } catch (error) {
                 console.error("Error loading today's attendance:", error);
                 document.getElementById('todayAttendanceTableBody').innerHTML =
@@ -1513,7 +714,7 @@
 
         function displayTodayAttendance() {
             const tbody = document.getElementById('todayAttendanceTableBody');
-            
+
             if (!filteredStudentsData || filteredStudentsData.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No attendance records found</td></tr>';
                 updateSearchResultCount(0, 0);
@@ -1525,47 +726,52 @@
                 const studentName = record[0];
                 const studentId = record[1];
                 const email = record[2];
-                const morningTime = record[3];
-                const afternoonTime = record[4];
-                
-                const hasMorning = morningTime !== null && morningTime !== undefined && morningTime !== '';
-                const hasAfternoon = afternoonTime !== null && afternoonTime !== undefined && afternoonTime !== '';
-                
-                let status, statusClass, sessionsAttended;
-                
-                if (hasMorning && hasAfternoon) {
+                const m1 = record[3];
+                const m2 = record[4];
+                const a1 = record[5];
+                const a2 = record[6];
+
+                const has_m1 = m1 !== null && m1 !== undefined && m1 !== '';
+                const has_m2 = m2 !== null && m2 !== undefined && m2 !== '';
+                const has_a1 = a1 !== null && a1 !== undefined && a1 !== '';
+                const has_a2 = a2 !== null && a2 !== undefined && a2 !== '';
+
+                let slots_count = 0;
+                if (has_m1) slots_count++;
+                if (has_m2) slots_count++;
+                if (has_a1) slots_count++;
+                if (has_a2) slots_count++;
+
+                let status, statusClass;
+
+                if (slots_count === 4) {
                     status = 'Full Day Present';
                     statusClass = 'status-present';
-                    sessionsAttended = '<div class="session-details"><span class="session-chip morning">Morning</span><span class="session-chip afternoon">Afternoon</span></div>';
-                } else if (hasMorning || hasAfternoon) {
-                    status = 'Half Day Present';
+                } else if (slots_count > 0) {
+                    status = `Partial (${slots_count}/4)`;
                     statusClass = 'status-partial';
-                    const sessionType = hasMorning ? 'morning' : 'afternoon';
-                    const sessionName = hasMorning ? 'Morning' : 'Afternoon';
-                    sessionsAttended = `<div class="session-details"><span class="session-chip ${sessionType}">${sessionName}</span></div>`;
                 } else {
                     status = 'Absent';
                     statusClass = 'status-absent';
-                    sessionsAttended = '<span style="color: #64748b;">No sessions</span>';
                 }
-                
+
                 const today = new Date().toLocaleDateString();
-                console.log(today,"this is today variable")
-                
+
                 tableHTML += `
                     <tr>
                         <td><strong>${studentName}</strong></td>
                         <td>${studentId || 'N/A'}</td>
                         <td>${email}</td>
-                        <td>${sessionsAttended}</td>
                         <td class="${statusClass}">${status}</td>
-                        <td>${morningTime || '-'}</td>
-                        <td>${afternoonTime || '-'}</td>
+                        <td>${m1 || '-'}</td>
+                        <td>${m2 || '-'}</td>
+                        <td>${a1 || '-'}</td>
+                        <td>${a2 || '-'}</td>
                         <td>${today}</td>
                     </tr>
                 `;
             });
-            
+
             tbody.innerHTML = tableHTML;
             updateSearchResultCount(filteredStudentsData.length, allStudentsData.length);
         }
@@ -1573,35 +779,46 @@
         function filterAttendanceTable() {
             const searchTerm = document.getElementById('attendanceSearch').value.toLowerCase();
             const statusFilter = document.getElementById('statusFilter').value;
-            
+
             filteredStudentsData = allStudentsData.filter(record => {
                 const studentName = (record[0] || '').toLowerCase();
                 const studentId = (record[1] || '').toLowerCase();
                 const email = (record[2] || '').toLowerCase();
-                const morningTime = record[3];
-                const afternoonTime = record[4];
-                
-                const hasMorning = morningTime !== null && morningTime !== undefined && morningTime !== '';
-                const hasAfternoon = afternoonTime !== null && afternoonTime !== undefined && afternoonTime !== '';
-                
+
+                const m1 = record[3];
+                const m2 = record[4];
+                const a1 = record[5];
+                const a2 = record[6];
+
+                const has_m1 = m1 !== null && m1 !== undefined && m1 !== '';
+                const has_m2 = m2 !== null && m2 !== undefined && m2 !== '';
+                const has_a1 = a1 !== null && a1 !== undefined && a1 !== '';
+                const has_a2 = a2 !== null && a2 !== undefined && a2 !== '';
+
+                let slots_count = 0;
+                if (has_m1) slots_count++;
+                if (has_m2) slots_count++;
+                if (has_a1) slots_count++;
+                if (has_a2) slots_count++;
+
                 // Search filter
-                const matchesSearch = studentName.includes(searchTerm) || 
-                                    studentId.includes(searchTerm) || 
-                                    email.includes(searchTerm);
-                
+                const matchesSearch = studentName.includes(searchTerm) ||
+                    studentId.includes(searchTerm) ||
+                    email.includes(searchTerm);
+
                 // Status filter
                 let matchesStatus = true;
                 if (statusFilter === 'present') {
-                    matchesStatus = hasMorning && hasAfternoon;
+                    matchesStatus = slots_count === 4;
                 } else if (statusFilter === 'partial') {
-                    matchesStatus = (hasMorning || hasAfternoon) && !(hasMorning && hasAfternoon);
+                    matchesStatus = slots_count > 0 && slots_count < 4;
                 } else if (statusFilter === 'absent') {
-                    matchesStatus = !hasMorning && !hasAfternoon;
+                    matchesStatus = slots_count === 0;
                 }
-                
+
                 return matchesSearch && matchesStatus;
             });
-            
+
             displayTodayAttendance();
         }
 
@@ -1614,14 +831,12 @@
             }
         }
 
-
-
         function showDatePicker() {
             if (!selectedStudent) {
                 alert('Please select a student first');
                 return;
             }
-            
+
             document.getElementById('attendanceDate').value = '';
             document.getElementById('sessionType').value = '';
             document.getElementById('manualAttendanceModal').style.display = 'block';
@@ -1631,12 +846,12 @@
             const date = document.getElementById('attendanceDate').value;
             const sessionType = document.getElementById('sessionType').value;
             const reason = document.getElementById('attendanceReason').value;
-            
+
             if (!date || !selectedStudent || !sessionType) {
                 alert('Please fill all required fields');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/attendance/manual/session', {
                     method: 'POST',
@@ -1648,9 +863,9 @@
                         reason: reason
                     })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     closeModal('manualAttendanceModal');
                     loadStudentAttendance();
@@ -1668,7 +883,7 @@
             try {
                 const response = await fetch('/api/holidays');
                 const data = await response.json();
-                
+
                 if (data.success) {
                     holidays = data.holidays || [];
                     displayHolidays();
@@ -1681,7 +896,7 @@
 
         function displayHolidays() {
             const container = document.getElementById('holidaysList');
-            
+
             if (holidays.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
@@ -1692,9 +907,9 @@
                 `;
                 return;
             }
-            
+
             holidays.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
+
             let html = '<div style="display: grid; gap: 1rem;">';
             holidays.forEach(holiday => {
                 const date = new Date(holiday.date).toLocaleDateString();
@@ -1713,7 +928,7 @@
                 `;
             });
             html += '</div>';
-            
+
             container.innerHTML = html;
         }
 
@@ -1725,21 +940,21 @@
             const date = document.getElementById('holidayDate').value;
             const name = document.getElementById('holidayName').value;
             const type = document.getElementById('holidayType').value;
-            
+
             if (!date || !name || !type) {
                 alert('Please fill all fields');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/holidays', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ date, name, type })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     closeModal('addHolidayModal');
                     loadHolidays();
@@ -1754,14 +969,14 @@
 
         async function deleteHoliday(holidayId) {
             if (!confirm('Are you sure you want to delete this holiday?')) return;
-            
+
             try {
                 const response = await fetch(`/api/holidays/${holidayId}`, {
                     method: 'DELETE'
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     loadHolidays();
                     alert('<i class="fa-solid fa-check text-green-500"></i> Holiday deleted successfully!');
@@ -1779,7 +994,7 @@
                 alert('Please select a student first');
                 return;
             }
-            
+
             window.open(`/api/attendance/export/${selectedStudent}`, '_blank');
         }
 
@@ -1789,7 +1004,7 @@
                 modal.style.display = 'block';
                 const today = new Date().toISOString().split('T')[0];
                 const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-                
+
                 document.getElementById('exportStartDate').value = firstDayOfMonth;
                 document.getElementById('exportEndDate').value = today;
                 updateDateRangePreview();
@@ -1813,15 +1028,15 @@
             const startDate = document.getElementById('exportStartDate').value;
             const endDate = document.getElementById('exportEndDate').value;
             const previewElement = document.getElementById('dateRangePreview');
-            
+
             if (startDate && endDate) {
                 const start = new Date(startDate);
                 const end = new Date(endDate);
-                
+
                 if (end >= start) {
                     const diffTime = Math.abs(end - start);
                     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                    
+
                     previewElement.textContent = `${diffDays} days from ${start.toLocaleDateString()} to ${end.toLocaleDateString()}`;
                     previewElement.style.color = '#666';
                 } else {
@@ -1841,12 +1056,12 @@
             const format = document.getElementById('exportFormat').value;
             const includeWeekends = document.getElementById('includeWeekends').checked;
             const includeHolidays = document.getElementById('includeHolidays').checked;
-            
+
             if (!startDate || !endDate) {
                 alert('Please select both start and end dates');
                 return;
             }
-            
+
             const params = new URLSearchParams({
                 start_date: startDate,
                 end_date: endDate,
@@ -1854,7 +1069,7 @@
                 include_weekends: includeWeekends,
                 include_holidays: includeHolidays
             });
-            
+
             window.open(`/api/attendance/bulk-export?${params}`, '_blank');
             closeBulkExportModal();
         }
@@ -1864,7 +1079,7 @@
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.style.display = 'none';
-                
+
                 if (modalId === 'manualAttendanceModal') {
                     document.getElementById('attendanceDate').value = '';
                     document.getElementById('sessionType').value = '';
@@ -1884,7 +1099,7 @@
         }
 
         // Close modal when clicking outside
-        window.onclick = function(event) {
+        window.onclick = function (event) {
             const modals = document.querySelectorAll('.modal');
             modals.forEach(modal => {
                 if (event.target === modal) {
@@ -1894,7 +1109,7 @@
         }
 
         // Keyboard event handling
-        document.addEventListener('keydown', function(event) {
+        document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
                 const visibleModal = document.querySelector('.modal[style*="block"]');
                 if (visibleModal) {
@@ -1905,6 +1120,9 @@
 
         // Update session status every minute
         setInterval(updateCurrentSessionStatus, 60000);
-            </script>
+    </script>
+    </div>
+
 </body>
+
 </html>
