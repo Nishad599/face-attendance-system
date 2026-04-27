@@ -19,7 +19,7 @@ class AsianFaceRecognizer:
             try:
                 from insightface.app import FaceAnalysis
                 # Initialize buffalo_l specifically
-                self.insight_app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
+                self.insight_app = FaceAnalysis(name='buffalo_l')
                 self.insight_app.prepare(ctx_id=0, det_size=(640, 640))
                 self.use_insightface = True
                 print(f"🎯 buffalo_l w600k model loaded - {self.embedding_dim}D embeddings")

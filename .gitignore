@@ -2,6 +2,7 @@
 venv/
 env/
 .venv/
+venv_win/
 
 # Python
 __pycache__/
@@ -10,11 +11,20 @@ __pycache__/
 *.pyd
 .Python
 
+# Database files
+attendance.db
+attendance.db-journal
+attendance.db-wal
+attendance.db-shm
+*.db-backup
+*.sqlite
+*.sqlite3
+*.db
+
 # SSL Certificates (regenerated automatically)
 *.pem
 *.key
 *.crt
-
 
 # Logs and debug files
 logs/
@@ -26,7 +36,7 @@ session_management_report.txt
 
 # Backup files
 *.backup_*
-*_backup_*
+*backup*
 
 # Temporary files
 temp_encodings/
@@ -37,36 +47,16 @@ debug_photos/
 buffalo_l.zip
 buffalo_l/
 
-
 # Scripts (can be recreated)
 backup_students.sh
 create_backup_scripts.sh
 start_server.sh
 
 # OS files
-
 fix.py
 sync_db_to_vm.sh
-*.backup_*
 fix_*.py
-*.db
+
+# Student photos
 student_photos/
-__pycache__/
-*.pyc
 
-
-# Database files
-attendance.db
-attendance.db-journal
-attendance.db-wal
-attendance.db-shm
-
-
-
-# SQLite backup files
-*.db-backup
-*.sqlite
-*.sqlite3
-attendance.db
-attendance.db
-*.db

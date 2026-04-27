@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response
+from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File
 from typing import Optional, Dict, Any, List
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +28,8 @@ import hashlib
 from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
 from attendance_manager import create_slot_manager_instance
 import pytz
+import csv
+from io import StringIO
 
 # Convert to a specific timezone (e.g., Asia/Kolkata)
 timezone = pytz.timezone('Asia/Kolkata')
@@ -349,11 +351,6 @@ class AttendanceSystem:
             face_locations = [face_data['location']]  # For compatibility
 
             print(f"[DEBUG] 🎯 REGISTRATION: Generated {len(face_encoding)}D embedding")
-
-            # Print and save the image after embedding is done (for debug)
-            debug_img_path = f"debug_registration_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-            image.save(debug_img_path)
-            print(f"[DEBUG] Saved registration face image to {debug_img_path}")
             print(f"[DEBUG] Registration face encoding: {face_encoding[:10]} ... (truncated)")
             
             # Calculate quality score
@@ -1821,6 +1818,31 @@ async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_ad
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+@app.post("/api/admin/clear_all_data")
+async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Clear all student data, attendance records, and face encodings"""
+    try:
+        cursor = attendance_system.conn.cursor()
+        
+        # Delete all records from tables in order to avoid foreign key issues
+        cursor.execute('DELETE FROM slot_attendance')
+        cursor.execute('DELETE FROM session_attendance')
+        cursor.execute('DELETE FROM attendance')
+        cursor.execute('DELETE FROM face_encodings')
+        cursor.execute('DELETE FROM students')
+        cursor.execute('DELETE FROM registration_sessions')
+        cursor.execute('DELETE FROM daily_attendance_summary')
+        
+        attendance_system.conn.commit()
+        
+        # Reload face encodings (will be empty)
+        attendance_system.load_student_faces()
+        
+        return {"success": True, "message": "All student data cleared successfully"}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": f"Failed to clear data: {str(e)}"}
+
 @app.post("/api/holidays")
 async def add_holiday_api(holiday_data: Holiday):
     """Add a new holiday"""
@@ -1896,6 +1918,109 @@ async def delete_student(student_id: int):
         
     except Exception as e:
         return {"success": False, "message": f"Failed to delete student: {str(e)}"}
+
+@app.post("/api/students/bulk-upload")
+async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, Any] = Depends(require_admin_access)):
+    """Bulk upload students from CSV file
+    
+    CSV Format (with headers):
+    student_id,name,email,joining_date (optional)
+    Example:
+    250840325001,John Doe,john@email.com,2025-08-01
+    250840325002,Jane Smith,jane@email.com,2025-08-01
+    """
+    try:
+        # Read and parse CSV file
+        content = await file.read()
+        text = content.decode('utf-8')
+        csv_file = StringIO(text)
+        reader = csv.DictReader(csv_file)
+        
+        if not reader.fieldnames:
+            return {"success": False, "message": "CSV file is empty"}
+        
+        # Validate required columns
+        required_fields = {'student_id', 'name', 'email'}
+        csv_fields = set(reader.fieldnames)
+        
+        if not required_fields.issubset(csv_fields):
+            missing = required_fields - csv_fields
+            return {"success": False, "message": f"Missing required columns: {', '.join(missing)}"}
+        
+        cursor = attendance_system.conn.cursor()
+        added_count = 0
+        skipped_count = 0
+        errors = []
+        
+        for row_num, row in enumerate(reader, start=2):  # start=2 because row 1 is header
+            try:
+                student_id = row.get('student_id', '').strip()
+                name = row.get('name', '').strip()
+                email = row.get('email', '').strip()
+                joining_date = row.get('joining_date', '').strip() if 'joining_date' in row else None
+                
+                # Validate required fields
+                if not student_id or not name or not email:
+                    errors.append(f"Row {row_num}: Missing required fields (student_id, name, or email)")
+                    skipped_count += 1
+                    continue
+                
+                # Check if student already exists
+                cursor.execute('SELECT id FROM students WHERE student_id = ?', (student_id,))
+                if cursor.fetchone():
+                    errors.append(f"Row {row_num}: Student ID '{student_id}' already exists")
+                    skipped_count += 1
+                    continue
+                
+                # Insert student without face encoding (will be added during face registration)
+                cursor.execute('''
+                    INSERT INTO students 
+                    (student_id, name, email, joining_date, status)
+                    VALUES (?, ?, ?, ?, 'active')
+                ''', (student_id, name, email, joining_date))
+                
+                added_count += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: {str(e)}")
+                skipped_count += 1
+        
+        attendance_system.conn.commit()
+        
+        # Build response message
+        message = f"✅ Added {added_count} student(s)"
+        if skipped_count > 0:
+            message += f", ⚠️ Skipped {skipped_count}"
+        
+        response_data = {
+            "success": True,
+            "message": message,
+            "added": added_count,
+            "skipped": skipped_count,
+            "errors": errors[:10]  # Return first 10 errors to avoid huge response
+        }
+        
+        return response_data
+        
+    except Exception as e:
+        return {"success": False, "message": f"Failed to upload students: {str(e)}", "added": 0, "skipped": 0, "errors": []}
+
+@app.get("/api/students/bulk-upload/template")
+async def get_bulk_upload_template(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Download CSV template for bulk student upload"""
+    try:
+        csv_content = """student_id,name,email,joining_date
+250840325001,John Doe,john.doe@email.com,2025-08-01
+250840325002,Jane Smith,jane.smith@email.com,2025-08-01
+250840325003,Alex Johnson,alex.johnson@email.com,2025-08-01"""
+        
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=student_template.csv"}
+        )
+    except Exception as e:
+        return {"success": False, "message": f"Failed to generate template: {str(e)}"}
 
 @app.post("/api/logout")
 async def logout(response: Response, session: Optional[Dict[str, Any]] = Depends(get_current_session)):
@@ -2532,49 +2657,27 @@ async def detect_attendance_with_slots(image_data: DetectionImage):
 
 
 
-
-
 if __name__ == "__main__":
     import uvicorn
     import os
     import subprocess
     import socket
     
-    def get_host():
-        """Automatically detect the appropriate host"""
-        # Check if we can bind to the VM IP (means we're on VM)
-        try:
-            test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            test_socket.bind(("10.212.13.129", 0))  # Try to bind to VM IP
-            test_socket.close()
-            return "10.212.13.129"  # We're on the VM
-        except:
-            pass
-        
-        # Check for environment variable override
-        if os.getenv("HOST"):
-            return os.getenv("HOST")
-        
-        # Default to 0.0.0.0 (works everywhere)
-        return "0.0.0.0"
-    
-    def get_display_host(actual_host):
+    def get_display_host():
         """Get the host to display in URLs"""
-        if actual_host == "0.0.0.0":
-            try:
-                # Get local IP for display
-                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                s.connect(("8.8.8.8", 80))
-                local_ip = s.getsockname()[0]
-                s.close()
-                return local_ip
-            except:
-                return "localhost"
-        return actual_host
-    
-    # Determine host automatically
-    host = get_host()
-    display_host = get_display_host(host)
+        try:
+            # Get local IP for display
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            return local_ip
+        except:
+            return "localhost"
+
+    # Host settings
+    host = "0.0.0.0"  # Listen on ALL interfaces
+    display_host = get_display_host()  # For display in URLs
     port = int(os.getenv("PORT", 8000))
     
     # SSL certificate files

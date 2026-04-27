@@ -1,0 +1,35 @@
+name: Deploy to Private VM
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Sync Code to Live Directory
+      run: |
+        # Sync the latest code to the application directory
+        # We use rsync because it won't delete existing untracked files like attendance.db or student_photos in the destination.
+        rsync -a --exclude='.git' --exclude='venv' ./ /home/user1/face-attendance-system/
+
+    - name: Setup Virtual Environment & Install Dependencies
+      run: |
+        cd /home/user1/face-attendance-system
+        if [ ! -d "venv" ]; then
+          python3 -m venv venv
+        fi
+        source venv/bin/activate
+        pip install -r requirements.txt
+
+    - name: Restart Application Service
+      # Uses the existing restart script in the project
+      run: |
+        cd /home/user1/face-attendance-system
+        chmod +x restart.sh
+        ./restart.sh

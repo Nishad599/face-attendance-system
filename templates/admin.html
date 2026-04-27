@@ -262,6 +262,23 @@
                     <div id="databaseStats"></div>
                 </div>
 
+                <!-- Bulk Upload Students -->
+                <div class="admin-card success-zone">
+                    <h3>📤 Bulk Upload Students</h3>
+                    <p>Import student details from CSV file. Faces can be registered later.</p>
+                    <div style="margin-bottom: 12px;">
+                        <button class="btn btn-info" onclick="downloadTemplate()" style="width: 100%; margin-bottom: 8px;">
+                            📥 Download CSV Template
+                        </button>
+                        <input type="file" id="bulkUploadFile" accept=".csv" style="display: block; margin-bottom: 8px;">
+                        <button class="btn btn-success" onclick="uploadBulkStudents()" id="uploadBtn" style="width: 100%;">
+                            <span id="uploadSpinner"></span>
+                            🚀 Upload Students
+                        </button>
+                    </div>
+                    <div id="bulkUploadResult"></div>
+                </div>
+
                 <!-- Danger Zone -->
                 <div class="admin-card danger-zone">
                     <h3>⚠️ Danger Zone</h3>
@@ -395,6 +412,68 @@
                 showResult('clearResult', `❌ Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('clearBtn', 'clearSpinner');
+            }
+        }
+
+        // Bulk upload functions
+        async function downloadTemplate() {
+            try {
+                const response = await fetch('/api/students/bulk-upload/template');
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'student_template.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                showResult('bulkUploadResult', `❌ Error downloading template: ${error.message}`, 'error');
+            }
+        }
+
+        async function uploadBulkStudents() {
+            const fileInput = document.getElementById('bulkUploadFile');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showResult('bulkUploadResult', '❌ Please select a CSV file', 'error');
+                return;
+            }
+
+            if (!file.name.endsWith('.csv')) {
+                showResult('bulkUploadResult', '❌ Please select a valid CSV file', 'error');
+                return;
+            }
+
+            showLoading('uploadBtn', 'uploadSpinner');
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/students/bulk-upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    let message = `✅ ${data.message}`;
+                    if (data.errors && data.errors.length > 0) {
+                        message += '\n\n⚠️ Errors encountered:\n' + data.errors.join('\n');
+                    }
+                    showResult('bulkUploadResult', message, 'success');
+                    fileInput.value = '';  // Clear file input
+                    setTimeout(checkSystem, 1000);
+                } else {
+                    showResult('bulkUploadResult', `❌ ${data.message}`, 'error');
+                }
+            } catch (error) {
+                showResult('bulkUploadResult', `❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading('uploadBtn', 'uploadSpinner');
             }
         }
 
