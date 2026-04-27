@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File
 from typing import Optional, Dict, Any, List
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
@@ -21,8 +21,6 @@ from PIL import Image
 import io
 from camera_manager import camera_manager
 from asian_face_model import asian_face_recognizer
-from fastapi import Body
-from fastapi.staticfiles import StaticFiles  # Add this import
 import secrets
 import hashlib
 from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
@@ -30,6 +28,11 @@ from attendance_manager import create_slot_manager_instance
 import pytz
 import csv
 from io import StringIO
+from analytics_manager import AnalyticsManager
+
+# Initialize managers
+attendance_manager = create_slot_manager_instance()
+analytics_manager = AnalyticsManager()
 
 # Convert to a specific timezone (e.g., Asia/Kolkata)
 timezone = pytz.timezone('Asia/Kolkata')
@@ -2516,6 +2519,15 @@ async def get_today_slot_attendance():
     except Exception as e:
         print(f"Error loading slot attendance: {e}")
         return []
+
+@app.get("/api/attendance/analytics/class")
+async def get_class_analytics_data():
+    """Endpoint for comprehensive class analytics"""
+    try:
+        return analytics_manager.get_class_analytics()
+    except Exception as e:
+        print(f"Error in class analytics API: {e}")
+        return {"success": False, "message": str(e)}
 
 @app.get("/api/attendance/live-count")
 async def get_live_attendance_count():

@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -230,13 +231,50 @@
 
             <!-- Class Overview Tab -->
             <div id="overview-tab" class="tab-content">
-                <div class="card">
+                <div class="header-with-actions" style="margin-bottom: 2rem;">
                     <h2>📈 Class Attendance Overview</h2>
-                    <div id="classOverviewContent">
-                        <div class="empty-state">
-                            <div class="empty-state-icon"><i class="fa-solid fa-chart-simple"></i></div>
-                            <h3>Class Analytics</h3>
-                            <p>Comprehensive class attendance analytics and insights coming soon</p>
+                    <button class="btn btn-outline btn-sm" onclick="loadClassAnalytics()">
+                        <i class="fa-solid fa-arrows-rotate"></i> Refresh Data
+                    </button>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="stat-card">
+                        <div class="stat-number percentage" id="avgClassAttendance">0%</div>
+                        <div class="stat-label">Avg. Class Attendance</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number present" id="totalActiveStudents">0</div>
+                        <div class="stat-label">Active Students</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number info" id="peakSlot">--</div>
+                        <div class="stat-label">Most Attended Slot</div>
+                    </div>
+                </div>
+
+                <div class="charts-row">
+                    <div class="chart-container card">
+                        <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend (14 Days)</h3>
+                        <canvas id="attendanceTrendChart"></canvas>
+                    </div>
+                    <div class="chart-container card">
+                        <h3><i class="fa-solid fa-chart-column"></i> Slot-wise Performance</h3>
+                        <canvas id="slotComparisonChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="leaderboard-row">
+                    <div class="card leaderboard-card">
+                        <h3><i class="fa-solid fa-ranking-star"></i> Top Performers</h3>
+                        <div id="topPerformersList" class="leader-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                    <div class="card leaderboard-card">
+                        <h3><i class="fa-solid fa-triangle-exclamation"></i> Needs Attention</h3>
+                        <div id="lowAttendanceList" class="leader-list">
+                            <!-- Populated by JS -->
                         </div>
                     </div>
                 </div>
@@ -393,6 +431,8 @@
                 loadHolidays();
             } else if (tabName === 'today') {
                 loadTodayAttendance();
+            } else if (tabName === 'overview') {
+                loadClassAnalytics();
             }
         }
 
@@ -1107,6 +1147,127 @@
                 }
             }
         });
+
+        // --- Class Analytics Logic ---
+        let trendChart = null;
+        let slotChart = null;
+
+        async function loadClassAnalytics() {
+            console.log('Loading class analytics...');
+            const grid = document.getElementById('classOverviewContent');
+
+            try {
+                const response = await fetch('/api/attendance/analytics/class');
+                const data = await response.json();
+
+                if (!data.success) {
+                    console.error('Failed to load analytics:', data.message);
+                    return;
+                }
+
+                // Update Stat Cards
+                document.getElementById('avgClassAttendance').textContent = data.avg_attendance + '%';
+                document.getElementById('totalActiveStudents').textContent = data.total_students;
+                document.getElementById('peakSlot').textContent = data.peak_slot;
+
+                // Render Trend Chart
+                renderTrendChart(data.trend);
+
+                // Render Slot Comparison Chart
+                renderSlotChart(data.slot_performance);
+
+                // Render Leaderboards
+                renderLeaderboard('topPerformersList', data.top_performers, 'green');
+                renderLeaderboard('lowAttendanceList', data.low_attendance, 'red');
+
+            } catch (error) {
+                console.error('Error fetching class analytics:', error);
+            }
+        }
+
+        function renderTrendChart(trendData) {
+            const ctx = document.getElementById('attendanceTrendChart').getContext('2d');
+
+            if (trendChart) trendChart.destroy();
+
+            trendChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: trendData.map(d => d.date.split('-').slice(1).join('/')), // MM/DD
+                    datasets: [{
+                        label: 'Attendance %',
+                        data: trendData.map(d => d.pct),
+                        borderColor: '#0052CC',
+                        backgroundColor: 'rgba(0, 82, 204, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderSlotChart(slotData) {
+            const ctx = document.getElementById('slotComparisonChart').getContext('2d');
+
+            if (slotChart) slotChart.destroy();
+
+            const labels = ['Morn 1', 'Morn 2', 'Aft 1', 'Aft 2'];
+            const values = [slotData.morning_1, slotData.morning_2, slotData.afternoon_1, slotData.afternoon_2];
+
+            slotChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: ['#0052CC', '#0065FF', '#00875A', '#36B37E'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function renderLeaderboard(elementId, list, color) {
+            const container = document.getElementById(elementId);
+            container.innerHTML = '';
+
+            if (list.length === 0) {
+                container.innerHTML = '<p class="text-muted" style="padding: 1rem;">No data available</p>';
+                return;
+            }
+
+            list.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'leader-item';
+                div.innerHTML = `
+                    <div class="leader-info">
+                        <span class="leader-rank">#${index + 1}</span>
+                        <span class="leader-name">${item.name}</span>
+                    </div>
+                    <span class="leader-pct" style="color: ${color === 'green' ? '#00875A' : '#DE350B'}">${item.pct}%</span>
+                `;
+                container.appendChild(div);
+            });
+        }
 
         // Update session status every minute
         setInterval(updateCurrentSessionStatus, 60000);
