@@ -300,6 +300,8 @@
             .section-title { font-size: 2rem; }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
     <!-- CDAC Header -->
@@ -310,7 +312,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img" 
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display: none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -322,22 +324,22 @@
             
             <nav class="cdac-navigation">
                 <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link active">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
             </nav>
             
             <div class="cdac-user-section">
                 <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon">🚪</span>
+                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
@@ -359,12 +361,12 @@
         </a>
 
         <section class="content-section">
-            <h2 class="section-title">🏛️ About CDAC</h2>
+            <h2 class="section-title"><i class="fa-solid fa-landmark"></i> About CDAC</h2>
             <p style="font-size: 1.2rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
                 C-DAC Mumbai, earlier known as NCST, started operations in the Juhu campus in 1985. There are two campuses in Mumbai, at Juhu and at Kharghar. It has a rich history of cutting edge R&D in areas of Computer Graphics, Computer Networks, Language Translation, Educational Applications of AI, Resource Scheduling, etc. It was among the pioneers in bringing Internet to India through the ERNET project, and also in multi-lingual technologies.
             </p>
             
-            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;">🎯 Our Mission</h3>
+            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;"><i class="fa-solid fa-bullseye"></i> Our Mission</h3>
             <p style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
                Currently the Center is working in areas like Authentication Technologies, Disaster Recovery, Microservice based application development, Deep Learning applications, Mobile Computing, Blockchain Solutions, Virtual Labs, Educational games, Robotics, Accessibility, Online Assessment, etc.
 

@@ -1,0 +1,272 @@
+/* PREMIUM DARK GLASSMORPHISM OVERRIDE */
+body {
+    background: linear-gradient(135deg, #040816 0%, #0f172a 100%) !important;
+    color: #f8fafc !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Glassmorphism Structural Classes */
+.card,
+.admin-card,
+.students-section,
+.attendance-section,
+.nav-card,
+.login-card,
+.main-container,
+.session-config-item,
+.content-section,
+.contact-section {
+    background: rgba(30, 41, 59, 0.4) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3) !important;
+    color: #f1f5f9 !important;
+    border-radius: 16px !important;
+}
+
+.page-hero {
+    background: transparent !important;
+}
+
+/* Text and Titles */
+h1,
+h2,
+h3,
+h4,
+h5,
+.nav-card-title,
+.cdac-hindi,
+.cdac-english,
+.section-header h2,
+strong {
+    color: #f8fafc !important;
+    text-shadow: none !important;
+}
+
+.nav-link,
+.nav-card-desc,
+p,
+.cdac-tagline,
+.stat-label,
+label,
+.datetime-info,
+li,
+ul {
+    color: #94a3b8 !important;
+    text-shadow: none !important;
+}
+
+/* Status specific texts */
+.status-present,
+.present {
+    color: #34d399 !important;
+    font-weight: 600;
+}
+
+.status-absent,
+.absent {
+    color: #f87171 !important;
+    font-weight: 600;
+}
+
+/* Buttons Overrides */
+.btn,
+.btn-primary,
+.btn-success,
+.btn-info,
+.btn-secondary,
+.logout-button,
+.btn-user,
+.btn-admin {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: white !important;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2) !important;
+    transition: all 0.3s ease !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2) !important;
+}
+
+.logout-button,
+.btn-danger {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2) !important;
+}
+
+.btn:hover,
+.btn-primary:hover,
+.btn-success:hover,
+.logout-button:hover,
+.btn-user:hover,
+.btn-admin:hover {
+    transform: translateY(-2px) !important;
+    filter: brightness(1.2) !important;
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Header & Navbar Overrides */
+.cdac-header {
+    background: rgba(15, 23, 42, 0.7) !important;
+    backdrop-filter: blur(20px) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5) !important;
+}
+
+.nav-link {
+    background: transparent !important;
+    border: none !important;
+    color: #94a3b8 !important;
+}
+
+.nav-link:hover,
+.nav-link.active {
+    background: rgba(56, 189, 248, 0.1) !important;
+    color: #38bdf8 !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.cdac-logo-wrapper {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+
+/* Input Fields */
+.input-field,
+input,
+select,
+textarea {
+    background: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    color: #f8fafc !important;
+    border-radius: 12px !important;
+    padding: 0.8rem 1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.input-field:focus,
+input:focus,
+select:focus {
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2) !important;
+    outline: none !important;
+    background: rgba(15, 23, 42, 0.9) !important;
+}
+
+/* Table Design */
+.table-container,
+.students-table-container,
+.attendance-table-container {
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    background: rgba(15, 23, 42, 0.4) !important;
+    border-radius: 16px !important;
+}
+
+.table th,
+.students-table th,
+.attendance-table th {
+    background: rgba(15, 23, 42, 0.9) !important;
+    color: #38bdf8 !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+    font-weight: 600 !important;
+    padding: 1.2rem 1rem !important;
+}
+
+.table td,
+.students-table td,
+.attendance-table td {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    color: #cbd5e1 !important;
+}
+
+.table tbody tr:hover,
+.students-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Stats specific */
+.stat-card {
+    background: rgba(15, 23, 42, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: 4px solid #38bdf8 !important;
+}
+
+.stat-card:nth-child(2) {
+    border-top-color: #34d399 !important;
+}
+
+.stat-card:nth-child(3) {
+    border-top-color: #f87171 !important;
+}
+
+.stat-card:nth-child(4) {
+    border-top-color: #fbbf24 !important;
+}
+
+.stat-number {
+    color: #f8fafc !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    background: none !important;
+    text-shadow: 0 2px 10px rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Subtle icon animations */
+.nav-card i {
+    font-size: 2.5rem !important;
+    margin-bottom: 1rem !important;
+    color: #38bdf8 !important;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+.nav-card:hover i {
+    transform: scale(1.15) !important;
+    color: #7dd3fc !important;
+}
+
+/* Modals */
+.modal-content {
+    background: rgba(30, 41, 59, 0.95) !important;
+    backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.close {
+    color: #f8fafc !important;
+}
+
+.close:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #f87171 !important;
+}
+
+/* Tailwind Hardcoded UI Overrides */
+.bg-white,
+.bg-gray-50,
+.bg-gray-100,
+.bg-orange-100,
+.bg-cyan-100 {
+    background-color: transparent !important;
+    background: transparent !important;
+}
+
+.text-gray-600,
+.text-gray-700,
+.text-gray-800,
+.text-gray-900 {
+    color: #cbd5e1 !important;
+}
+
+h2.text-gray-800 {
+    color: #f8fafc !important;
+}

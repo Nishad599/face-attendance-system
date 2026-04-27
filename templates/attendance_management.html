@@ -795,6 +795,8 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
 
@@ -807,7 +809,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -820,15 +822,15 @@
             <!-- Center: Nav -->
             <nav class="cdac-navigation">
                 <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
             </nav>
@@ -836,7 +838,7 @@
             <!-- Right: Logout -->
             <div class="cdac-user-section">
                 <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon">🚪</span>
+                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
@@ -846,7 +848,7 @@
     <div class="main-container">
         <div class="header">
             <div class="header-content">
-                <h1>📊 Attendance Management</h1>
+                <h1><i class="fa-solid fa-chart-simple"></i> Attendance Management</h1>
                 <p>Comprehensive student attendance tracking and analytics</p>
             </div>
         </div>
@@ -858,10 +860,10 @@
             
             <div class="nav-tabs">
                 <button class="nav-tab active" onclick="switchTab('individual')">
-                    👤 Individual Attendance
+                    <i class="fa-solid fa-user"></i> Individual Attendance
                 </button>
                 <button class="nav-tab" onclick="switchTab('today')">
-                    📋 Today's Attendance
+                    <i class="fa-solid fa-clipboard-user"></i> Today's Attendance
                 </button>
                 <button class="nav-tab" onclick="switchTab('overview')">
                     📈 Class Overview
@@ -913,13 +915,13 @@
 
                         <div class="actions-bar">
                             <button class="btn btn-warning" onclick="showDatePicker()">
-                                📅 Mark by Date
+                                <i class="fa-solid fa-calendar-days"></i> Mark by Date
                             </button>
                             <button class="btn btn-outline" onclick="exportAttendance()">
                                 📄 Export Report
                             </button>
                             <button class="btn btn-primary" onclick="showBulkExportModal()">
-                                📊 Export All Students
+                                <i class="fa-solid fa-chart-simple"></i> Export All Students
                             </button>
                         </div>
 
@@ -962,7 +964,7 @@
                     </div>
 
                     <div id="noStudentSelected" class="empty-state">
-                        <div class="empty-state-icon">👤</div>
+                        <div class="empty-state-icon"><i class="fa-solid fa-user"></i></div>
                         <h3>Select a Student</h3>
                         <p>Choose a student from the dropdown to view their comprehensive attendance history with session details</p>
                     </div>
@@ -972,7 +974,7 @@
             <!-- Today's Attendance Tab -->
             <div id="today-tab" class="tab-content">
                 <div class="today-attendance-section">
-                    <h2 style="margin-bottom: 1rem;">📋 Today's Attendance</h2>
+                    <h2 style="margin-bottom: 1rem;"><i class="fa-solid fa-clipboard-user"></i> Today's Attendance</h2>
                     
                     <!-- Search and Filter Bar -->
                     <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
@@ -991,10 +993,10 @@
                                 style="padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; min-width: 140px;"
                                 onchange="filterAttendanceTable()"
                             >
-                                <option value="all">📊 All Students</option>
-                                <option value="present">✅ Present Students</option>
+                                <option value="all"><i class="fa-solid fa-chart-simple"></i> All Students</option>
+                                <option value="present"><i class="fa-solid fa-check text-green-500"></i> Present Students</option>
                                 <option value="partial">🔸 Partial Attendance</option>
-                                <option value="absent">❌ Absent Students</option>
+                                <option value="absent"><i class="fa-solid fa-xmark text-red-500"></i> Absent Students</option>
                             </select>
                         </div>
                         <div id="searchResultCount" style="color: #64748b; font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px; display: flex; align-items: center;">
@@ -1030,7 +1032,7 @@
                     <h2>📈 Class Attendance Overview</h2>
                     <div id="classOverviewContent">
                         <div class="empty-state">
-                            <div class="empty-state-icon">📊</div>
+                            <div class="empty-state-icon"><i class="fa-solid fa-chart-simple"></i></div>
                             <h3>Class Analytics</h3>
                             <p>Comprehensive class attendance analytics and insights coming soon</p>
                         </div>
@@ -1060,7 +1062,7 @@
     <div id="manualAttendanceModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>📅 Mark Session Attendance</h3>
+                <h3><i class="fa-solid fa-calendar-days"></i> Mark Session Attendance</h3>
                 <button class="close" onclick="closeModal('manualAttendanceModal')">&times;</button>
             </div>
             <div class="form-group">
@@ -1123,7 +1125,7 @@
     <div id="bulkExportModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>📊 Export Session-based Attendance</h3>
+                <h3><i class="fa-solid fa-chart-simple"></i> Export Session-based Attendance</h3>
                 <button class="close" onclick="closeBulkExportModal()">&times;</button>
             </div>
             <div class="form-group">
@@ -1652,12 +1654,12 @@
                 if (data.success) {
                     closeModal('manualAttendanceModal');
                     loadStudentAttendance();
-                    alert(`✅ ${sessionType.charAt(0).toUpperCase() + sessionType.slice(1)} session attendance marked successfully!`);
+                    alert(`<i class="fa-solid fa-check text-green-500"></i> ${sessionType.charAt(0).toUpperCase() + sessionType.slice(1)} session attendance marked successfully!`);
                 } else {
-                    alert('❌ Error: ' + data.message);
+                    alert('<i class="fa-solid fa-xmark text-red-500"></i> Error: ' + data.message);
                 }
             } catch (error) {
-                alert('❌ Error marking attendance: ' + error.message);
+                alert('<i class="fa-solid fa-xmark text-red-500"></i> Error marking attendance: ' + error.message);
             }
         }
 
@@ -1701,7 +1703,7 @@
                         <div>
                             <strong style="font-size: 1.1rem; color: #1a202c;">${holiday.name}</strong>
                             <div style="color: #64748b; font-size: 0.875rem; margin-top: 0.25rem;">
-                                📅 ${date} • ${holiday.type.replace('_', ' ').toUpperCase()}
+                                <i class="fa-solid fa-calendar-days"></i> ${date} • ${holiday.type.replace('_', ' ').toUpperCase()}
                             </div>
                         </div>
                         <button class="btn btn-outline" onclick="deleteHoliday(${holiday.id})" style="padding: 0.5rem 0.75rem;">
@@ -1741,12 +1743,12 @@
                 if (data.success) {
                     closeModal('addHolidayModal');
                     loadHolidays();
-                    alert('✅ Holiday added successfully!');
+                    alert('<i class="fa-solid fa-check text-green-500"></i> Holiday added successfully!');
                 } else {
-                    alert('❌ Error: ' + data.message);
+                    alert('<i class="fa-solid fa-xmark text-red-500"></i> Error: ' + data.message);
                 }
             } catch (error) {
-                alert('❌ Error adding holiday: ' + error.message);
+                alert('<i class="fa-solid fa-xmark text-red-500"></i> Error adding holiday: ' + error.message);
             }
         }
 
@@ -1762,12 +1764,12 @@
                 
                 if (data.success) {
                     loadHolidays();
-                    alert('✅ Holiday deleted successfully!');
+                    alert('<i class="fa-solid fa-check text-green-500"></i> Holiday deleted successfully!');
                 } else {
-                    alert('❌ Error: ' + data.message);
+                    alert('<i class="fa-solid fa-xmark text-red-500"></i> Error: ' + data.message);
                 }
             } catch (error) {
-                alert('❌ Error deleting holiday: ' + error.message);
+                alert('<i class="fa-solid fa-xmark text-red-500"></i> Error deleting holiday: ' + error.message);
             }
         }
 

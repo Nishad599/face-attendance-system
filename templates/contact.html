@@ -377,6 +377,8 @@
             .developer-name { font-size: 2rem; }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
     <!-- CDAC Header -->
@@ -387,7 +389,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img" 
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display: none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -399,22 +401,22 @@
             
             <nav class="cdac-navigation">
                 <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link active">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
             </nav>
             
             <div class="cdac-user-section">
                 <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon">🚪</span>
+                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
@@ -451,7 +453,7 @@
                 </div>
 
                 <div class="contact-card">
-                    <span class="contact-icon">📞</span>
+                    <span class="contact-icon"><i class="fa-solid fa-phone"></i></span>
                     <h3 class="contact-title">Contact Numbers</h3>
                     <div class="contact-details">
                         <p><strong>Main Office:</strong><br>
@@ -477,7 +479,7 @@
                 </div>
 
                 <div class="contact-card">
-                    <span class="contact-icon">🕐</span>
+                    <span class="contact-icon"><i class="fa-regular fa-clock"></i></span>
                     <h3 class="contact-title">Office Hours</h3>
                     <div class="contact-details">
                         <p><strong>Monday - Friday:</strong><br>
@@ -490,7 +492,7 @@
 
         <!-- Developer Section -->
         <section class="developer-section">
-            <div style="font-size: 4rem; margin-bottom: 20px;">👨‍💻</div>
+            <div style="font-size: 4rem; margin-bottom: 20px;"><i class="fa-solid fa-laptop-code"></i></div>
             <h2 class="developer-name">Nishad Kharote</h2>
             <p class="developer-title">Project Engineer</p>
             
@@ -507,12 +509,12 @@
                     <div class="contact-details" style="color: rgba(255, 255, 255, 0.9);">
                         <p>📧 nishadk@cdac.in</p>
                         <p>🔗 Project Engineer E&T</p>
-                        <p>🎯 AI/ML </p>
+                        <p><i class="fa-solid fa-bullseye"></i> AI/ML </p>
                     </div>
                 </div>
 
                 <div class="contact-card" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.2);">
-                    <span class="contact-icon" style="color: white;">🚀</span>
+                    <span class="contact-icon" style="color: white;"><i class="fa-solid fa-rocket"></i></span>
                     <h3 class="contact-title" style="color: white;">Expertise</h3>
                     <div class="contact-details" style="color: rgba(255, 255, 255, 0.9);">
                         <p>🧠 AI/ML Algorithm Development</p>
@@ -523,7 +525,7 @@
             </div>
 
             <div style="margin-top: 40px; padding: 25px; background: rgba(255, 255, 255, 0.1); border-radius: 15px;">
-                <h3 style="margin-bottom: 15px;">🎯 Project Highlights</h3>
+                <h3 style="margin-bottom: 15px;"><i class="fa-solid fa-bullseye"></i> Project Highlights</h3>
                 <ul style="text-align: left; max-width: 600px; margin: 0 auto; line-height: 1.8;">
                     <li>Built real-time face recognition system with 95%+ accuracy</li>
                     <li>Implemented secure attendance tracking with time-slot management</li>
@@ -539,7 +541,7 @@
             <h2 class="section-title">🎓 Academic Programs</h2>
             <div class="contact-grid">
                 <div class="contact-card">
-                    <span class="contact-icon">📊</span>
+                    <span class="contact-icon"><i class="fa-solid fa-chart-simple"></i></span>
                     <h3 class="contact-title">PG DBDA</h3>
                     <div class="contact-details">
                         <p><strong>Post Graduate Diploma in Big Data Analytics</strong></p>

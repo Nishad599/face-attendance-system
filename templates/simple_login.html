@@ -188,6 +188,8 @@
             .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
     <!-- CDAC Header (About-Us style) -->
@@ -198,7 +200,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -210,15 +212,15 @@
 
             <nav class="cdac-navigation">
                 <a href="/" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
                 <!-- No logout on login page -->
@@ -233,7 +235,7 @@
             <div class="login-card p-8">
                 <div class="text-center mb-8">
                     <div class="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span class="text-3xl">🔐</span>
+                        <span class="text-3xl"><i class="fa-solid fa-lock"></i></span>
                     </div>
                     <h2 class="text-2xl font-bold text-gray-800 mb-2">Admin Login</h2>
                     <p class="text-gray-600">Full system access and management</p>
@@ -262,7 +264,7 @@
             <div class="login-card p-8">
                 <div class="text-center mb-8">
                     <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span class="text-3xl">👤</span>
+                        <span class="text-3xl"><i class="fa-solid fa-user"></i></span>
                     </div>
                     <h2 class="text-2xl font-bold text-gray-800 mb-2">User Login</h2>
                     <p class="text-gray-600">Access attendance marking system</p>
@@ -280,7 +282,7 @@
                     </div>
 
                     <button type="submit" class="btn-user w-full text-white py-4 px-6 rounded-lg font-semibold text-lg shadow-lg">
-                        📹 Access Attendance System
+                        <i class="fa-solid fa-video"></i> Access Attendance System
                     </button>
                 </form>
 

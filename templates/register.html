@@ -177,6 +177,8 @@
             .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
 
@@ -189,7 +191,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -202,15 +204,15 @@
             <!-- Center: nav -->
             <nav class="cdac-navigation">
                 <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
             </nav>
@@ -218,7 +220,7 @@
             <!-- Right: logout -->
             <div class="cdac-user-section">
                 <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon">🚪</span>
+                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
@@ -262,7 +264,7 @@
             <div class="step" id="step-2">
                 <h2>Camera Setup</h2>
                 <div class="instructions">
-                    <h3>📹 Camera Instructions:</h3>
+                    <h3><i class="fa-solid fa-video"></i> Camera Instructions:</h3>
                     <ul>
                         <li>Position yourself 2-3 feet from the camera</li>
                         <li>Ensure good lighting on your face</li>
@@ -340,8 +342,8 @@
                     <h4>Last photo taken:</h4>
                     <img id="preview-img" alt="Photo preview">
                     <div>
-                        <button class="btn btn-success" onclick="acceptPhoto()">✅ Accept</button>
-                        <button class="btn btn-warning" onclick="retakePhoto()">🔄 Retake</button>
+                        <button class="btn btn-success" onclick="acceptPhoto()"><i class="fa-solid fa-check text-green-500"></i> Accept</button>
+                        <button class="btn btn-warning" onclick="retakePhoto()"><i class="fa-solid fa-arrows-rotate"></i> Retake</button>
                     </div>
                 </div>
 
@@ -352,7 +354,7 @@
 
                 {% else %}
                 <div class="status-message status-warning">
-                    <h3>⚠️ Face Recognition Not Available</h3>
+                    <h3><i class="fa-solid fa-triangle-exclamation"></i> Face Recognition Not Available</h3>
                     <p>Running in basic mode. Face recognition features are disabled.</p>
                     <p>You can still register, but automatic face detection won't work.</p>
                 </div>
@@ -365,7 +367,7 @@
             <div class="step" id="step-4">
                 <h2>Registration Complete!</h2>
                 <div class="status-message status-success">
-                    <h3>✅ Registration Successful!</h3>
+                    <h3><i class="fa-solid fa-check text-green-500"></i> Registration Successful!</h3>
                     <p>Your information has been registered in the attendance system.</p>
                     {% if face_recognition_available %}
                     <p>Face recognition is now active for automatic attendance tracking.</p>
@@ -471,7 +473,7 @@
                 });
 
                 document.getElementById('video-stream').srcObject = videoStream;
-                document.getElementById('camera-status').innerHTML = '<div class="status-success">✅ Camera ready!</div>';
+                document.getElementById('camera-status').innerHTML = '<div class="status-success"><i class="fa-solid fa-check text-green-500"></i> Camera ready!</div>';
 
                 setTimeout(() => {
                     nextStep();
@@ -480,7 +482,7 @@
                 }, 2000);
 
             } catch (error) {
-                document.getElementById('camera-status').innerHTML = '<div class="status-error">❌ Camera access denied</div>';
+                document.getElementById('camera-status').innerHTML = '<div class="status-error"><i class="fa-solid fa-xmark text-red-500"></i> Camera access denied</div>';
             }
         }
 
@@ -493,7 +495,7 @@
             } else {
                 document.getElementById('current-instruction').textContent = 'All photos captured!';
                 document.getElementById('capture-instructions').innerHTML =
-                    '<div class="status-success">✅ All photos captured! Processing...</div>';
+                    '<div class="status-success"><i class="fa-solid fa-check text-green-500"></i> All photos captured! Processing...</div>';
                 document.getElementById('capture-btn').style.display = 'none';
             }
         }

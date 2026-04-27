@@ -177,6 +177,8 @@
             .cdac-container { flex-direction: column; gap: 16px; text-align: center; padding: 0 12px; }
         }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/dark_theme.css">
 </head>
 <body>
 
@@ -189,7 +191,7 @@
                     <img src="/static/images/cdac-logo.png" alt="CDAC Logo" class="cdac-logo-img"
                          onerror="this.style.display='none'; document.getElementById('cdac-fallback-logo').style.display='flex';">
                     <div id="cdac-fallback-logo" class="cdac-fallback-logo" style="display:none;">
-                        <span class="fallback-icon">🏛️</span>
+                        <span class="fallback-icon"><i class="fa-solid fa-landmark"></i></span>
                     </div>
                 </div>
                 <div class="cdac-text-section">
@@ -202,15 +204,15 @@
             <!-- Center: Nav -->
             <nav class="cdac-navigation">
                 <a href="/dashboard" class="nav-link">
-                    <span class="nav-icon">🏠</span>
+                    <span class="nav-icon"><i class="fa-solid fa-house"></i></span>
                     <span class="nav-text">HOME</span>
                 </a>
                 <a href="/about" class="nav-link">
-                    <span class="nav-icon">ℹ️</span>
+                    <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span>
                     <span class="nav-text">ABOUT</span>
                 </a>
                 <a href="/contact" class="nav-link">
-                    <span class="nav-icon">📞</span>
+                    <span class="nav-icon"><i class="fa-solid fa-phone"></i></span>
                     <span class="nav-text">CONTACT</span>
                 </a>
             </nav>
@@ -218,7 +220,7 @@
             <!-- Right: Logout -->
             <div class="cdac-user-section">
                 <button class="logout-button" onclick="performLogout()" title="Logout">
-                    <span class="logout-icon">🚪</span>
+                    <span class="logout-icon"><i class="fa-solid fa-right-from-bracket"></i></span>
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
@@ -242,7 +244,7 @@
             <div class="admin-grid">
                 <!-- System Status Card -->
                 <div class="admin-card info-zone">
-                    <h3>📊 System Status</h3>
+                    <h3><i class="fa-solid fa-chart-simple"></i> System Status</h3>
                     <p>Check system health, database status, and loaded models</p>
                     <button class="btn btn-info" onclick="checkSystem()" id="statusBtn">
                         <span id="statusSpinner"></span>
@@ -273,7 +275,7 @@
                         <input type="file" id="bulkUploadFile" accept=".csv" style="display: block; margin-bottom: 8px;">
                         <button class="btn btn-success" onclick="uploadBulkStudents()" id="uploadBtn" style="width: 100%;">
                             <span id="uploadSpinner"></span>
-                            🚀 Upload Students
+                            <i class="fa-solid fa-rocket"></i> Upload Students
                         </button>
                     </div>
                     <div id="bulkUploadResult"></div>
@@ -281,7 +283,7 @@
 
                 <!-- Danger Zone -->
                 <div class="admin-card danger-zone">
-                    <h3>⚠️ Danger Zone</h3>
+                    <h3><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone</h3>
                     <p><strong>Warning:</strong> This will permanently delete ALL student data, face encodings, and attendance records!</p>
                     <button class="btn btn-danger" onclick="clearAllData()" id="clearBtn">
                         <span id="clearSpinner"></span>
@@ -335,7 +337,7 @@
 
                 document.getElementById('systemStatus').innerHTML = html;
             } catch (error) {
-                showResult('systemStatus', `❌ Error: ${error.message}`, 'error');
+                showResult('systemStatus', `<i class="fa-solid fa-xmark text-red-500"></i> Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('statusBtn', 'statusSpinner');
             }
@@ -370,7 +372,7 @@
 
                 document.getElementById('databaseStats').innerHTML = html;
             } catch (error) {
-                showResult('databaseStats', `❌ Error: ${error.message}`, 'error');
+                showResult('databaseStats', `<i class="fa-solid fa-xmark text-red-500"></i> Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('dbBtn', 'dbSpinner');
             }
@@ -380,9 +382,9 @@
         async function exportSystemData() {
             showLoading('exportBtn', 'exportSpinner');
             try {
-                showResult('exportResult', '📋 Export would be implemented here (students, attendance, settings).', 'info');
+                showResult('exportResult', '<i class="fa-solid fa-clipboard-user"></i> Export would be implemented here (students, attendance, settings).', 'info');
             } catch (error) {
-                showResult('exportResult', `❌ Error: ${error.message}`, 'error');
+                showResult('exportResult', `<i class="fa-solid fa-xmark text-red-500"></i> Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('exportBtn', 'exportSpinner');
             }
@@ -390,10 +392,10 @@
 
         // Clear all data (double confirmation)
         async function clearAllData() {
-            if (!confirm('⚠️ DANGER: This will delete ALL student data. Type "DELETE" to confirm:')) return;
+            if (!confirm('<i class="fa-solid fa-triangle-exclamation"></i> DANGER: This will delete ALL student data. Type "DELETE" to confirm:')) return;
             const confirmation = prompt('Type "DELETE ALL DATA" to confirm (case sensitive):');
             if (confirmation !== 'DELETE ALL DATA') {
-                showResult('clearResult', '❌ Confirmation failed. Operation cancelled.', 'error');
+                showResult('clearResult', '<i class="fa-solid fa-xmark text-red-500"></i> Confirmation failed. Operation cancelled.', 'error');
                 return;
             }
 
@@ -403,13 +405,13 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    showResult('clearResult', `✅ ${data.message}`, 'success');
+                    showResult('clearResult', `<i class="fa-solid fa-check text-green-500"></i> ${data.message}`, 'success');
                     setTimeout(checkSystem, 1000);
                 } else {
-                    showResult('clearResult', `❌ ${data.message}`, 'error');
+                    showResult('clearResult', `<i class="fa-solid fa-xmark text-red-500"></i> ${data.message}`, 'error');
                 }
             } catch (error) {
-                showResult('clearResult', `❌ Error: ${error.message}`, 'error');
+                showResult('clearResult', `<i class="fa-solid fa-xmark text-red-500"></i> Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('clearBtn', 'clearSpinner');
             }
@@ -429,7 +431,7 @@
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
             } catch (error) {
-                showResult('bulkUploadResult', `❌ Error downloading template: ${error.message}`, 'error');
+                showResult('bulkUploadResult', `<i class="fa-solid fa-xmark text-red-500"></i> Error downloading template: ${error.message}`, 'error');
             }
         }
 
@@ -438,12 +440,12 @@
             const file = fileInput.files[0];
 
             if (!file) {
-                showResult('bulkUploadResult', '❌ Please select a CSV file', 'error');
+                showResult('bulkUploadResult', '<i class="fa-solid fa-xmark text-red-500"></i> Please select a CSV file', 'error');
                 return;
             }
 
             if (!file.name.endsWith('.csv')) {
-                showResult('bulkUploadResult', '❌ Please select a valid CSV file', 'error');
+                showResult('bulkUploadResult', '<i class="fa-solid fa-xmark text-red-500"></i> Please select a valid CSV file', 'error');
                 return;
             }
 
@@ -460,18 +462,18 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    let message = `✅ ${data.message}`;
+                    let message = `<i class="fa-solid fa-check text-green-500"></i> ${data.message}`;
                     if (data.errors && data.errors.length > 0) {
-                        message += '\n\n⚠️ Errors encountered:\n' + data.errors.join('\n');
+                        message += '\n\n<i class="fa-solid fa-triangle-exclamation"></i> Errors encountered:\n' + data.errors.join('\n');
                     }
                     showResult('bulkUploadResult', message, 'success');
                     fileInput.value = '';  // Clear file input
                     setTimeout(checkSystem, 1000);
                 } else {
-                    showResult('bulkUploadResult', `❌ ${data.message}`, 'error');
+                    showResult('bulkUploadResult', `<i class="fa-solid fa-xmark text-red-500"></i> ${data.message}`, 'error');
                 }
             } catch (error) {
-                showResult('bulkUploadResult', `❌ Error: ${error.message}`, 'error');
+                showResult('bulkUploadResult', `<i class="fa-solid fa-xmark text-red-500"></i> Error: ${error.message}`, 'error');
             } finally {
                 hideLoading('uploadBtn', 'uploadSpinner');
             }
