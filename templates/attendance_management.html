@@ -42,29 +42,181 @@
     </div>
 
 
+    <style>
+        /* Interactive reports specific styles */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transition: transform 0.2s;
+            border: 1px solid #f1f5f9;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-trend {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .trend-up {
+            color: #10b981;
+        }
+
+        .trend-down {
+            color: #ef4444;
+        }
+
+        .heatmap-container {
+            margin: 2rem 0;
+            overflow-x: auto;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 16px;
+            border: 1px solid #f1f5f9;
+        }
+
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(14, 1fr);
+            gap: 4px;
+            min-width: 800px;
+        }
+
+        .heatmap-cell {
+            aspect-ratio: 1;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .heatmap-cell:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .sparkline-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        .sparkline-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 2rem;
+            border-radius: 20px;
+            width: 80%;
+            max-width: 600px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .sortable {
+            cursor: pointer;
+        }
+
+        .sortable:hover {
+            background-color: #f8fafc;
+        }
+
+        .sortable i {
+            font-size: 0.75rem;
+            margin-left: 0.25rem;
+            color: #94a3b8;
+        }
+
+        .leader-item {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .leader-item:hover {
+            background-color: #f1f5f9;
+        }
+
+        .date-filter-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+
     <div class="main-container">
         <div class="header">
             <div class="header-content">
-                <h1><i class="fa-solid fa-chart-simple"></i> Attendance Management</h1>
-                <p>Comprehensive student attendance tracking and analytics</p>
+                <h1><i class="fa-solid fa-chart-line"></i> Advanced Attendance Analytics</h1>
+                <p>Interactive insights and comprehensive student performance metrics</p>
             </div>
         </div>
 
         <div class="container">
-
-
             <div class="nav-tabs">
-                <button class="nav-tab active" onclick="switchTab('individual')">
-                    <i class="fa-solid fa-user"></i> Individual Attendance
+                <button class="nav-tab" onclick="switchTab('individual')">
+                    <i class="fa-solid fa-user"></i> Student Check
                 </button>
                 <button class="nav-tab" onclick="switchTab('today')">
-                    <i class="fa-solid fa-clipboard-user"></i> Today's Attendance
+                    <i class="fa-solid fa-calendar-check"></i> Live View
                 </button>
-                <button class="nav-tab" onclick="switchTab('overview')">
-                    📈 Class Overview
+                <button class="nav-tab active" onclick="switchTab('overview')">
+                    <i class="fa-solid fa-gauge-high"></i> Dashboard
                 </button>
                 <button class="nav-tab" onclick="switchTab('holidays')">
-                    🗓️ Holiday Management
+                    <i class="fa-solid fa-calendar-xmark"></i> Calendar
                 </button>
             </div>
 
@@ -208,14 +360,17 @@
                         <table class="attendance-table">
                             <thead>
                                 <tr>
-                                    <th>Student Name</th>
-                                    <th>Student ID</th>
+                                    <th class="sortable" onclick="sortTodayTable(0)">Student Name <i
+                                            class="fa-solid fa-sort"></i></th>
+                                    <th class="sortable" onclick="sortTodayTable(1)">ID <i class="fa-solid fa-sort"></i>
+                                    </th>
                                     <th>Email</th>
-                                    <th>Status</th>
-                                    <th>Morn 1 (8:30)</th>
-                                    <th>Morn 2 (11:00)</th>
-                                    <th>Aft 1 (1:45)</th>
-                                    <th>Aft 2 (4:15)</th>
+                                    <th class="sortable" onclick="sortTodayTable(8)">Status <i
+                                            class="fa-solid fa-sort"></i></th>
+                                    <th>Morn 1</th>
+                                    <th>Morn 2</th>
+                                    <th>Aft 1</th>
+                                    <th>Aft 2</th>
                                     <th>Date</th>
                                 </tr>
                             </thead>
@@ -230,52 +385,93 @@
             </div>
 
             <!-- Class Overview Tab -->
-            <div id="overview-tab" class="tab-content">
-                <div class="header-with-actions" style="margin-bottom: 2rem;">
-                    <h2>📈 Class Attendance Overview</h2>
-                    <button class="btn btn-outline btn-sm" onclick="loadClassAnalytics()">
-                        <i class="fa-solid fa-arrows-rotate"></i> Refresh Data
-                    </button>
+            <div id="overview-tab" class="tab-content active">
+                <div class="date-filter-row">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label style="font-weight: 500; font-size: 0.875rem;">Range:</label>
+                        <select id="overviewDateRange" class="app-select" onchange="loadClassAnalytics()">
+                            <option value="7">Last 7 Days</option>
+                            <option value="14" selected>Last 14 Days</option>
+                            <option value="30">Last 30 Days</option>
+                            <option value="90">Last 3 months</option>
+                        </select>
+                    </div>
+                    <div id="loadingIndicator" style="display: none; color: #0052cc;">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> Updating...
+                    </div>
                 </div>
 
                 <div class="analytics-grid">
                     <div class="stat-card">
-                        <div class="stat-number percentage" id="avgClassAttendance">0%</div>
-                        <div class="stat-label">Avg. Class Attendance</div>
+                        <div class="stat-number" id="avgClassAttendance" style="color: #0052cc;">0%</div>
+                        <div class="stat-label">Average Attendance</div>
+                        <div class="stat-trend" id="attendanceTrendNum">--</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number present" id="totalActiveStudents">0</div>
+                        <div class="stat-number" id="totalActiveStudents" style="color: #1e293b;">0</div>
                         <div class="stat-label">Active Students</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number info" id="peakSlot">--</div>
-                        <div class="stat-label">Most Attended Slot</div>
+                        <div class="stat-number" id="atRiskCount" style="color: #DE350B;">0</div>
+                        <div class="stat-label">At-Risk Students</div>
+                        <div class="stat-trend trend-down"><i class="fa-solid fa-triangle-exclamation"></i> Action
+                            Required</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="peakSlotNum" style="color: #00875A;">--</div>
+                        <div class="stat-label">Peak Slot</div>
                     </div>
                 </div>
 
-                <div class="charts-row">
+                <div class="charts-grid">
                     <div class="chart-container card">
-                        <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend (14 Days)</h3>
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend</h3>
+                        </div>
                         <canvas id="attendanceTrendChart"></canvas>
                     </div>
                     <div class="chart-container card">
-                        <h3><i class="fa-solid fa-chart-column"></i> Slot-wise Performance</h3>
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-pie"></i> Distribution</h3>
+                        </div>
+                        <canvas id="distributionDoughnutChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-calendar-day"></i> Weekday Performance</h3>
+                        </div>
+                        <canvas id="dayOfWeekChart"></canvas>
+                    </div>
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-column"></i> Slot-wise Totals</h3>
+                        </div>
                         <canvas id="slotComparisonChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="heatmap-container">
+                    <h3><i class="fa-solid fa-th"></i> Attendance Heatmap (Last 90 Days)</h3>
+                    <div id="attendanceHeatmap" class="heatmap-grid" style="margin-top: 1rem;">
+                        <!-- Generated via JS -->
                     </div>
                 </div>
 
                 <div class="leaderboard-row">
                     <div class="card leaderboard-card">
                         <h3><i class="fa-solid fa-ranking-star"></i> Top Performers</h3>
-                        <div id="topPerformersList" class="leader-list">
-                            <!-- Populated by JS -->
-                        </div>
+                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Click student to view trend
+                        </p>
+                        <div id="topPerformersList" class="leader-list"></div>
                     </div>
                     <div class="card leaderboard-card">
-                        <h3><i class="fa-solid fa-triangle-exclamation"></i> Needs Attention</h3>
-                        <div id="lowAttendanceList" class="leader-list">
-                            <!-- Populated by JS -->
-                        </div>
+                        <h3><i class="fa-solid fa-triangle-exclamation"></i> High Absence Streaks</h3>
+                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Students missing multiple
+                            consecutive days</p>
+                        <div id="atRiskList" class="leader-list"></div>
                     </div>
                 </div>
             </div>
@@ -299,7 +495,22 @@
         </div>
     </div>
 
-    <!-- Manual Attendance Modal -->
+    <!-- Sparkline Modal -->
+    <div id="sparklineModal" class="sparkline-modal">
+        <div class="sparkline-content">
+            <div class="modal-header">
+                <h3 id="sparklineStudentName">Student Trend</h3>
+                <button class="close" onclick="closeSparklineModal()">&times;</button>
+            </div>
+            <div style="height: 250px; margin-top: 1.5rem;">
+                <canvas id="studentSparklineChart"></canvas>
+            </div>
+            <div id="sparklineStats"
+                style="margin-top: 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
     <div id="manualAttendanceModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -760,6 +971,7 @@
                 const m2 = record[4];
                 const a1 = record[5];
                 const a2 = record[6];
+                const dbId = record[7];
 
                 const has_m1 = m1 !== null && m1 !== undefined && m1 !== '';
                 const has_m2 = m2 !== null && m2 !== undefined && m2 !== '';
@@ -773,7 +985,6 @@
                 if (has_a2) slots_count++;
 
                 let status, statusClass;
-
                 if (slots_count === 4) {
                     status = 'Full Day Present';
                     statusClass = 'status-present';
@@ -785,10 +996,13 @@
                     statusClass = 'status-absent';
                 }
 
+                // Attach calculated status back to record for sorting (index 8)
+                record[8] = status;
+
                 const today = new Date().toLocaleDateString();
 
                 tableHTML += `
-                    <tr>
+                    <tr class="leader-item" onclick="showStudentSparkline(${dbId}, '${studentName}')" title="Click to view history">
                         <td><strong>${studentName}</strong></td>
                         <td>${studentId || 'N/A'}</td>
                         <td>${email}</td>
@@ -1151,58 +1365,155 @@
         // --- Class Analytics Logic ---
         let trendChart = null;
         let slotChart = null;
+        let distributionChart = null;
+        let dayOfWeekChart = null;
+        let sparklineChart = null;
 
         async function loadClassAnalytics() {
-            console.log('Loading class analytics...');
-            const grid = document.getElementById('classOverviewContent');
+            const range = document.getElementById('overviewDateRange').value;
+            const loader = document.getElementById('loadingIndicator');
+            if (loader) loader.style.display = 'block';
 
             try {
-                const response = await fetch('/api/attendance/analytics/class');
-                const data = await response.json();
+                // Parallel requests for better performance
+                const [classRes, heatmapRes, dayOfWeekRes, atRiskRes] = await Promise.all([
+                    fetch(`/api/attendance/analytics/class?days=${range}`),
+                    fetch(`/api/analytics/heatmap?days=90`),
+                    fetch(`/api/analytics/day-of-week?days=60`),
+                    fetch(`/api/analytics/at-risk?threshold=75`)
+                ]);
 
-                if (!data.success) {
-                    console.error('Failed to load analytics:', data.message);
-                    return;
+                const classData = await classRes.json();
+                const heatmapData = await heatmapRes.json();
+                const dayOfWeekData = await dayOfWeekRes.json();
+                const atRiskData = await atRiskRes.json();
+
+                if (classData.success) {
+                    updateOverviewKPIs(classData);
+                    renderTrendChart(classData.trend);
+                    renderSlotChart(classData.slot_performance);
+                    renderDistributionChart(classData.trend); // Derive from trend
+                    renderLeaderboard('topPerformersList', classData.top_performers, 'green');
                 }
 
-                // Update Stat Cards
-                document.getElementById('avgClassAttendance').textContent = data.avg_attendance + '%';
-                document.getElementById('totalActiveStudents').textContent = data.total_students;
-                document.getElementById('peakSlot').textContent = data.peak_slot;
+                if (heatmapData.success) {
+                    renderHeatmap(heatmapData.heatmap);
+                }
 
-                // Render Trend Chart
-                renderTrendChart(data.trend);
+                if (dayOfWeekData.success) {
+                    renderDayOfWeekChart(dayOfWeekData.days);
+                }
 
-                // Render Slot Comparison Chart
-                renderSlotChart(data.slot_performance);
-
-                // Render Leaderboards
-                renderLeaderboard('topPerformersList', data.top_performers, 'green');
-                renderLeaderboard('lowAttendanceList', data.low_attendance, 'red');
+                if (atRiskData.success) {
+                    renderAtRiskList(atRiskData.at_risk);
+                    document.getElementById('atRiskCount').textContent = atRiskData.count;
+                }
 
             } catch (error) {
-                console.error('Error fetching class analytics:', error);
+                console.error('Error fetching analytics:', error);
+            } finally {
+                if (loader) loader.style.display = 'none';
+            }
+        }
+
+        function updateOverviewKPIs(data) {
+            document.getElementById('avgClassAttendance').textContent = data.avg_attendance + '%';
+            document.getElementById('totalActiveStudents').textContent = data.total_students;
+            document.getElementById('peakSlotNum').textContent = data.peak_slot;
+
+            // Trend calculation (Simplified: compare last 7 with previous 7)
+            if (data.trend && data.trend.length >= 14) {
+                const recent = data.trend.slice(-7).reduce((acc, curr) => acc + curr.pct, 0) / 7;
+                const previous = data.trend.slice(-14, -7).reduce((acc, curr) => acc + curr.pct, 0) / 7;
+                const diff = recent - previous;
+                const trendEl = document.getElementById('attendanceTrendNum');
+
+                if (diff > 0) {
+                    trendEl.className = 'stat-trend trend-up';
+                    trendEl.innerHTML = `<i class="fa-solid fa-arrow-up"></i> ${diff.toFixed(1)}% vs last week`;
+                } else if (diff < 0) {
+                    trendEl.className = 'stat-trend trend-down';
+                    trendEl.innerHTML = `<i class="fa-solid fa-arrow-down"></i> ${Math.abs(diff).toFixed(1)}% vs last week`;
+                } else {
+                    trendEl.className = 'stat-trend';
+                    trendEl.textContent = 'Stable vs last week';
+                }
             }
         }
 
         function renderTrendChart(trendData) {
             const ctx = document.getElementById('attendanceTrendChart').getContext('2d');
-
             if (trendChart) trendChart.destroy();
 
             trendChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: trendData.map(d => d.date.split('-').slice(1).join('/')), // MM/DD
+                    labels: trendData.map(d => d.date.split('-').slice(1).reverse().join('/')),
                     datasets: [{
                         label: 'Attendance %',
                         data: trendData.map(d => d.pct),
                         borderColor: '#0052CC',
-                        backgroundColor: 'rgba(0, 82, 204, 0.1)',
+                        backgroundColor: 'rgba(0, 82, 204, 0.05)',
                         fill: true,
                         tension: 0.4,
-                        pointRadius: 4,
+                        borderWidth: 3,
+                        pointRadius: 3,
                         pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderDistributionChart(trendData) {
+            const ctx = document.getElementById('distributionDoughnutChart').getContext('2d');
+            if (distributionChart) distributionChart.destroy();
+
+            // Calculate aggregate distribution from recent trend
+            const total = trendData.length;
+            const fullDays = trendData.filter(d => d.pct >= 95).length;
+            const partialDays = trendData.filter(d => d.pct > 50 && d.pct < 95).length;
+            const lowDays = total - fullDays - partialDays;
+
+            distributionChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['High (>95%)', 'Medium (50-95%)', 'Low (<50%)'],
+                    datasets: [{
+                        data: [fullDays, partialDays, lowDays],
+                        backgroundColor: ['#00875A', '#FFAB00', '#DE350B'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        function renderDayOfWeekChart(daysData) {
+            const ctx = document.getElementById('dayOfWeekChart').getContext('2d');
+            if (dayOfWeekChart) dayOfWeekChart.destroy();
+
+            dayOfWeekChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: daysData.map(d => d.day),
+                    datasets: [{
+                        data: daysData.map(d => d.avg_pct),
+                        backgroundColor: '#0065FF',
+                        borderRadius: 6
                     }]
                 },
                 options: {
@@ -1219,7 +1530,6 @@
 
         function renderSlotChart(slotData) {
             const ctx = document.getElementById('slotComparisonChart').getContext('2d');
-
             if (slotChart) slotChart.destroy();
 
             const labels = ['Morn 1', 'Morn 2', 'Aft 1', 'Aft 2'];
@@ -1232,7 +1542,7 @@
                     datasets: [{
                         data: values,
                         backgroundColor: ['#0052CC', '#0065FF', '#00875A', '#36B37E'],
-                        borderRadius: 4
+                        borderRadius: 6
                     }]
                 },
                 options: {
@@ -1243,6 +1553,27 @@
                         y: { beginAtZero: true }
                     }
                 }
+            });
+        }
+
+        function renderHeatmap(data) {
+            const container = document.getElementById('attendanceHeatmap');
+            container.innerHTML = '';
+
+            data.forEach(d => {
+                const cell = document.createElement('div');
+                cell.className = 'heatmap-cell';
+
+                // Color mapping: 0-100%
+                let color = '#f1f5f9'; // Empty
+                if (d.pct > 90) color = '#15803d';
+                else if (d.pct > 70) color = '#22c55e';
+                else if (d.pct > 50) color = '#86efac';
+                else if (d.pct > 0) color = '#dcfce7';
+
+                cell.style.backgroundColor = color;
+                cell.setAttribute('data-tooltip', `${d.date}: ${d.pct}% (${d.present} students)`);
+                container.appendChild(cell);
             });
         }
 
@@ -1258,15 +1589,159 @@
             list.forEach((item, index) => {
                 const div = document.createElement('div');
                 div.className = 'leader-item';
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.alignItems = 'center';
+                div.style.padding = '0.75rem 1rem';
+                div.style.borderRadius = '8px';
+                div.style.marginBottom = '0.5rem';
+                div.style.border = '1px solid #f1f5f9';
+
+                // Find student ID from global data if possible to enable click
+                const student = allStudentsData.find(s => s[0] === item.name);
+                if (student) {
+                    div.onclick = () => showStudentSparkline(student[7] || 0, item.name); // student[7] is 'id'
+                    div.title = "Click to view trend";
+                }
+
                 div.innerHTML = `
-                    <div class="leader-info">
-                        <span class="leader-rank">#${index + 1}</span>
-                        <span class="leader-name">${item.name}</span>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="font-weight: 600; color: #94a3b8;">${index + 1}</span>
+                        <span style="font-weight: 500;">${item.name}</span>
                     </div>
-                    <span class="leader-pct" style="color: ${color === 'green' ? '#00875A' : '#DE350B'}">${item.pct}%</span>
+                    <span style="font-weight: 700; color: ${color === 'green' ? '#00875A' : '#DE350B'}">${item.pct}%</span>
                 `;
                 container.appendChild(div);
             });
+        }
+
+        function renderAtRiskList(list) {
+            const container = document.getElementById('atRiskList');
+            container.innerHTML = '';
+
+            if (list.length === 0) {
+                container.innerHTML = '<p style="padding: 1rem; color: #64748b; text-align: center;">No high-risk students found</p>';
+                return;
+            }
+
+            list.slice(0, 5).forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'leader-item';
+                div.style.display = 'flex';
+                div.style.justifyContent = 'space-between';
+                div.style.alignItems = 'center';
+                div.style.padding = '0.75rem 1rem';
+                div.style.borderRadius = '8px';
+                div.style.marginBottom = '0.5rem';
+                div.style.border = '1px solid #fee2e2';
+                div.style.backgroundColor = '#fffafb';
+
+                div.innerHTML = `
+                    <div>
+                        <div style="font-weight: 600;">${item.name}</div>
+                        <div style="font-size: 0.75rem; color: #DE350B;">
+                            ${item.streak} days streak absence
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-weight: 700; color: #DE350B;">${item.pct}%</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8;">30-day avg</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        async function showStudentSparkline(id, name) {
+            if (!id) return;
+
+            document.getElementById('sparklineStudentName').textContent = `${name}'s Trends`;
+            document.getElementById('sparklineModal').style.display = 'block';
+
+            try {
+                const res = await fetch(`/api/analytics/student/${id}/sparkline`);
+                const data = await res.json();
+
+                if (data.success) {
+                    renderSparklineChart(data.sparkline);
+
+                    const totalSlots = data.sparkline.reduce((acc, curr) => acc + curr.slots, 0);
+                    const avgSlots = (totalSlots / data.sparkline.length).toFixed(1);
+                    const fullDays = data.sparkline.filter(d => d.slots === 4).length;
+
+                    document.getElementById('sparklineStats').innerHTML = `
+                        <div class="stat-card" style="padding: 1rem;">
+                            <div style="font-size: 1.25rem; font-weight: 700;">${avgSlots}</div>
+                            <div style="font-size: 0.75rem; color: #64748b;">Avg Slots/Day</div>
+                        </div>
+                        <div class="stat-card" style="padding: 1rem;">
+                            <div style="font-size: 1.25rem; font-weight: 700;">${fullDays}</div>
+                            <div style="font-size: 0.75rem; color: #64748b;">Full Days (14d)</div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading sparkline:', error);
+            }
+        }
+
+        function renderSparklineChart(data) {
+            const ctx = document.getElementById('studentSparklineChart').getContext('2d');
+            if (sparklineChart) sparklineChart.destroy();
+
+            sparklineChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => d.date.split('-').reverse().join('/')),
+                    datasets: [{
+                        label: 'Slots Attended',
+                        data: data.map(d => d.slots),
+                        borderColor: '#0065FF',
+                        backgroundColor: 'rgba(0, 101, 255, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, max: 4, ticks: { stepSize: 1 } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function closeSparklineModal() {
+            document.getElementById('sparklineModal').style.display = 'none';
+        }
+
+        // Add table sorting
+        let currentSort = { col: null, asc: true };
+        function sortTodayTable(colIndex) {
+            const isAsc = currentSort.col === colIndex ? !currentSort.asc : true;
+            currentSort = { col: colIndex, asc: isAsc };
+
+            filteredStudentsData.sort((a, b) => {
+                let valA = a[colIndex] || '';
+                let valB = b[colIndex] || '';
+
+                if (typeof valB === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return isAsc ? -1 : 1;
+                if (valA > valB) return isAsc ? 1 : -1;
+                return 0;
+            });
+
+            displayTodayAttendance();
+
+            // Update icons
+            document.querySelectorAll('.sortable i').forEach(i => i.className = 'fa-solid fa-sort');
+            const th = document.querySelectorAll('.attendance-table th')[colIndex];
+            if (th) th.querySelector('i').className = `fa-solid fa-sort-${isAsc ? 'up' : 'down'}`;
         }
 
         // Update session status every minute

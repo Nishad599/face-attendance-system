@@ -2544,7 +2544,8 @@ async def get_today_slot_attendance():
                    sa_m1.created_at as morning_1_time,
                    sa_m2.created_at as morning_2_time,
                    sa_a1.created_at as afternoon_1_time,
-                   sa_a2.created_at as afternoon_2_time
+                   sa_a2.created_at as afternoon_2_time,
+                   s.id
             FROM students s
             LEFT JOIN slot_attendance sa_m1 ON s.id = sa_m1.student_id 
                 AND sa_m1.date = ? AND sa_m1.slot_id = 'morning_1'
@@ -2565,12 +2566,44 @@ async def get_today_slot_attendance():
         return []
 
 @app.get("/api/attendance/analytics/class")
-async def get_class_analytics_data():
+async def get_class_analytics_data(days: int = 14):
     """Endpoint for comprehensive class analytics"""
     try:
-        return analytics_manager.get_class_analytics()
+        return analytics_manager.get_class_analytics(days=days)
     except Exception as e:
         print(f"Error in class analytics API: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/analytics/heatmap")
+async def get_heatmap_data(days: int = 90):
+    """Per-day attendance % for calendar heatmap"""
+    try:
+        return analytics_manager.get_heatmap_data(days=days)
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/analytics/day-of-week")
+async def get_day_of_week_data(days: int = 60):
+    """Average attendance % per weekday"""
+    try:
+        return analytics_manager.get_day_of_week_stats(days=days)
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/analytics/at-risk")
+async def get_at_risk_data(threshold: int = 75):
+    """All students below attendance threshold with streak info"""
+    try:
+        return analytics_manager.get_at_risk_students(threshold=threshold)
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/analytics/student/{student_id}/sparkline")
+async def get_student_sparkline(student_id: int, days: int = 14):
+    """14-day per-day slot count sparkline for a single student"""
+    try:
+        return analytics_manager.get_student_sparkline(student_id=student_id, days=days)
+    except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.get("/api/attendance/live-count")
