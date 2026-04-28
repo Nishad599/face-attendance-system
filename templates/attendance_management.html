@@ -180,6 +180,15 @@
             transition: background 0.2s;
         }
 
+        .clickable-row {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .clickable-row:hover {
+            background: rgba(0, 82, 204, 0.05);
+        }
+
         .leader-item:hover {
             background-color: #f1f5f9;
         }
@@ -360,18 +369,18 @@
                         <table class="attendance-table" style="table-layout: fixed; width: 100%;">
                             <thead>
                                 <tr>
-                                    <th style="width: 17%;" class="sortable" onclick="sortTodayTable(0)">Name <i
+                                    <th class="sortable" onclick="sortTodayTable(0)">Name <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th style="width: 11%;" class="sortable" onclick="sortTodayTable(1)">ID <i
+                                    <th class="sortable" onclick="sortTodayTable(1)">ID <i class="fa-solid fa-sort"></i>
+                                    </th>
+                                    <th>Email</th>
+                                    <th class="sortable" onclick="sortTodayTable(8)">Status <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th style="width: 22%;">Email</th>
-                                    <th style="width: 10%;" class="sortable" onclick="sortTodayTable(8)">Status <i
-                                            class="fa-solid fa-sort"></i></th>
-                                    <th style="width: 7%;">M1</th>
-                                    <th style="width: 7%;">M2</th>
-                                    <th style="width: 7%;">A1</th>
-                                    <th style="width: 7%;">A2</th>
-                                    <th style="width: 12%;">Date</th>
+                                    <th>M1</th>
+                                    <th>M2</th>
+                                    <th>A1</th>
+                                    <th>A2</th>
+                                    <th>Date</th>
                                 </tr>
                             </thead>
                             <tbody id="todayAttendanceTableBody">
@@ -1010,7 +1019,7 @@
                 };
 
                 tableHTML += `
-                    <tr class="leader-item" onclick="showStudentSparkline(${dbId}, '${studentName}')" title="Click to view history">
+                    <tr class="clickable-row" onclick="showStudentSparkline(${dbId}, '${studentName}')" title="Click to view history">
                         <td><strong>${studentName}</strong></td>
                         <td>${studentId || 'N/A'}</td>
                         <td>${email}</td>
