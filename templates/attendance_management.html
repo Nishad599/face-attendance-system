@@ -358,6 +358,17 @@
 
                     <div class="attendance-table-container">
                         <table class="attendance-table">
+                            <colgroup>
+                                <col style="width: 18%;"><!-- Name -->
+                                <col style="width: 12%;"><!-- ID -->
+                                <col style="width: 22%;"><!-- Email -->
+                                <col style="width: 10%;"><!-- Status -->
+                                <col style="width: 8%;"><!-- Morn 1 -->
+                                <col style="width: 8%;"><!-- Morn 2 -->
+                                <col style="width: 8%;"><!-- Aft 1 -->
+                                <col style="width: 8%;"><!-- Aft 2 -->
+                                <col style="width: 6%;"><!-- Date -->
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th class="sortable" onclick="sortTodayTable(0)">Student Name <i
@@ -376,7 +387,7 @@
                             </thead>
                             <tbody id="todayAttendanceTableBody">
                                 <tr>
-                                    <td colspan="8" style="text-align: center;">Loading...</td>
+                                    <td colspan="9" style="text-align: center;">Loading...</td>
                                 </tr>
                             </tbody>
                         </table>

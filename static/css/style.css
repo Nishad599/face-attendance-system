@@ -74,7 +74,7 @@ body {
     font-size: clamp(1.8rem, 6vw, 2.8rem);
     font-weight: 700;
     margin-bottom: 0.5rem;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .header p {
@@ -198,6 +198,7 @@ body {
     border: 1px solid #FCECDD;
     margin-bottom: 2rem;
 }
+
 .card {
     background: white;
     border-radius: 20px;
@@ -266,6 +267,7 @@ body {
 .success-zone h3 {
     color: #00809D;
 }
+
 /* ===== BACK TO DASHBOARD BUTTON FIX ===== */
 .back-link {
     margin: 2rem auto;
@@ -303,6 +305,7 @@ h2:contains("Registered Students"),
 .students-section h2:first-child {
     color: #FF7601 !important;
 }
+
 /* ===== NAVIGATION STYLES ===== */
 .nav-grid {
     display: grid;
@@ -410,8 +413,15 @@ h2:contains("Registered Students"),
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* ===== FORM STYLES ===== */
@@ -519,6 +529,7 @@ h2:contains("Registered Students"),
 .attendance-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 
 .students-table th,
@@ -529,6 +540,9 @@ h2:contains("Registered Students"),
     text-align: left;
     border-bottom: 1px solid #FCECDD;
     font-size: clamp(0.8rem, 2vw, 0.9rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .students-table th,
@@ -585,6 +599,7 @@ h2:contains("Registered Students"),
         opacity: 0;
         transform: translateY(-50px) scale(0.95);
     }
+
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
@@ -625,6 +640,7 @@ h2:contains("Registered Students"),
     color: #FF7601;
     background: #FCECDD;
 }
+
 /* ===== STUDENT SELECTOR STYLES ===== */
 .student-selector {
     margin-bottom: 2rem;
@@ -661,15 +677,16 @@ h2:contains("Registered Students"),
 .student-select:hover {
     border-color: #FF7601;
 }
+
 /* ===== MINIMAL VISIBILITY FIXES ===== */
 .section-header h2 {
     color: white !important;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .datetime-info {
     color: white !important;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .datetime-info strong {
@@ -769,12 +786,31 @@ h2:contains("Registered Students"),
 }
 
 /* Status colors for inline elements */
-.status-present { color: #00809D; font-weight: 600; }
-.status-absent { color: #FF7601; font-weight: 600; }
-.present { color: #00809D; }
-.absent { color: #FF7601; }
-.holiday { color: #F3A26D; }
-.percentage { color: #00809D; }
+.status-present {
+    color: #00809D;
+    font-weight: 600;
+}
+
+.status-absent {
+    color: #FF7601;
+    font-weight: 600;
+}
+
+.present {
+    color: #00809D;
+}
+
+.absent {
+    color: #FF7601;
+}
+
+.holiday {
+    color: #F3A26D;
+}
+
+.percentage {
+    color: #00809D;
+}
 
 /* ===== RESULT STYLES ===== */
 .result {
@@ -826,8 +862,13 @@ h2:contains("Registered Students"),
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 /* ===== EMPTY STATE STYLES ===== */
@@ -960,6 +1001,7 @@ h2:contains("Registered Students"),
     color: #333;
     font-weight: 700;
 }
+
 .calendar-day.present::after {
     content: '✓';
     position: absolute;
@@ -1338,81 +1380,81 @@ h2:contains("Registered Students"),
         margin: 0.5rem;
         border-radius: 20px;
     }
-    
+
     .nav-grid {
         grid-template-columns: 1fr;
         gap: 1rem;
     }
-    
+
     .nav-tabs {
         flex-direction: column;
         gap: 0.5rem;
     }
-    
+
     .nav-tab {
         min-width: auto;
     }
-    
+
     .actions-bar {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .stats-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-    
+
     .admin-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .attendance-overview {
         grid-template-columns: 1fr;
     }
-    
+
     .calendar-day {
         padding: 0.5rem;
         min-height: 50px;
     }
-    
+
     .legend {
         gap: 1rem;
     }
-    
+
     .modal-content {
         width: 95%;
         margin: 10% auto;
     }
-    
+
     .search-controls {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .search-input {
         max-width: none;
     }
-    
+
     .video-container {
         width: 90%;
         max-width: 400px;
     }
-    
+
     .registration-container {
         width: 95%;
         margin: 1rem auto;
     }
-    
+
     .step-indicator {
         gap: 1rem;
     }
-    
+
     .step-dot {
         width: 40px;
         height: 40px;
         font-size: 1rem;
     }
-    
+
     .step-dot:not(:last-child)::after {
         width: 1rem;
     }
@@ -1422,26 +1464,26 @@ h2:contains("Registered Students"),
     .stats-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .calendar-day {
         padding: 0.25rem;
         min-height: 40px;
     }
-    
+
     .video-container {
         width: 95%;
         max-width: 300px;
     }
-    
+
     .face-overlay {
         width: 120px;
         height: 150px;
     }
-    
+
     .step-indicator {
         gap: 0.5rem;
     }
-    
+
     .step-dot {
         width: 35px;
         height: 35px;
@@ -1454,31 +1496,31 @@ h2:contains("Registered Students"),
     body {
         background: white;
     }
-    
+
     .main-container {
         box-shadow: none;
         margin: 0;
         border-radius: 0;
     }
-    
+
     .header {
         background: #00809D !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    
+
     .btn {
         display: none;
     }
-    
+
     .modal {
         display: none;
     }
-    
+
     .nav-tabs {
         display: none;
     }
-    
+
     .video-container {
         display: none;
     }
