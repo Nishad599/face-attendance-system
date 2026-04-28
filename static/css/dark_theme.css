@@ -176,7 +176,10 @@ select:focus {
     color: #38bdf8 !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
     font-weight: 600 !important;
-    padding: 1.2rem 1rem !important;
+    padding: 0.75rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
 }
 
 .table td,
@@ -184,10 +187,13 @@ select:focus {
 .attendance-table td {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
     color: #cbd5e1 !important;
+    padding: 0.75rem 0.5rem !important;
+    font-size: 0.8rem !important;
 }
 
 .table tbody tr:hover,
-.students-table tbody tr:hover {
+.students-table tbody tr:hover,
+.attendance-table tbody tr:hover {
     background: rgba(255, 255, 255, 0.05) !important;
 }
 
