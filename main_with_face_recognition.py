@@ -2225,23 +2225,24 @@ async def bulk_export_attendance(
                 # Count morning sessions (FROM SLOT_ATTENDANCE)
                 cursor.execute('''
                     SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id = 'morning'
+                    WHERE date = ? AND slot_id LIKE 'morning%'
                 ''', (date_str,))
                 morning_count = cursor.fetchone()[0]
                 
                 # Count afternoon sessions (FROM SLOT_ATTENDANCE)
                 cursor.execute('''
                     SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id = 'afternoon'
+                    WHERE date = ? AND slot_id LIKE 'afternoon%'
                 ''', (date_str,))
                 afternoon_count = cursor.fetchone()[0]
                 
-                # Count students with both sessions
+                # Count students with both sessions equivalent
                 cursor.execute('''
                     SELECT student_id FROM slot_attendance 
                     WHERE date = ? 
                     GROUP BY student_id 
-                    HAVING COUNT(DISTINCT slot_id) = 2
+                    HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0 
+                       AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0
                 ''', (date_str,))
                 full_day_records = cursor.fetchall()
                 full_day_count = len(full_day_records)
@@ -2272,7 +2273,9 @@ async def bulk_export_attendance(
                 
                 # Get slot data for this student (FROM SLOT_ATTENDANCE)
                 cursor.execute('''
-                    SELECT date, COUNT(DISTINCT slot_id) as session_count
+                    SELECT date, 
+                           SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) as morn_count,
+                           SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) as aft_count
                     FROM slot_attendance 
                     WHERE student_id = ? AND date BETWEEN ? AND ?
                     GROUP BY date
@@ -2280,8 +2283,13 @@ async def bulk_export_attendance(
                 
                 daily_sessions = cursor.fetchall()
                 
-                full_days = sum(1 for _, count in daily_sessions if count == 2)
-                half_days = sum(1 for _, count in daily_sessions if count == 1)
+                full_days = 0
+                half_days = 0
+                for _, morn, aft in daily_sessions:
+                    if morn > 0 and aft > 0:
+                        full_days += 1
+                    elif morn > 0 or aft > 0:
+                        half_days += 1
                 
                 # Get total session count
                 cursor.execute('''
@@ -2333,13 +2341,13 @@ async def bulk_export_attendance(
                 day_name = current_date.strftime('%A')
                 
                 # Same calculations using slot_attendance
-                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id = "morning"', (date_str,))
+                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id LIKE "morning%"', (date_str,))
                 morning_count = cursor.fetchone()[0]
                 
-                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id = "afternoon"', (date_str,))
+                cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ? AND slot_id LIKE "afternoon%"', (date_str,))
                 afternoon_count = cursor.fetchone()[0]
                 
-                cursor.execute('SELECT student_id FROM slot_attendance WHERE date = ? GROUP BY student_id HAVING COUNT(DISTINCT slot_id) = 2', (date_str,))
+                cursor.execute('''SELECT student_id FROM slot_attendance WHERE date = ? GROUP BY student_id HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0''', (date_str,))
                 full_day_count = len(cursor.fetchall())
                 
                 cursor.execute('SELECT COUNT(DISTINCT student_id) FROM slot_attendance WHERE date = ?', (date_str,))
@@ -2463,7 +2471,7 @@ async def export_student_attendance(student_id: int):
                     day_name = 'Unknown'
                 
                 # Convert slot_id to session_type
-                session_type = 'Morning' if slot_id == 'morning' else 'Afternoon'
+                session_type = slot_id.replace('_', ' ').title()
                 
                 writer.writerow([
                     student_name,
