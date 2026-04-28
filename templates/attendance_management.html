@@ -203,6 +203,45 @@
             margin-bottom: 2rem;
             border: 1px solid #e2e8f0;
         }
+
+        /* Calendar tooltip */
+        .calendar-day {
+            position: relative;
+        }
+
+        .calendar-day .cal-tooltip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            white-space: pre-line;
+            z-index: 100;
+            min-width: 160px;
+            text-align: left;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            line-height: 1.6;
+        }
+
+        .calendar-day .cal-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #1e293b;
+        }
+
+        .calendar-day:hover .cal-tooltip {
+            display: block;
+        }
     </style>
 
     <div class="main-container">
@@ -369,18 +408,19 @@
                         <table class="attendance-table" style="table-layout: fixed; width: 100%;">
                             <thead>
                                 <tr>
-                                    <th class="sortable" onclick="sortTodayTable(0)">Name <i
+                                    <th style="width:16%" class="sortable" onclick="sortTodayTable(0)">Name <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th class="sortable" onclick="sortTodayTable(1)">ID <i class="fa-solid fa-sort"></i>
+                                    <th style="width:10%" class="sortable" onclick="sortTodayTable(1)">ID <i
+                                            class="fa-solid fa-sort"></i>
                                     </th>
-                                    <th>Email</th>
-                                    <th class="sortable" onclick="sortTodayTable(8)">Status <i
+                                    <th style="width:20%">Email</th>
+                                    <th style="width:10%" class="sortable" onclick="sortTodayTable(8)">Status <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th>M1</th>
-                                    <th>M2</th>
-                                    <th>A1</th>
-                                    <th>A2</th>
-                                    <th>Date</th>
+                                    <th style="width:8%">M1</th>
+                                    <th style="width:8%">M2</th>
+                                    <th style="width:8%">A1</th>
+                                    <th style="width:8%">A2</th>
+                                    <th style="width:12%">Date</th>
                                 </tr>
                             </thead>
                             <tbody id="todayAttendanceTableBody">
@@ -861,25 +901,14 @@
                     const holiday = holidays.find(h => h.date === dateString);
                     if (holiday) {
                         dayElement.classList.add('holiday');
-                        dayElement.title = holiday.name;
+                        const tip = document.createElement('div');
+                        tip.className = 'cal-tooltip';
+                        tip.textContent = '🎉 ' + holiday.name;
+                        dayElement.appendChild(tip);
                     }
                     // Process attendance for working days
                     else if (selectedStudent && isPastDate && dayOfWeek !== 0 && isAfterJoining) {
                         const sessionData = studentAttendanceData[dateString];
-
-                        if (dateString === '2025-08-01' || dateString === '2025-08-02' || dateString === '2025-08-04' || dateString === '2025-08-19') {
-                            console.log(`DEBUG ${dateString}:`, {
-                                sessionData: sessionData,
-                                hasMorning: sessionData?.morning,
-                                hasAfternoon: sessionData?.afternoon,
-                                morningTruthy: !!sessionData?.morning,
-                                afternoonTruthy: !!sessionData?.afternoon,
-                                isPastDate: isPastDate,
-                                isAfterJoining: isAfterJoining,
-                                dayOfWeek: dayOfWeek,
-                                selectedStudent: selectedStudent
-                            });
-                        }
 
                         if (sessionData) {
                             // Has session data (new 4-slot logic)
@@ -887,14 +916,24 @@
                             sessionBadges.className = 'session-badges';
 
                             const count = sessionData.count || 0;
+                            const fmtSlot = (val) => val ? val.split(' ').pop().substring(0, 5) : '—';
 
                             if (count === 4) {
                                 dayElement.classList.add('present');
-                                dayElement.title = `Full Day Present\nM1: ${sessionData.m1 || '-'}\nM2: ${sessionData.m2 || '-'}\nA1: ${sessionData.a1 || '-'}\nA2: ${sessionData.a2 || '-'}`;
                             } else if (count > 0) {
                                 dayElement.classList.add('partial');
-                                dayElement.title = `Partial Present (${count}/4)\nM1: ${sessionData.m1 || '-'}\nM2: ${sessionData.m2 || '-'}\nA1: ${sessionData.a1 || '-'}\nA2: ${sessionData.a2 || '-'}`;
                             }
+
+                            // Create styled tooltip
+                            const tip = document.createElement('div');
+                            tip.className = 'cal-tooltip';
+                            tip.innerHTML = `<strong>${dateString}</strong>\n` +
+                                `${count === 4 ? '✅ Full Day' : count > 0 ? '⚠️ Partial (' + count + '/4)' : ''}\n` +
+                                `M1: ${fmtSlot(sessionData.m1)}\n` +
+                                `M2: ${fmtSlot(sessionData.m2)}\n` +
+                                `A1: ${fmtSlot(sessionData.a1)}\n` +
+                                `A2: ${fmtSlot(sessionData.a2)}`;
+                            dayElement.appendChild(tip);
 
                             // Show up to 4 micro-badges
                             const slots = ['m1', 'm2', 'a1', 'a2'];
@@ -910,7 +949,10 @@
                         if (!sessionData) {
                             // No session data for this working day = absent
                             dayElement.classList.add('absent');
-                            dayElement.title = 'Absent - No sessions attended';
+                            const tip = document.createElement('div');
+                            tip.className = 'cal-tooltip';
+                            tip.innerHTML = `<strong>${dateString}</strong>\n❌ Absent\nNo sessions attended`;
+                            dayElement.appendChild(tip);
                         }
                     }
                 }
