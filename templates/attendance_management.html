@@ -356,22 +356,22 @@
                         </div>
                     </div>
 
-                    <div class="attendance-table-container">
-                        <table class="attendance-table">
+                    <div class="attendance-table-container" style="overflow-y: scroll;">
+                        <table class="attendance-table" style="table-layout: fixed; width: 100%;">
                             <thead>
                                 <tr>
-                                    <th class="sortable" onclick="sortTodayTable(0)">Student Name <i
+                                    <th style="width: 17%;" class="sortable" onclick="sortTodayTable(0)">Name <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th class="sortable" onclick="sortTodayTable(1)">ID <i class="fa-solid fa-sort"></i>
-                                    </th>
-                                    <th>Email</th>
-                                    <th class="sortable" onclick="sortTodayTable(8)">Status <i
+                                    <th style="width: 11%;" class="sortable" onclick="sortTodayTable(1)">ID <i
                                             class="fa-solid fa-sort"></i></th>
-                                    <th>Morn 1</th>
-                                    <th>Morn 2</th>
-                                    <th>Aft 1</th>
-                                    <th>Aft 2</th>
-                                    <th>Date</th>
+                                    <th style="width: 22%;">Email</th>
+                                    <th style="width: 10%;" class="sortable" onclick="sortTodayTable(8)">Status <i
+                                            class="fa-solid fa-sort"></i></th>
+                                    <th style="width: 7%;">M1</th>
+                                    <th style="width: 7%;">M2</th>
+                                    <th style="width: 7%;">A1</th>
+                                    <th style="width: 7%;">A2</th>
+                                    <th style="width: 12%;">Date</th>
                                 </tr>
                             </thead>
                             <tbody id="todayAttendanceTableBody">
