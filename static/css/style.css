@@ -529,20 +529,26 @@ h2:contains("Registered Students"),
 .attendance-table {
     width: 100%;
     border-collapse: collapse;
-    table-layout: fixed;
 }
 
 .students-table th,
 .students-table td,
 .attendance-table th,
 .attendance-table td {
-    padding: 0.75rem;
+    padding: 0.75rem 0.5rem;
     text-align: left;
     border-bottom: 1px solid #FCECDD;
-    font-size: clamp(0.8rem, 2vw, 0.9rem);
+    font-size: clamp(0.75rem, 1.8vw, 0.85rem);
+    word-break: break-word;
+    max-width: 200px;
+}
+
+.attendance-table td:nth-child(n+5):nth-child(-n+8) {
+    white-space: nowrap;
+    font-size: 0.75rem;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .students-table th,
