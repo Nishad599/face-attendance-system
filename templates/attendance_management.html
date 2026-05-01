@@ -20,10 +20,10 @@
             CDAC Attendance
         </a>
         <div class="app-navbar-links">
-            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
-            <a href="/attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
-            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
-            <a href="/attendance-management" class="active"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/dashboard" id="nav-dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance" id="nav-attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students" id="nav-students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management" id="nav-reports" class="active"><i class="fa-solid fa-table-list"></i> Reports</a>
             <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
         </div>
         <div class="app-navbar-actions">
@@ -704,6 +704,17 @@
             loadHolidays();
             loadTodayAttendance();
 
+            // Role-based visibility check
+            fetch('/api/session/status').then(r => r.json()).then(d => {
+                if (d.authenticated && d.user_type !== 'admin') {
+                    const toHide = ['nav-dashboard', 'nav-students', 'nav-reports'];
+                    toHide.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.style.display = 'none';
+                    });
+                }
+            }).catch(e => console.error('Session check failed:', e));
+            
             // Set default dates for export
             const today = new Date().toISOString().split('T')[0];
             const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];

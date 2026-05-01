@@ -17,10 +17,10 @@
             CDAC Attendance
         </a>
         <div class="app-navbar-links">
-            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
-            <a href="/attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
-            <a href="/students" class="active"><i class="fa-solid fa-users"></i> Students</a>
-            <a href="/attendance-management"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/dashboard" id="nav-dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/attendance" id="nav-attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
+            <a href="/students" id="nav-students" class="active"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/attendance-management" id="nav-reports"><i class="fa-solid fa-table-list"></i> Reports</a>
             <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
         </div>
         <div class="app-navbar-actions">
@@ -279,6 +279,17 @@
 
         // Initial load
         refreshStudents();
+
+        // Role-based visibility check
+        fetch('/api/session/status').then(r => r.json()).then(d => {
+            if (d.authenticated && d.user_type !== 'admin') {
+                const toHide = ['nav-dashboard', 'nav-students', 'nav-reports'];
+                toHide.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+            }
+        }).catch(e => console.error('Session check failed:', e));
     </script>
 
     <script>
