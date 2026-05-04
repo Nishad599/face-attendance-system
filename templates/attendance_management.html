@@ -574,8 +574,11 @@
                 <label for="sessionType">Session Type:</label>
                 <select id="sessionType" required>
                     <option value="">Choose session...</option>
-                    <option value="morning">Morning Session (8:45 AM - 9:30 AM)</option>
-                    <option value="afternoon">Afternoon Session (1:45 PM - 2:30 PM)</option>
+                    <option value="full_day">Full Day (All 4 Sessions)</option>
+                    <option value="morning_1">Morning Session 1 (08:30 - 09:30)</option>
+                    <option value="morning_2">Morning Session 2 (11:00 - 11:15)</option>
+                    <option value="afternoon_1">Afternoon Session 1 (13:45 - 14:00)</option>
+                    <option value="afternoon_2">Afternoon Session 2 (16:15 - 16:45)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -1182,10 +1185,11 @@
 
                 if (data.success) {
                     closeModal('manualAttendanceModal');
-                    loadStudentAttendance();
-                    alert(`<i class="fa-solid fa-check text-green-500"></i> ${sessionType.charAt(0).toUpperCase() + sessionType.slice(1)} session attendance marked successfully!`);
+                    if (typeof loadStudentAttendance === 'function') loadStudentAttendance();
+                    if (typeof loadTodayAttendance === 'function') loadTodayAttendance();
+                    alert(`Success: ${data.message}`);
                 } else {
-                    alert('<i class="fa-solid fa-xmark text-red-500"></i> Error: ' + data.message);
+                    alert('Error: ' + data.message);
                 }
             } catch (error) {
                 alert('<i class="fa-solid fa-xmark text-red-500"></i> Error marking attendance: ' + error.message);

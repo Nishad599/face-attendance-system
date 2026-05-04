@@ -942,35 +942,56 @@ if __name__ == "__main__":
 
     
     def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
-        """Mark session attendance manually - FIXED to use slot_attendance"""
+        """Mark session attendance manually - FIXED to use slot_attendance and handle full day"""
         cursor = self.conn.cursor()
-        
-        # Check if already marked for this session in slot_attendance
-        cursor.execute('''
-            SELECT id FROM slot_attendance 
-            WHERE student_id = ? AND date = ? AND slot_id = ?
-        ''', (student_id, date_str, session_type))
-        
-        if cursor.fetchone():
-            return False, f"{session_type.title()} session attendance already marked for this date"
         
         # Check if holiday
         cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
         if cursor.fetchone():
             return False, "Cannot mark attendance on a holiday"
         
-        # Mark session attendance in slot_attendance table (NOT session_attendance)
         timezone = pytz.timezone('Asia/Kolkata')
-        current_time = datetime.now(timezone).strftime('%H:%M:%S')
+        now = datetime.now(timezone)
+        current_time = now.strftime('%H:%M:%S')
+        current_timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
 
-        cursor.execute('''
-            INSERT INTO slot_attendance 
-            (student_id, date, slot_id, time_marked, is_manual, manual_reason)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (student_id, date_str, session_type, current_time, True, reason))
+        slots_to_mark = []
+        if session_type == 'full_day':
+            slots_to_mark = ['morning_1', 'morning_2', 'afternoon_1', 'afternoon_2']
+        else:
+            slots_to_mark = [session_type]
+            
+        marked_count = 0
+        already_marked = 0
+        
+        for slot in slots_to_mark:
+            # Check if already marked for this session in slot_attendance
+            cursor.execute('''
+                SELECT id FROM slot_attendance 
+                WHERE student_id = ? AND date = ? AND slot_id = ?
+            ''', (student_id, date_str, slot))
+            
+            if cursor.fetchone():
+                already_marked += 1
+                continue
+            
+            # Mark session attendance in slot_attendance table
+            cursor.execute('''
+                INSERT INTO slot_attendance 
+                (student_id, date, slot_id, time_marked, is_manual, manual_reason, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (student_id, date_str, slot, current_time, True, reason, current_timestamp))
+            marked_count += 1
         
         self.conn.commit()
-        return True, f"{session_type.title()} session attendance marked successfully"
+        
+        if marked_count > 0:
+            msg = f"Successfully marked {marked_count} session(s)"
+            if already_marked > 0:
+                msg += f" ({already_marked} were already marked)"
+            return True, msg
+        else:
+            return False, "All selected sessions were already marked for this date"
         
     def get_student_count(self):
         """Get total number of active students"""
