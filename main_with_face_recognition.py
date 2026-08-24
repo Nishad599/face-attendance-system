@@ -1278,7 +1278,7 @@ class SimpleAdminLogin(BaseModel):
 class SimpleFaceLogin(BaseModel):
     image_data: str
 
-from auth_utils import verify_password, hash_password
+from auth_utils import verify_password, hash_password, default_student_password
 
 class StudentLogin(BaseModel):
     student_id: str
