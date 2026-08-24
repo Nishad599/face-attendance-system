@@ -15,6 +15,10 @@ Usage:
 import os
 import sqlite3
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 

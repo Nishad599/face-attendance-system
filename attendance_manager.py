@@ -118,7 +118,23 @@ class AttendanceSlotManager:
                     last_updated TEXT NOT NULL
                 )
             ''')
-        
+
+        # session_configs must exist before load_session_configs() reads it.
+        # The slot manager is constructed at import time BEFORE AttendanceSystem
+        # creates this table, so on a fresh DB (SQLite or Postgres) we must
+        # ensure it here too. (No FK to courses — that table may not exist yet.)
+        id_decl = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS session_configs (
+                id {id_decl},
+                course_id INTEGER,
+                session_type TEXT NOT NULL,
+                start_time TIME NOT NULL,
+                end_time TIME NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        ''')
+
         self.conn.commit()
         logger.info("Slot attendance tables initialized")
     

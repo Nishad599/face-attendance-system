@@ -31,8 +31,13 @@ from io import StringIO
 from analytics_manager import AnalyticsManager
 from anti_spoofing import anti_spoof_checker
 
-# Initialize managers
-attendance_manager = create_slot_manager_instance()
+# Initialize managers.
+# NOTE: the slot manager reads base tables (courses, session_configs) that are
+# created by AttendanceSystem() below, so it is initialized AFTER that (see the
+# `attendance_manager = create_slot_manager_instance()` line following
+# `attendance_system = AttendanceSystem()`). A placeholder is set here so any
+# import-time references resolve; it is replaced before any request is served.
+attendance_manager = None
 analytics_manager = AnalyticsManager()
 
 # Convert to a specific timezone (e.g., Asia/Kolkata)
@@ -1245,6 +1250,10 @@ class AttendanceSystem:
 
 # Initialize attendance system
 attendance_system = AttendanceSystem()
+
+# Now that base tables (courses, session_configs, students, …) exist, build the
+# slot manager (it reads those tables at construction time).
+attendance_manager = create_slot_manager_instance()
 
 # Session management helpers
 def get_user_from_session(request: Request) -> Optional[dict]:
