@@ -83,6 +83,10 @@
                     <label for="editJoiningDate">Joining Date:</label>
                     <input type="date" id="editJoiningDate" required>
                 </div>
+                <div class="form-group">
+                    <label for="editBatch">Batch:</label>
+                    <select id="editBatch"></select>
+                </div>
                 <div style="text-align: right;">
                     <button type="button" class="btn btn-primary" onclick="closeEditModal()">Cancel</button>
                     <button type="submit" class="btn btn-success">Save Changes</button>
@@ -127,6 +131,8 @@
                                     <th>Name</th>
                                     <th>Student ID</th>
                                     <th>Email</th>
+                                    <th>Batch</th>
+                                    <th>Status</th>
                                     <th>Joining Date</th>
                                     <th>Actions</th>
                                 </tr>
@@ -140,6 +146,10 @@
                             <td>${student.name}</td>
                             <td>${student.student_id}</td>
                             <td>${student.email}</td>
+                            <td>${student.batch || '—'}</td>
+                            <td>${student.status === 'pending_registration'
+                                ? '<span class="app-badge app-badge-warning">Pending face</span>'
+                                : '<span class="app-badge app-badge-success">Active</span>'}</td>
                             <td>${student.joining_date}</td>
                             <td>
                                 <button class="btn btn-warning" onclick="editStudent(${student.id})">
@@ -163,14 +173,29 @@
             }
         }
 
-        function editStudent(id) {
+        async function ensureBatchesLoaded() {
+            if (window._batches) return;
+            try {
+                const r = await fetch('/api/courses');
+                const d = await r.json();
+                window._batches = d.courses || [];
+            } catch (e) { window._batches = []; }
+        }
+
+        async function editStudent(id) {
             const student = window.lastLoadedStudents && window.lastLoadedStudents.find(s => s.id === id);
             if (!student) return;
             currentEditId = id;
             document.getElementById('editName').value = student.name;
             document.getElementById('editEmail').value = student.email;
             document.getElementById('editStudentId').value = student.student_id;
-            document.getElementById('editJoiningDate').value = student.joining_date;
+            document.getElementById('editJoiningDate').value = student.joining_date === 'Not set' ? '' : student.joining_date;
+
+            await ensureBatchesLoaded();
+            const sel = document.getElementById('editBatch');
+            sel.innerHTML = (window._batches || []).map(b =>
+                `<option value="${b.id}" ${b.id === student.course_id ? 'selected' : ''}>${b.name}</option>`).join('');
+
             document.getElementById('editModal').style.display = 'block';
         }
 
@@ -212,7 +237,8 @@
                 name: document.getElementById('editName').value.trim(),
                 email: document.getElementById('editEmail').value.trim(),
                 student_id: document.getElementById('editStudentId').value.trim(),
-                joining_date: document.getElementById('editJoiningDate').value
+                joining_date: document.getElementById('editJoiningDate').value,
+                course_id: parseInt(document.getElementById('editBatch').value) || null
             };
 
             try {

@@ -12,7 +12,7 @@ import sqlite3
 import base64
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from datetime import time
 from typing import Optional, List
 from enum import Enum
@@ -69,6 +69,7 @@ class Holiday(BaseModel):
     date: str
     name: str
     type: str
+    course_id: Optional[int] = None  # None = applies to all batches
 
 class SessionType(str, Enum):
     MORNING = "morning"
@@ -76,9 +77,11 @@ class SessionType(str, Enum):
 
 class CourseCreate(BaseModel):
     name: str
-    start_date: str
-    end_date: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     description: Optional[str] = None
+    teacher_ids: Optional[List[int]] = None
+    terminal_pin: Optional[str] = None
 
 class SessionConfig(BaseModel):
     session_type: str
@@ -115,73 +118,107 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Session Management Configuration
 SESSION_SECRET_KEY = secrets.token_urlsafe(32)
-ACTIVE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 SESSION_TIMEOUT_HOURS = 24
 
+# Dedicated connection for session storage (persistent across restarts).
+_session_conn = sqlite3.connect('attendance.db', check_same_thread=False)
+_session_conn.row_factory = sqlite3.Row
+_session_conn.execute(
+    """CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_type TEXT NOT NULL,
+            user_info TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )"""
+)
+_session_conn.commit()
+
+
 class SessionManager:
+    """DB-backed sessions so a server restart no longer logs everyone out."""
+
     @staticmethod
     def create_session(user_type: str, user_info: dict) -> str:
         """Create a new session and return session token"""
         session_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(hours=SESSION_TIMEOUT_HOURS)
-        
-        ACTIVE_SESSIONS[session_token] = {
-            "user_type": user_type,
-            "user_info": user_info,
-            "created_at": datetime.now(),
-            "expires_at": expires_at,
-            "last_activity": datetime.now()
-        }
-        
-        print(f"🔑 Session created for {user_type}: {user_info.get('name', user_info.get('username', 'Unknown'))}")
+        now = datetime.now()
+        expires_at = now + timedelta(hours=SESSION_TIMEOUT_HOURS)
+
+        _session_conn.execute(
+            """INSERT INTO sessions (token, user_type, user_info, created_at, expires_at, last_activity)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_token, user_type, json.dumps(user_info),
+             now.isoformat(), expires_at.isoformat(), now.isoformat()),
+        )
+        _session_conn.commit()
+
+        print(f"[AUTH] Session created for {user_type}: {user_info.get('name', user_info.get('username', 'Unknown'))}")
         return session_token
-    
+
     @staticmethod
     def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
         """Validate session token and return session data if valid"""
-        if not session_token or session_token not in ACTIVE_SESSIONS:
+        if not session_token:
             return None
-        
-        session = ACTIVE_SESSIONS[session_token]
-        
-        # Check if session has expired
-        if datetime.now() > session["expires_at"]:
-            del ACTIVE_SESSIONS[session_token]
+
+        row = _session_conn.execute(
+            "SELECT * FROM sessions WHERE token = ?", (session_token,)
+        ).fetchone()
+        if not row:
             return None
-        
+
+        expires_at = datetime.fromisoformat(row["expires_at"])
+        if datetime.now() > expires_at:
+            _session_conn.execute("DELETE FROM sessions WHERE token = ?", (session_token,))
+            _session_conn.commit()
+            return None
+
         # Update last activity
-        session["last_activity"] = datetime.now()
-        return session
-    
+        now = datetime.now()
+        _session_conn.execute(
+            "UPDATE sessions SET last_activity = ? WHERE token = ?",
+            (now.isoformat(), session_token),
+        )
+        _session_conn.commit()
+
+        return {
+            "user_type": row["user_type"],
+            "user_info": json.loads(row["user_info"]),
+            "created_at": row["created_at"],
+            "expires_at": expires_at,       # datetime
+            "last_activity": now,           # datetime (consumers call .isoformat())
+        }
+
     @staticmethod
     def destroy_session(session_token: str) -> bool:
         """Destroy a session"""
-        if session_token in ACTIVE_SESSIONS:
-            user_info = ACTIVE_SESSIONS[session_token].get("user_info", {})
-            print(f"🔓 Session destroyed for: {user_info.get('name', user_info.get('username', 'Unknown'))}")
-            del ACTIVE_SESSIONS[session_token]
+        cur = _session_conn.execute(
+            "DELETE FROM sessions WHERE token = ?", (session_token,)
+        )
+        _session_conn.commit()
+        if cur.rowcount:
+            print("[AUTH] Session destroyed")
             return True
         return False
-    
+
     @staticmethod
     def get_active_sessions_count() -> int:
-        """Get count of active sessions"""
-        return len(ACTIVE_SESSIONS)
-    
+        """Get count of active (non-expired) sessions"""
+        SessionManager.cleanup_expired_sessions()
+        row = _session_conn.execute("SELECT COUNT(*) AS n FROM sessions").fetchone()
+        return row["n"] if row else 0
+
     @staticmethod
     def cleanup_expired_sessions():
         """Remove expired sessions"""
-        current_time = datetime.now()
-        expired_tokens = [
-            token for token, session in ACTIVE_SESSIONS.items()
-            if current_time > session["expires_at"]
-        ]
-        
-        for token in expired_tokens:
-            del ACTIVE_SESSIONS[token]
-        
-        if expired_tokens:
-            print(f"🧹 Cleaned up {len(expired_tokens)} expired sessions")
+        cur = _session_conn.execute(
+            "DELETE FROM sessions WHERE expires_at < ?", (datetime.now().isoformat(),)
+        )
+        _session_conn.commit()
+        if cur.rowcount:
+            print(f"[AUTH] Cleaned up {cur.rowcount} expired session(s)")
 
 # Session validation dependency
 def get_current_session(session_token: str = Cookie(None, alias="session_token")) -> Optional[Dict[str, Any]]:
@@ -208,13 +245,66 @@ def require_admin_access(session: Optional[Dict[str, Any]] = Depends(get_current
     return session
 
 def require_user_or_admin_access(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Allow both user and admin access"""
+    """Allow both user and admin access (legacy 'user' role + admin + teacher)."""
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
     user_type = session.get("user_type")
-    if user_type not in ["admin", "user"]:
+    if user_type not in ["admin", "user", "teacher"]:
         raise HTTPException(status_code=403, detail="Access denied")
     return session
+
+
+def require_teacher_or_admin(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Allow teachers and admins (attendance/analytics/holiday/bulk-mark actions)."""
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if session.get("user_type") not in ["admin", "teacher"]:
+        raise HTTPException(status_code=403, detail="Teacher or admin access required")
+    return session
+
+
+def require_student(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Require a logged-in student (own-stats portal)."""
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if session.get("user_type") != "student":
+        raise HTTPException(status_code=403, detail="Student access required")
+    return session
+
+
+def require_terminal(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Require an attendance-terminal session (kiosk for one batch)."""
+    if not session:
+        raise HTTPException(status_code=401, detail="Terminal not signed in")
+    if session.get("user_type") != "terminal":
+        raise HTTPException(status_code=403, detail="Terminal access required")
+    return session
+
+
+def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
+    """Course ids a session may act on.
+
+    Returns None for admins (meaning 'all batches'); for a teacher returns the
+    list of assigned course ids (possibly empty).
+    """
+    if session.get("user_type") == "admin":
+        return None  # all batches
+    user_id = session.get("user_info", {}).get("id")
+    if not user_id:
+        return []
+    rows = attendance_system.conn.execute(
+        "SELECT course_id FROM teacher_batches WHERE user_id = ?", (user_id,)
+    ).fetchall()
+    return [r[0] for r in rows]
+
+
+def assert_course_allowed(session: Dict[str, Any], course_id: int):
+    """Raise 403 if a teacher tries to act on a batch they aren't assigned to."""
+    allowed = teacher_allowed_course_ids(session)
+    if allowed is None:
+        return
+    if int(course_id) not in allowed:
+        raise HTTPException(status_code=403, detail="Not assigned to this batch")
 
 
 
@@ -295,14 +385,22 @@ class AttendanceSystem:
         """Start a new registration session"""
         session_id = str(uuid.uuid4())
         
-        # Check if student already exists
+        # Check if student already exists. A pre-loaded (CSV) student with no
+        # face yet is allowed to register — we UPDATE that row on completion.
         cursor = self.conn.cursor()
-        cursor.execute('SELECT id FROM students WHERE student_id = ? OR email = ?', 
-                      (student_id, email))
-        
-        if cursor.fetchone():
+        cursor.execute(
+            'SELECT id, face_encoding, name, email FROM students WHERE student_id = ? OR email = ?',
+            (student_id, email),
+        )
+        existing = cursor.fetchone()
+        if existing and existing[1] is not None:
             return None, "Student already registered with this ID or email"
-        
+
+        # If a pending student exists, reuse their stored name/email
+        if existing:
+            name = name or existing[2]
+            email = email or existing[3]
+
         # Create session
         student_data = {
             'name': name,
@@ -483,22 +581,44 @@ class AttendanceSystem:
             else:
                 verification_score = 0.8  # Default score
             
-            # Insert student
-            cursor.execute('''
-                INSERT INTO students 
-                (student_id, name, email, face_encoding, photo_count, verification_score)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (
-                student_data['student_id'],
-                student_data['name'],
-                student_data['email'],
-                average_encoding.tobytes(),
-                photos_uploaded,
-                verification_score
-            ))
-            
-            new_student_id = cursor.lastrowid
-            
+            # If the student was pre-loaded (CSV onboarding), UPDATE that row so
+            # we don't create a duplicate; otherwise INSERT a new student.
+            cursor.execute(
+                'SELECT id FROM students WHERE student_id = ?',
+                (student_data['student_id'],),
+            )
+            existing = cursor.fetchone()
+
+            if existing:
+                new_student_id = existing[0]
+                cursor.execute('''
+                    UPDATE students
+                    SET face_encoding = ?, photo_count = ?, verification_score = ?,
+                        status = 'active', registration_date = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (
+                    average_encoding.tobytes(),
+                    photos_uploaded,
+                    verification_score,
+                    new_student_id,
+                ))
+                # Clear any stale per-photo encodings for this student
+                cursor.execute('DELETE FROM face_encodings WHERE student_id = ?', (new_student_id,))
+            else:
+                cursor.execute('''
+                    INSERT INTO students
+                    (student_id, name, email, face_encoding, photo_count, verification_score, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active')
+                ''', (
+                    student_data['student_id'],
+                    student_data['name'],
+                    student_data['email'],
+                    average_encoding.tobytes(),
+                    photos_uploaded,
+                    verification_score
+                ))
+                new_student_id = cursor.lastrowid
+
             # Insert individual encodings
             for encoding_item in encodings_data:
                 cursor.execute('''
@@ -686,49 +806,7 @@ class AttendanceSystem:
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT start_time, end_time
-if __name__ == "__main__":
-    import uvicorn
-    import os
-    import subprocess
-    
-    # SSL certificate files
-    cert_file = "cert.pem"
-    key_file = "key.pem"
-    
-    # Generate self-signed certificate if it doesn't exist
-    if not os.path.exists(cert_file) or not os.path.exists(key_file):
-        print("🔧 Generating SSL certificates...")
-        try:
-            # Create self-signed certificate
-            subprocess.run([
-                "openssl", "req", "-x509", "-newkey", "rsa:4096", 
-                "-keyout", key_file, "-out", cert_file, "-days", "365", "-nodes",
-                "-subj", "/C=IN/ST=Maharashtra/L=Mumbai/O=CDAC/CN=10.212.13.129"
-            ], check=True)
-            print("[OK] SSL certificates generated!")
-        except subprocess.CalledProcessError:
-            print("[ERROR] Failed to generate SSL certificates. Install OpenSSL first.")
-            print("[STATS] Running on HTTP: http://10.212.13.129:8000/")
-            uvicorn.run("main_with_face_recognition:app", host="10.212.13.129", port=8000)
-            exit()
-    
-    # Run with HTTPS
-    print("🔒 HTTPS Dashboard: https://10.212.13.129:8000/")
-    print("[WARN]  You may see a security warning - click 'Advanced' → 'Proceed to 10.212.13.129 (unsafe)'")
-    print("💡 Tip: Bookmark the HTTPS URL to avoid the warning next time")
-    
-    try:
-        uvicorn.run(
-            "main_with_face_recognition:app", 
-            host="10.212.13.129", 
-            port=8000,
-            ssl_keyfile=key_file,
-            ssl_certfile=cert_file
-        )
-    except Exception as e:
-        print(f"[ERROR] HTTPS failed: {e}")
-        print("[STATS] Falling back to HTTP: http://10.212.13.129:8000/")
-        uvicorn.run("main_with_face_recognition:app", host="10.212.13.129", port=8000)            FROM session_configs
+            FROM session_configs
             WHERE course_id = ? AND session_type = ? AND is_active = TRUE
         ''', (course[0], session_type))
         
@@ -1001,30 +1079,33 @@ if __name__ == "__main__":
            
 
 
-    def add_holiday(self, date_str: str, name: str, holiday_type: str):
-        """Add a holiday"""
+    def add_holiday(self, date_str: str, name: str, holiday_type: str, course_id: int = None):
+        """Add a holiday (course_id None = applies to all batches)."""
         cursor = self.conn.cursor()
         try:
-            cursor.execute('INSERT INTO holidays (date, name, type) VALUES (?, ?, ?)',
-                          (date_str, name, holiday_type))
+            cursor.execute('INSERT INTO holidays (date, name, type, course_id) VALUES (?, ?, ?, ?)',
+                          (date_str, name, holiday_type, course_id))
             self.conn.commit()
             return True, "Holiday added successfully"
         except Exception as e:
             return False, f"Holiday already exists: {str(e)}"
 
-    def get_holidays(self):
-        """Get all holidays"""
+    def get_holidays(self, course_ids=None):
+        """Get holidays. If course_ids is a list, return global holidays plus those batches'."""
         cursor = self.conn.cursor()
-        cursor.execute('SELECT id, date, name, type FROM holidays ORDER BY date DESC')
-        holidays = cursor.fetchall()
-        
-        return {
-            'success': True,
-            'holidays': [
-                {'id': h[0], 'date': h[1], 'name': h[2], 'type': h[3]}
-                for h in holidays
-            ]
-        }
+        cursor.execute('''SELECT h.id, h.date, h.name, h.type, h.course_id, c.name
+                          FROM holidays h LEFT JOIN courses c ON c.id = h.course_id
+                          ORDER BY h.date DESC''')
+        rows = cursor.fetchall()
+        holidays = []
+        for h in rows:
+            if course_ids is not None and h[4] is not None and h[4] not in course_ids:
+                continue
+            holidays.append({
+                'id': h[0], 'date': h[1], 'name': h[2], 'type': h[3],
+                'course_id': h[4], 'batch': h[5] or 'All batches',
+            })
+        return {'success': True, 'holidays': holidays}
         
     def get_student_attendance_data(self, student_id: int):
         """Get comprehensive session-based attendance data for a specific student"""
@@ -1050,15 +1131,15 @@ if __name__ == "__main__":
         end_date = date.today()  # Only process up to today, not future dates
         print(f"[DEBUG] Date range: {start_date} to {end_date}")
 
-        # Get session attendance records
+        # Get attendance records from the primary `attendance` table
         cursor.execute("""
-            SELECT date, session_type, arrival_time, is_manual, manual_reason
-            FROM session_attendance 
+            SELECT date, session_type, time_in
+            FROM attendance
             WHERE student_id = ?
-            ORDER BY date, session_type
+            ORDER BY date
         """, (student_id,))
         session_records = cursor.fetchall()
-        print(f"[DEBUG] Found {len(session_records)} session records")
+        print(f"[DEBUG] Found {len(session_records)} attendance records")
 
         # Get holidays
         cursor.execute("SELECT date, name, type FROM holidays ORDER BY date")
@@ -1070,17 +1151,23 @@ if __name__ == "__main__":
             except:
                 continue
 
-        # Process session data
+        # Process attendance into morning/afternoon buckets per date
         attendance_dict = {}
         session_summary = {}
-        
+
         for record in session_records:
-            date_str, session_type, arrival_time, is_manual, manual_reason = record
-            
+            date_str, session_type, arrival_time = str(record[0])[:10], record[1], record[2]
             if date_str not in session_summary:
                 session_summary[date_str] = {}
-            
-            session_summary[date_str][session_type] = arrival_time
+            st = (session_type or "").lower()
+            if "morning" in st:
+                session_summary[date_str]["morning"] = arrival_time
+            elif "afternoon" in st:
+                session_summary[date_str]["afternoon"] = arrival_time
+            else:
+                # whole-day / face mark counts for both halves
+                session_summary[date_str].setdefault("morning", arrival_time)
+                session_summary[date_str].setdefault("afternoon", arrival_time)
 
         # Calculate attendance for each day
         full_days = 0
@@ -1186,18 +1273,37 @@ class SimpleAdminLogin(BaseModel):
 class SimpleFaceLogin(BaseModel):
     image_data: str
 
-# Simple admin credentials (you can change these)
-ADMIN_CREDENTIALS = {
-    "admin": "admin123",
-    "teacher": "teacher123"
-}
+from auth_utils import verify_password, hash_password
 
-# User credentials for attendance system access only
-USER_CREDENTIALS = {
-    "user": "user123",
-    "student": "student123",
-    "operator": "operator123"
-}
+class StudentLogin(BaseModel):
+    student_id: str
+    password: str
+
+
+def authenticate_user(username: str, password: str, roles: List[str]) -> Optional[dict]:
+    """Authenticate an admin/teacher against the users table.
+
+    Returns a user_info dict on success, else None.
+    """
+    row = attendance_system.conn.execute(
+        "SELECT id, username, name, password_hash, role, is_active, must_change_password "
+        "FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
+    if not row:
+        return None
+    uid, uname, name, pw_hash, role, is_active, must_change = row
+    if not is_active or role not in roles:
+        return None
+    if not verify_password(password, pw_hash):
+        return None
+    return {
+        "id": uid,
+        "username": uname,
+        "name": name or uname,
+        "role": role,
+        "must_change_password": bool(must_change),
+    }
 
 # API Routes
 @app.get("/")
@@ -1213,11 +1319,17 @@ async def root(request: Request, session: Optional[Dict[str, Any]] = Depends(get
         user_type = session.get("user_type", "")
         if user_type == "admin":
             return RedirectResponse(url="/dashboard")
+        elif user_type == "teacher":
+            return RedirectResponse(url="/teacher")
+        elif user_type == "student":
+            return RedirectResponse(url="/student")
+        elif user_type == "terminal":
+            return RedirectResponse(url="/attendance")
         elif user_type == "user":
             return RedirectResponse(url="/attendance")
         else:
             return RedirectResponse(url="/dashboard")
-    
+
     # No session, go to login
     return RedirectResponse(url="/login")
 
@@ -1226,112 +1338,98 @@ async def simple_login_page(request: Request):
     """Simple dual login page"""
     return templates.TemplateResponse("simple_login.html", {"request": request})
 
+def _set_session_cookie(response: Response, session_token: str):
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=SESSION_TIMEOUT_HOURS * 3600,
+        httponly=True,
+        secure=False,  # Set to True in production behind HTTPS with a trusted cert
+        samesite="lax",
+    )
+
+
 @app.post("/api/admin-login")
 async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
-    """Admin login with session management"""
+    """Staff login (admin or teacher), authenticated against the users table."""
     try:
-        username = login_data.username
-        password = login_data.password
-        
-        # Check credentials
-        if username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[username] == password:
-            # Create session
-            user_info = {
-                "username": username,
-                "name": f"Administrator ({username})",
-                "role": "admin"
-            }
-            
-            session_token = SessionManager.create_session("admin", user_info)
-            
-            # Set secure cookie
-            response.set_cookie(
-                key="session_token",
-                value=session_token,
-                max_age=SESSION_TIMEOUT_HOURS * 3600,
-                httponly=True,
-                secure=False,  # Set to True in production with HTTPS
-                samesite="lax"
-            )
-            
-            return {
-                "success": True,
-                "message": "Admin login successful",
-                "user_type": "admin",
-                "username": username,
-                "redirect_url": "/dashboard"
-            }
-        else:
-            return {
-                "success": False,
-                "message": "Invalid username or password"
-            }
-            
-    except Exception as e:
+        username = (login_data.username or "").strip()
+        password = login_data.password or ""
+
+        user_info = authenticate_user(username, password, roles=["admin", "teacher"])
+        if not user_info:
+            return {"success": False, "message": "Invalid username or password"}
+
+        role = user_info["role"]
+        session_token = SessionManager.create_session(role, user_info)
+        _set_session_cookie(response, session_token)
+
+        redirect = "/dashboard" if role == "admin" else "/teacher"
+        if user_info.get("must_change_password"):
+            redirect = "/change-password"
+
         return {
-            "success": False,
-            "message": f"Login failed: {str(e)}"
+            "success": True,
+            "message": f"{role.title()} login successful",
+            "user_type": role,
+            "username": username,
+            "must_change_password": user_info.get("must_change_password", False),
+            "redirect_url": redirect,
         }
+    except Exception as e:
+        return {"success": False, "message": f"Login failed: {str(e)}"}
+
 
 @app.post("/api/user-login")
 async def user_login(login_data: SimpleAdminLogin, response: Response):
-    """User login with session management - only attendance access"""
+    """Student login: roll number (student_id) + password, against students table."""
     try:
-        username = login_data.username
-        password = login_data.password
-        
-        # Validate credentials
-        if not username or not password:
-            return {
-                "success": False,
-                "message": "Username and password are required"
-            }
-        
-        # Check user credentials
-        if username in USER_CREDENTIALS and USER_CREDENTIALS[username] == password:
-            # Create session for user
-            user_info = {
-                "username": username,
-                "name": f"User ({username})",
-                "role": "user",
-                "permissions": ["attendance"],  # Only attendance access
-                "login_time": datetime.now().isoformat()
-            }
-            
-            session_token = SessionManager.create_session("user", user_info)
-            
-            # Set secure cookie with proper security settings
-            response.set_cookie(
-                key="session_token",
-                value=session_token,
-                max_age=SESSION_TIMEOUT_HOURS * 3600,
-                httponly=True,  # Prevent XSS attacks
-                secure=False,   # Set to True in production with HTTPS
-                samesite="lax"  # CSRF protection
-            )
-            
-            print(f"🔑 User session created for: {username}")
-            
-            return {
-                "success": True,
-                "message": "User login successful",
-                "user_type": "user",
-                "username": username,
-                "redirect_url": "/attendance"  # Direct to attendance page
-            }
-        else:
-            print(f"[ERROR] Failed login attempt for user: {username}")
-            return {
-                "success": False,
-                "message": "Invalid username or password"
-            }
-            
-    except Exception as e:
-        print(f"[ERROR] User login error: {str(e)}")
-        return {
-            "success": False,
-            "message": f"Login failed: {str(e)}"
+        student_id = (login_data.username or "").strip()
+        password = login_data.password or ""
+
+        if not student_id or not password:
+            return {"success": False, "message": "Roll number and password are required"}
+
+        row = attendance_system.conn.execute(
+            "SELECT id, student_id, name, password_hash, status, course_id, "
+            "must_change_password, face_encoding IS NOT NULL AS has_face "
+            "FROM students WHERE student_id = ?",
+            (student_id,),
+        ).fetchone()
+
+        if not row or not row[3] or not verify_password(password, row[3]):
+            print(f"[ERROR] Failed student login attempt: {student_id}")
+            return {"success": False, "message": "Invalid roll number or password"}
+
+        if row[4] not in ("active", "pending_registration"):
+            return {"success": False, "message": "Account is inactive. Contact admin."}
+
+        user_info = {
+            "id": row[0],
+            "student_id": row[1],
+            "name": row[2],
+            "role": "student",
+            "course_id": row[5],
+            "must_change_password": bool(row[6]),
+            "has_face": bool(row[7]),
         }
+        session_token = SessionManager.create_session("student", user_info)
+        _set_session_cookie(response, session_token)
+
+        redirect = "/change-password" if user_info["must_change_password"] else "/student"
+        print(f"[AUTH] Student session created for: {student_id}")
+
+        return {
+            "success": True,
+            "message": "Student login successful",
+            "user_type": "student",
+            "username": student_id,
+            "must_change_password": user_info["must_change_password"],
+            "redirect_url": redirect,
+        }
+    except Exception as e:
+        print(f"[ERROR] Student login error: {str(e)}")
+        return {"success": False, "message": f"Login failed: {str(e)}"}
 
 @app.post("/api/face-login")
 async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
@@ -1393,37 +1491,40 @@ async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
             RECOGNITION_THRESHOLD = 0.60
             
             if best_similarity > RECOGNITION_THRESHOLD:
-                student_id = attendance_system.known_face_ids[best_match_index]
+                db_id = attendance_system.known_face_ids[best_match_index]
                 student_name = attendance_system.known_face_names[best_match_index]
-                
-                # Create session for face login
+
+                # Look up roll number / batch for a consistent student session
+                srow = attendance_system.conn.execute(
+                    "SELECT student_id, course_id, must_change_password FROM students WHERE id = ?",
+                    (db_id,),
+                ).fetchone()
+                roll_no = srow[0] if srow else db_id
+                course_id = srow[1] if srow else None
+                must_change = bool(srow[2]) if srow else False
+
                 user_info = {
-                    "id": student_id,
+                    "id": db_id,
                     "name": student_name,
-                    "student_id": student_id,
-                    "role": "student"
+                    "student_id": roll_no,
+                    "role": "student",
+                    "course_id": course_id,
+                    "must_change_password": must_change,
+                    "has_face": True,
                 }
-                
+
                 session_token = SessionManager.create_session("student", user_info)
-                
-                # Set secure cookie
-                response.set_cookie(
-                    key="session_token",
-                    value=session_token,
-                    max_age=SESSION_TIMEOUT_HOURS * 3600,
-                    httponly=True,
-                    secure=False,  # Set to True in production with HTTPS
-                    samesite="lax"
-                )
-                
+                _set_session_cookie(response, session_token)
+
                 return {
                     "success": True,
                     "message": "Face login successful",
                     "student": {
-                        "id": student_id,
+                        "id": db_id,
                         "name": student_name,
                         "confidence": float(best_similarity)
                     },
+                    "redirect_url": "/change-password" if must_change else "/student",
                     "faces_detected": 1
                 }
             else:
@@ -1445,6 +1546,56 @@ async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
             "message": f"Face login failed: {str(e)}",
             "faces_detected": 0
         }
+
+
+# ==================================================================
+# Attendance Terminal (kiosk) — per-batch PIN (Phase 8)
+# ==================================================================
+
+class TerminalLogin(BaseModel):
+    course_id: int
+    pin: str
+
+
+@app.get("/api/terminal/batches")
+async def terminal_batches():
+    """Public: list active batches that have a terminal PIN set (for the login picker)."""
+    try:
+        rows = attendance_system.conn.execute(
+            "SELECT id, name FROM courses WHERE is_active = 1 AND terminal_pin_hash IS NOT NULL ORDER BY name"
+        ).fetchall()
+        return {"success": True, "batches": [{"id": r[0], "name": r[1]} for r in rows]}
+    except Exception as e:
+        return {"success": False, "message": str(e), "batches": []}
+
+
+@app.post("/api/terminal-login")
+async def terminal_login(data: TerminalLogin, response: Response):
+    """Open the attendance terminal for a batch after verifying its PIN."""
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT name, terminal_pin_hash FROM courses WHERE id = ? AND is_active = 1",
+            (data.course_id,),
+        ).fetchone()
+        if not row or not row[1]:
+            return {"success": False, "message": "No terminal is set up for that batch"}
+        if not verify_password((data.pin or "").strip(), row[1]):
+            return {"success": False, "message": "Incorrect PIN"}
+
+        user_info = {"role": "terminal", "course_id": data.course_id,
+                     "name": f"Terminal · {row[0]}", "batch_name": row[0]}
+        token = SessionManager.create_session("terminal", user_info)
+        _set_session_cookie(response, token)
+        return {"success": True, "message": "Terminal ready", "redirect_url": "/attendance"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# Note: the batch terminal reuses the existing Live Attendance page (/attendance),
+# scoped to the terminal session's batch — there is no separate terminal page.
+
+
+
 
 # Dashboard routes
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -1495,9 +1646,18 @@ async def registration_page(request: Request, session: Dict[str, Any] = Depends(
     })
 
 @app.get("/attendance", response_class=HTMLResponse)
-async def attendance_page(request: Request, session: Dict[str, Any] = Depends(require_user_or_admin_access)):
-    """Live attendance page"""
-    return templates.TemplateResponse("attendance.html", {"request": request})
+async def attendance_page(request: Request, session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Live attendance page (admins, teachers, operators, and batch terminals)."""
+    if not session:
+        return RedirectResponse(url="/login")
+    if session.get("user_type") not in ("admin", "user", "teacher", "terminal"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    info = session.get("user_info", {})
+    return templates.TemplateResponse("attendance.html", {
+        "request": request,
+        "is_terminal": session.get("user_type") == "terminal",
+        "terminal_batch": info.get("batch_name", ""),
+    })
 
 @app.get("/students", response_class=HTMLResponse)
 async def students_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
@@ -1505,6 +1665,73 @@ async def students_page(request: Request, session: Dict[str, Any] = Depends(requ
         "request": request,
         "face_recognition_available": FACE_RECOGNITION_AVAILABLE
     })
+
+@app.get("/teacher", response_class=HTMLResponse)
+async def teacher_page(request: Request, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Teacher portal (full build in Phase 5)."""
+    return templates.TemplateResponse("teacher.html", {
+        "request": request,
+        "user_name": session.get("user_info", {}).get("name", "Teacher"),
+    })
+
+@app.get("/student", response_class=HTMLResponse)
+async def student_page(request: Request, session: Dict[str, Any] = Depends(require_student)):
+    """Student portal (full build in Phase 4)."""
+    return templates.TemplateResponse("student.html", {
+        "request": request,
+        "user_name": session.get("user_info", {}).get("name", "Student"),
+    })
+
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(request: Request, session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    if not session:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("change_password.html", {
+        "request": request,
+        "user_name": session.get("user_info", {}).get("name", ""),
+    })
+
+@app.post("/api/change-password")
+async def change_password_api(
+    data: dict = Body(...),
+    session: Optional[Dict[str, Any]] = Depends(get_current_session),
+):
+    """Change the current principal's password (student or staff)."""
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    current = (data.get("current_password") or "").strip()
+    new = (data.get("new_password") or "").strip()
+    if len(new) < 6:
+        return {"success": False, "message": "New password must be at least 6 characters"}
+
+    user_type = session.get("user_type")
+    info = session.get("user_info", {})
+    cur = attendance_system.conn.cursor()
+
+    if user_type == "student":
+        row = cur.execute("SELECT password_hash FROM students WHERE id = ?", (info.get("id"),)).fetchone()
+        if not row or not verify_password(current, row[0]):
+            return {"success": False, "message": "Current password is incorrect"}
+        cur.execute(
+            "UPDATE students SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (hash_password(new), info.get("id")),
+        )
+    elif user_type in ("admin", "teacher"):
+        row = cur.execute("SELECT password_hash FROM users WHERE id = ?", (info.get("id"),)).fetchone()
+        if not row or not verify_password(current, row[0]):
+            return {"success": False, "message": "Current password is incorrect"}
+        cur.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+            (hash_password(new), info.get("id")),
+        )
+    else:
+        return {"success": False, "message": "Password change not supported for this account"}
+
+    attendance_system.conn.commit()
+
+    redirect = {"admin": "/dashboard", "teacher": "/teacher", "student": "/student"}.get(user_type, "/")
+    return {"success": True, "message": "Password updated", "redirect_url": redirect}
 
 @app.get("/api/attendance/student/{student_id}/slots")
 async def get_student_slot_attendance(student_id: int):
@@ -1627,11 +1854,11 @@ async def detect_attendance(image_data: DetectionImage):
                         status = "already_marked"
                         message = f"{student_name} already marked present today"
                     else:
-                        # Mark attendance
+                        # Mark attendance (carry the student's batch for per-batch views)
                         cursor.execute('''
-                            INSERT INTO attendance (student_id, date, time_in, is_manual)
-                            VALUES (?, ?, ?, ?)
-                        ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'), False))
+                            INSERT INTO attendance (student_id, date, time_in, is_manual, course_id)
+                            VALUES (?, ?, ?, ?, (SELECT course_id FROM students WHERE id = ?))
+                        ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'), False, student_id))
                         
                         attendance_system.conn.commit()
                         status = "marked"
@@ -1743,19 +1970,21 @@ async def list_students():
             SELECT s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                    COUNT(a.id) as attendance_count,
                    MAX(a.date) as last_attendance,
-                   s.joining_date
+                   s.joining_date, s.status, s.course_id, c.name
             FROM students s
-            LEFT JOIN attendance a ON s.id = a.student_id  
-            WHERE s.status = "active"
-            GROUP BY s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score, s.joining_date
+            LEFT JOIN attendance a ON s.id = a.student_id
+            LEFT JOIN courses c ON c.id = s.course_id
+            WHERE s.status IN ('active', 'pending_registration')
+            GROUP BY s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
+                     s.joining_date, s.status, s.course_id, c.name
             ORDER BY s.name
         ''')
-        
+
         students = []
         for row in cursor.fetchall():
             students.append({
                 "id": row[0],
-                "student_id": row[1], 
+                "student_id": row[1],
                 "name": row[2],
                 "email": row[3],
                 "photo_count": row[4] or 0,
@@ -1763,6 +1992,9 @@ async def list_students():
                 "attendance_count": row[6] or 0,
                 "last_attendance": row[7] or "Never",
                 "joining_date": row[8] or "Not set",
+                "status": row[9] or "active",
+                "course_id": row[10],
+                "batch": row[11] or "—",
                 "model": "buffalo_l_w600k_512D"
             })
         
@@ -1825,38 +2057,155 @@ async def get_student_attendance(student_id: int):
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/student/me")
+async def student_me(session: Dict[str, Any] = Depends(require_student)):
+    """Self-scoped stats for the logged-in student (own data only)."""
+    from datetime import date, timedelta
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+
+        srow = cur.execute(
+            "SELECT s.id, s.student_id, s.name, s.email, s.status, s.joining_date, "
+            "s.course_id, c.name, (s.face_encoding IS NOT NULL) "
+            "FROM students s LEFT JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
+            (sid,),
+        ).fetchone()
+        if not srow:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        profile = {
+            "id": srow[0], "student_id": srow[1], "name": srow[2], "email": srow[3],
+            "status": srow[4], "batch": srow[7] or "—", "has_face": bool(srow[8]),
+        }
+
+        # Distinct present dates from the primary attendance table
+        present_rows = cur.execute(
+            "SELECT DISTINCT date FROM attendance WHERE student_id = ? ORDER BY date", (sid,)
+        ).fetchall()
+        present_dates = set()
+        for r in present_rows:
+            try:
+                present_dates.add(datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date())
+            except (ValueError, TypeError):
+                continue
+
+        # Holidays (global + this student's batch)
+        holiday_dates = set()
+        for r in cur.execute(
+            "SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?", (srow[6],)
+        ).fetchall():
+            try:
+                holiday_dates.add(datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date())
+            except (ValueError, TypeError):
+                continue
+
+        # Determine the attendance window
+        today = date.today()
+        start_date = None
+        if srow[5]:
+            try:
+                start_date = datetime.strptime(str(srow[5])[:10], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                start_date = None
+        if not start_date:
+            start_date = min(present_dates) if present_dates else today - timedelta(days=29)
+
+        # Count working days (Mon–Sat, excluding holidays) in [start_date, today]
+        working_days = 0
+        d = start_date
+        while d <= today:
+            if d.weekday() != 6 and d not in holiday_dates:  # 6 = Sunday
+                working_days += 1
+            d += timedelta(days=1)
+
+        present_count = len([d for d in present_dates if start_date <= d <= today])
+        rate = round(present_count / working_days * 100, 1) if working_days else 0.0
+        absent_count = max(working_days - present_count, 0)
+
+        # Recent history (latest 15 records)
+        recent = []
+        for r in cur.execute(
+            "SELECT date, time_in, status, session_type, is_late, is_manual "
+            "FROM attendance WHERE student_id = ? ORDER BY date DESC, time_in DESC LIMIT 15",
+            (sid,),
+        ).fetchall():
+            recent.append({
+                "date": str(r[0])[:10], "time_in": r[1], "status": r[2] or "present",
+                "session_type": r[3], "is_late": bool(r[4]), "is_manual": bool(r[5]),
+            })
+
+        # 14-day sparkline: present(1)/holiday(-1)/absent(0) per day, oldest first
+        sparkline = []
+        for i in range(13, -1, -1):
+            d = today - timedelta(days=i)
+            if d.weekday() == 6 or d in holiday_dates:
+                val = -1
+            else:
+                val = 1 if d in present_dates else 0
+            sparkline.append({"date": d.strftime("%Y-%m-%d"), "value": val})
+
+        return {
+            "success": True,
+            "profile": profile,
+            "summary": {
+                "attendance_rate": rate,
+                "present_days": present_count,
+                "absent_days": absent_count,
+                "working_days": working_days,
+                "since": start_date.strftime("%Y-%m-%d"),
+            },
+            "recent": recent,
+            "sparkline": sparkline,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 
 @app.get("/api/holidays")
-async def get_holidays_api():
-    """Get all holidays"""
+async def get_holidays_api(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Get holidays (teachers see global + their assigned batches)."""
     try:
-        return attendance_system.get_holidays()
+        course_ids = None
+        if session and session.get("user_type") == "teacher":
+            course_ids = teacher_allowed_course_ids(session)
+        return attendance_system.get_holidays(course_ids)
     except Exception as e:
         return {"success": False, "message": str(e)}
     
 @app.get("/api/admin/session-config")
-async def get_session_configuration(session: Dict[str, Any] = Depends(require_admin_access)):
-    """Get current session configuration"""
+async def get_session_configuration(course_id: Optional[int] = None,
+                                    session: Dict[str, Any] = Depends(require_admin_access)):
+    """Get session configuration for a batch (defaults to the first active batch)."""
     try:
         manager = create_slot_manager_instance()
-        config = manager.get_session_configs()
-        return {"success": True, "config": config}
+        if course_id is None:
+            row = attendance_system.conn.execute(
+                "SELECT id FROM courses WHERE is_active = 1 ORDER BY id LIMIT 1"
+            ).fetchone()
+            course_id = row[0] if row else 1
+        config = manager.get_session_configs(course_id)
+        return {"success": True, "config": config, "course_id": course_id}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.put("/api/admin/session-config/{session_type}")
 async def update_session_configuration(
-    session_type: str, 
+    session_type: str,
     data: dict = Body(...),
     session: Dict[str, Any] = Depends(require_admin_access)
 ):
-    """Update session timing configuration"""
+    """Update session timing configuration (scoped to a batch when course_id given)."""
     try:
         manager = create_slot_manager_instance()
         success, message = manager.update_session_timing(
             session_type=session_type,
             start_time=data['start_time'],
-            end_time=data['end_time']
+            end_time=data['end_time'],
+            course_id=data.get('course_id')
         )
         return {"success": success, "message": message}
     except Exception as e:
@@ -1914,37 +2263,351 @@ async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)
         attendance_system.conn.rollback()
         return {"success": False, "message": f"Failed to clear data: {str(e)}"}
 
-@app.post("/api/holidays")
-async def add_holiday_api(holiday_data: Holiday):
-    """Add a new holiday"""
+# ==================================================================
+# Batch / Course management (Phase 2)
+# ==================================================================
+
+DEFAULT_COURSE_SLOTS = [
+    ("morning_1", "08:30:00", "09:30:00"),
+    ("morning_2", "11:00:00", "11:15:00"),
+    ("afternoon_1", "13:45:00", "14:00:00"),
+    ("afternoon_2", "16:15:00", "16:45:00"),
+]
+
+
+class CourseUpdate(BaseModel):
+    name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    teacher_ids: Optional[List[int]] = None
+    terminal_pin: Optional[str] = None  # "" clears the PIN; None leaves unchanged
+
+
+class TeacherCreate(BaseModel):
+    username: str
+    name: Optional[str] = None
+    password: str
+    batch_ids: Optional[List[int]] = None
+
+
+class TeacherUpdate(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+    batch_ids: Optional[List[int]] = None
+
+
+@app.get("/api/courses")
+async def list_courses(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """List batches. Admin sees all; teachers see only their assigned batches."""
     try:
+        allowed = teacher_allowed_course_ids(session)  # None = all (admin)
+        cur = attendance_system.conn.cursor()
+        rows = cur.execute(
+            "SELECT id, name, start_date, end_date, description, is_active, terminal_pin_hash "
+            "FROM courses ORDER BY is_active DESC, id"
+        ).fetchall()
+        courses = []
+        for r in rows:
+            if allowed is not None and r[0] not in allowed:
+                continue
+            count = cur.execute(
+                "SELECT COUNT(*) FROM students WHERE course_id = ?", (r[0],)
+            ).fetchone()[0]
+            teachers = cur.execute(
+                "SELECT u.id, u.name, u.username FROM teacher_batches tb "
+                "JOIN users u ON u.id = tb.user_id WHERE tb.course_id = ?",
+                (r[0],),
+            ).fetchall()
+            courses.append({
+                "id": r[0], "name": r[1], "start_date": r[2], "end_date": r[3],
+                "description": r[4], "is_active": bool(r[5]), "student_count": count,
+                "has_pin": bool(r[6]),
+                "teachers": [{"id": t[0], "name": t[1] or t[2], "username": t[2]} for t in teachers],
+            })
+        return {"success": True, "courses": courses}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/courses")
+async def create_course(data: CourseCreate, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Create a new batch and seed its default session slots."""
+    try:
+        name = (data.name or "").strip()
+        if not name:
+            return {"success": False, "message": "Batch name is required"}
+        cur = attendance_system.conn.cursor()
+        cur.execute(
+            "SELECT id FROM courses WHERE LOWER(name) = LOWER(?)", (name,)
+        )
+        if cur.fetchone():
+            return {"success": False, "message": f"A batch named '{name}' already exists"}
+
+        # courses.start_date / end_date are NOT NULL — default when not supplied
+        start_date = data.start_date or date.today().strftime("%Y-%m-%d")
+        end_date = data.end_date or (date.today() + timedelta(days=365)).strftime("%Y-%m-%d")
+
+        cur.execute(
+            "INSERT INTO courses (name, start_date, end_date, description, is_active, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (name, start_date, end_date, data.description, datetime.now().isoformat()),
+        )
+        course_id = cur.lastrowid
+        cur.executemany(
+            "INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active) "
+            "VALUES (?, ?, ?, ?, 1)",
+            [(course_id, st, s, e) for st, s, e in DEFAULT_COURSE_SLOTS],
+        )
+        # Assign teachers to the new batch
+        for tid in (data.teacher_ids or []):
+            cur.execute(
+                "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                (tid, course_id),
+            )
+        # Set the terminal PIN if provided
+        if data.terminal_pin:
+            cur.execute(
+                "UPDATE courses SET terminal_pin_hash = ? WHERE id = ?",
+                (hash_password(data.terminal_pin.strip()), course_id),
+            )
+        attendance_system.conn.commit()
+        return {"success": True, "message": f"Batch '{name}' created", "course_id": course_id}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@app.put("/api/courses/{course_id}")
+async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Update a batch's details or active status."""
+    try:
+        cur = attendance_system.conn.cursor()
+        if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Batch not found")
+        fields, values = [], []
+        for key in ["name", "start_date", "end_date", "description"]:
+            val = getattr(data, key)
+            if val is not None:
+                fields.append(f"{key} = ?")
+                values.append(val)
+        if data.is_active is not None:
+            fields.append("is_active = ?")
+            values.append(1 if data.is_active else 0)
+        if data.terminal_pin is not None:
+            # empty string clears the PIN; otherwise store a hash
+            fields.append("terminal_pin_hash = ?")
+            values.append(hash_password(data.terminal_pin.strip()) if data.terminal_pin.strip() else None)
+        if fields:
+            vals = values + [course_id]
+            cur.execute(f"UPDATE courses SET {', '.join(fields)} WHERE id = ?", vals)
+
+        # Replace teacher assignments if provided
+        if data.teacher_ids is not None:
+            cur.execute("DELETE FROM teacher_batches WHERE course_id = ?", (course_id,))
+            for tid in data.teacher_ids:
+                cur.execute(
+                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                    (tid, course_id),
+                )
+        if not fields and data.teacher_ids is None:
+            return {"success": False, "message": "No fields to update"}
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Batch updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/courses/{course_id}")
+async def delete_course(course_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Delete a batch (only if it has no students; otherwise deactivate instead)."""
+    try:
+        cur = attendance_system.conn.cursor()
+        if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Batch not found")
+        count = cur.execute(
+            "SELECT COUNT(*) FROM students WHERE course_id = ?", (course_id,)
+        ).fetchone()[0]
+        if count > 0:
+            return {
+                "success": False,
+                "message": f"Batch has {count} student(s). Move or remove them first, or deactivate the batch instead.",
+            }
+        cur.execute("DELETE FROM session_configs WHERE course_id = ?", (course_id,))
+        cur.execute("DELETE FROM teacher_batches WHERE course_id = ?", (course_id,))
+        cur.execute("DELETE FROM courses WHERE id = ?", (course_id,))
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Batch deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ==================================================================
+# Teacher account management (admin only)
+# ==================================================================
+
+@app.get("/api/teachers")
+async def list_teachers(session: Dict[str, Any] = Depends(require_admin_access)):
+    """List teacher accounts with their assigned batches."""
+    try:
+        cur = attendance_system.conn.cursor()
+        teachers = []
+        for r in cur.execute(
+            "SELECT id, username, name, is_active FROM users WHERE role = 'teacher' ORDER BY username"
+        ).fetchall():
+            batches = cur.execute(
+                "SELECT c.id, c.name FROM teacher_batches tb "
+                "JOIN courses c ON c.id = tb.course_id WHERE tb.user_id = ?",
+                (r[0],),
+            ).fetchall()
+            teachers.append({
+                "id": r[0], "username": r[1], "name": r[2], "is_active": bool(r[3]),
+                "batches": [{"id": b[0], "name": b[1]} for b in batches],
+            })
+        return {"success": True, "teachers": teachers}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teachers")
+async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Create a teacher account and assign batches."""
+    try:
+        username = (data.username or "").strip()
+        if not username or not data.password:
+            return {"success": False, "message": "Username and password are required"}
+        cur = attendance_system.conn.cursor()
+        if cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
+            return {"success": False, "message": f"Username '{username}' already exists"}
+        cur.execute(
+            "INSERT INTO users (username, name, password_hash, role, is_active, must_change_password) "
+            "VALUES (?, ?, ?, 'teacher', 1, 1)",
+            (username, (data.name or username).strip(), hash_password(data.password)),
+        )
+        user_id = cur.lastrowid
+        for cid in (data.batch_ids or []):
+            cur.execute(
+                "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                (user_id, cid),
+            )
+        attendance_system.conn.commit()
+        return {"success": True, "message": f"Teacher '{username}' created", "user_id": user_id}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@app.put("/api/teachers/{user_id}")
+async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Update a teacher: name, active status, password reset, and batch assignments."""
+    try:
+        cur = attendance_system.conn.cursor()
+        row = cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Teacher not found")
+
+        fields, values = [], []
+        if data.name is not None:
+            fields.append("name = ?"); values.append(data.name.strip())
+        if data.is_active is not None:
+            fields.append("is_active = ?"); values.append(1 if data.is_active else 0)
+        if data.password:
+            fields.append("password_hash = ?"); values.append(hash_password(data.password))
+            fields.append("must_change_password = ?"); values.append(1)
+        if fields:
+            values.append(user_id)
+            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = ?", values)
+
+        if data.batch_ids is not None:
+            cur.execute("DELETE FROM teacher_batches WHERE user_id = ?", (user_id,))
+            for cid in data.batch_ids:
+                cur.execute(
+                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                    (user_id, cid),
+                )
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Teacher updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/teachers/{user_id}")
+async def delete_teacher(user_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Delete a teacher account and its batch assignments."""
+    try:
+        cur = attendance_system.conn.cursor()
+        if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        cur.execute("DELETE FROM teacher_batches WHERE user_id = ?", (user_id,))
+        cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Teacher deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/admin/batches", response_class=HTMLResponse)
+async def batches_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
+    """Admin page for managing batches and teacher accounts."""
+    return templates.TemplateResponse("batches.html", {"request": request})
+
+
+@app.post("/api/holidays")
+async def add_holiday_api(holiday_data: Holiday, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Add a new holiday (optionally scoped to a batch)."""
+    try:
+        # Teachers may only add holidays for their assigned batches (or global if allowed).
+        if holiday_data.course_id is not None:
+            assert_course_allowed(session, holiday_data.course_id)
         success, message = attendance_system.add_holiday(
             holiday_data.date,
             holiday_data.name,
-            holiday_data.type
+            holiday_data.type,
+            holiday_data.course_id,
         )
         return {"success": success, "message": message}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.delete("/api/holidays/{holiday_id}")
-async def delete_holiday_api(holiday_id: int):
-    """Delete a holiday"""
+async def delete_holiday_api(holiday_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Delete a holiday (teachers only for their batches or global)."""
     try:
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is not None:
+            row = attendance_system.conn.execute(
+                "SELECT course_id FROM holidays WHERE id = ?", (holiday_id,)
+            ).fetchone()
+            if row and row[0] is not None and row[0] not in allowed:
+                raise HTTPException(status_code=403, detail="Not assigned to this batch")
         success, message = attendance_system.delete_holiday(holiday_id)
         return {"success": success, "message": message}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.put("/api/students/{student_id}")
-async def update_student(student_id: int, data: dict = Body(...)):
+async def update_student(student_id: int, data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Update student details including joining date"""
     try:
         cursor = attendance_system.conn.cursor()
         # Only update fields that are present
         fields = []
         values = []
-        for key in ["name", "email", "student_id", "joining_date"]:
+        for key in ["name", "email", "student_id", "joining_date", "course_id", "dob"]:
             if key in data:
                 fields.append(f"{key} = ?")
                 values.append(data[key])
@@ -1959,7 +2622,7 @@ async def update_student(student_id: int, data: dict = Body(...)):
         return {"success": False, "message": str(e)}
 
 @app.delete("/api/students/{student_id}")
-async def delete_student(student_id: int):
+async def delete_student(student_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
     """Delete a student and all related data"""
     try:
         cursor = attendance_system.conn.cursor()
@@ -1991,100 +2654,133 @@ async def delete_student(student_id: int):
         return {"success": False, "message": f"Failed to delete student: {str(e)}"}
 
 @app.post("/api/students/bulk-upload")
-async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, Any] = Depends(require_admin_access)):
-    """Bulk upload students from CSV file
-    
-    CSV Format (with headers):
-    student_id,name,email,joining_date (optional)
-    Example:
-    250840325001,John Doe,john@email.com,2025-08-01
-    250840325002,Jane Smith,jane@email.com,2025-08-01
+async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Bulk upload student details from CSV (faces are registered later).
+
+    CSV columns (header row required):
+        student_id, name, email        -> required
+        dob                            -> optional, becomes the default password (digits of DOB)
+        batch                          -> optional, matched to a course/batch name (defaults to the default batch)
+        joining_date                   -> optional
+    Students are created with status 'pending_registration' and no face.
     """
     try:
-        # Read and parse CSV file
         content = await file.read()
-        text = content.decode('utf-8')
-        csv_file = StringIO(text)
-        reader = csv.DictReader(csv_file)
-        
+        text = content.decode('utf-8-sig')  # tolerate a BOM from Excel
+        reader = csv.DictReader(StringIO(text))
+
         if not reader.fieldnames:
             return {"success": False, "message": "CSV file is empty"}
-        
-        # Validate required columns
+
         required_fields = {'student_id', 'name', 'email'}
-        csv_fields = set(reader.fieldnames)
-        
+        csv_fields = {f.strip().lower() for f in reader.fieldnames}
         if not required_fields.issubset(csv_fields):
             missing = required_fields - csv_fields
             return {"success": False, "message": f"Missing required columns: {', '.join(missing)}"}
-        
+
         cursor = attendance_system.conn.cursor()
+
+        # Build a name -> id map of batches for resolving the 'batch' column.
+        batch_by_name = {
+            r[1].strip().lower(): r[0]
+            for r in cursor.execute("SELECT id, name FROM courses").fetchall()
+        }
+        allowed = teacher_allowed_course_ids(session)  # None = admin (all)
+        default_course_id = 1
+
+        def get(row, key):
+            # case-insensitive column access
+            for k, v in row.items():
+                if k and k.strip().lower() == key:
+                    return (v or '').strip()
+            return ''
+
         added_count = 0
         skipped_count = 0
         errors = []
-        
-        for row_num, row in enumerate(reader, start=2):  # start=2 because row 1 is header
+
+        for row_num, row in enumerate(reader, start=2):
             try:
-                student_id = row.get('student_id', '').strip()
-                name = row.get('name', '').strip()
-                email = row.get('email', '').strip()
-                joining_date = row.get('joining_date', '').strip() if 'joining_date' in row else None
-                
-                # Validate required fields
+                student_id = get(row, 'student_id')
+                name = get(row, 'name')
+                email = get(row, 'email')
+                dob = get(row, 'dob')
+                joining_date = get(row, 'joining_date') or None
+                batch_name = get(row, 'batch')
+
                 if not student_id or not name or not email:
                     errors.append(f"Row {row_num}: Missing required fields (student_id, name, or email)")
                     skipped_count += 1
                     continue
-                
-                # Check if student already exists
-                cursor.execute('SELECT id FROM students WHERE student_id = ?', (student_id,))
-                if cursor.fetchone():
-                    errors.append(f"Row {row_num}: Student ID '{student_id}' already exists")
+
+                # Resolve batch
+                if batch_name:
+                    course_id = batch_by_name.get(batch_name.lower())
+                    if not course_id:
+                        errors.append(f"Row {row_num}: Unknown batch '{batch_name}'")
+                        skipped_count += 1
+                        continue
+                else:
+                    course_id = default_course_id
+
+                # Teachers may only onboard into their assigned batches
+                if allowed is not None and course_id not in allowed:
+                    errors.append(f"Row {row_num}: Not assigned to batch '{batch_name or 'default'}'")
                     skipped_count += 1
                     continue
-                
-                # Insert student without face encoding (will be added during face registration)
+
+                # Duplicate check (student_id or email must be unique)
+                cursor.execute(
+                    'SELECT id FROM students WHERE student_id = ? OR email = ?',
+                    (student_id, email),
+                )
+                if cursor.fetchone():
+                    errors.append(f"Row {row_num}: Student ID '{student_id}' or email already exists")
+                    skipped_count += 1
+                    continue
+
                 cursor.execute('''
-                    INSERT INTO students 
-                    (student_id, name, email, joining_date, status)
-                    VALUES (?, ?, ?, ?, 'active')
-                ''', (student_id, name, email, joining_date))
-                
+                    INSERT INTO students
+                    (student_id, name, email, joining_date, dob, course_id,
+                     password_hash, must_change_password, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'pending_registration')
+                ''', (
+                    student_id, name, email, joining_date, dob or None, course_id,
+                    hash_password(default_student_password(dob)),
+                ))
                 added_count += 1
-                
+
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)}")
                 skipped_count += 1
-        
+
         attendance_system.conn.commit()
-        
-        # Build response message
-        message = f"[OK] Added {added_count} student(s)"
+
+        message = f"[OK] Added {added_count} student(s) (pending face registration)"
         if skipped_count > 0:
             message += f", [WARN] Skipped {skipped_count}"
-        
-        response_data = {
+
+        return {
             "success": True,
             "message": message,
             "added": added_count,
             "skipped": skipped_count,
-            "errors": errors[:10]  # Return first 10 errors to avoid huge response
+            "errors": errors[:10],
         }
-        
-        return response_data
-        
+
     except Exception as e:
         return {"success": False, "message": f"Failed to upload students: {str(e)}", "added": 0, "skipped": 0, "errors": []}
 
 @app.get("/api/students/bulk-upload/template")
-async def get_bulk_upload_template(session: Dict[str, Any] = Depends(require_admin_access)):
+async def get_bulk_upload_template(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Download CSV template for bulk student upload"""
     try:
-        csv_content = """student_id,name,email,joining_date
-250840325001,John Doe,john.doe@email.com,2025-08-01
-250840325002,Jane Smith,jane.smith@email.com,2025-08-01
-250840325003,Alex Johnson,alex.johnson@email.com,2025-08-01"""
-        
+        csv_content = (
+            "student_id,name,email,dob,batch,joining_date\n"
+            "250840325001,John Doe,john.doe@email.com,2001-05-14,PGCP-BDA,2026-08-01\n"
+            "250840325002,Jane Smith,jane.smith@email.com,2002-11-02,PGCP-AI,2026-08-01\n"
+            "250840325003,Alex Johnson,alex.johnson@email.com,2000-03-28,PGCP-BDA,2026-08-01"
+        )
         return Response(
             content=csv_content,
             media_type="text/csv",
@@ -2093,17 +2789,39 @@ async def get_bulk_upload_template(session: Dict[str, Any] = Depends(require_adm
     except Exception as e:
         return {"success": False, "message": f"Failed to generate template: {str(e)}"}
 
-@app.post("/api/logout")
-async def logout(response: Response, session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Secure logout with session cleanup"""
+
+@app.get("/api/students/pending")
+async def list_pending_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Students onboarded via CSV who still need their face registered."""
     try:
-        if session:
-            # Get session token from cookie
-            session_token = None
-            # In a real scenario, you'd extract this from the request
-            # For now, we'll destroy all expired sessions
-            SessionManager.cleanup_expired_sessions()
-        
+        allowed = teacher_allowed_course_ids(session)  # None = admin (all)
+        cur = attendance_system.conn.cursor()
+        rows = cur.execute('''
+            SELECT s.id, s.student_id, s.name, s.email, s.dob, s.course_id, c.name
+            FROM students s LEFT JOIN courses c ON c.id = s.course_id
+            WHERE s.status = 'pending_registration' AND s.face_encoding IS NULL
+            ORDER BY c.name, s.name
+        ''').fetchall()
+        pending = []
+        for r in rows:
+            if allowed is not None and r[5] not in allowed:
+                continue
+            pending.append({
+                "id": r[0], "student_id": r[1], "name": r[2], "email": r[3],
+                "dob": r[4], "course_id": r[5], "batch": r[6] or "—",
+            })
+        return {"success": True, "pending": pending, "count": len(pending)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/logout")
+async def logout(response: Response, session_token: str = Cookie(None, alias="session_token")):
+    """Secure logout — destroys the server-side session and clears the cookie."""
+    try:
+        if session_token:
+            SessionManager.destroy_session(session_token)
+        SessionManager.cleanup_expired_sessions()
+
         # Clear the session cookie
         response.delete_cookie(
             key="session_token",
@@ -2129,10 +2847,13 @@ async def logout(response: Response, session: Optional[Dict[str, Any]] = Depends
 
 
 @app.get("/logout")
-async def logout_redirect(response: Response):
-    """GET logout route for direct access"""
-    response.delete_cookie(key="session_token")
-    return RedirectResponse(url="/login")
+async def logout_redirect(session_token: str = Cookie(None, alias="session_token")):
+    """GET logout route for direct access — destroys the session and redirects."""
+    if session_token:
+        SessionManager.destroy_session(session_token)
+    resp = RedirectResponse(url="/login")
+    resp.delete_cookie(key="session_token")
+    return resp
 
 @app.get("/api/session/status")
 async def session_status(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
@@ -2192,6 +2913,448 @@ async def mark_manual_session_attendance_api(data: dict = Body(...)):
             data.get('reason')
         )
         return {"success": success, "message": message}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ==================================================================
+# Teacher portal + bulk attendance actions (Phase 5)
+# ==================================================================
+
+SESSION_SLOT_TYPES = ["morning_1", "morning_2", "afternoon_1", "afternoon_2"]
+
+
+@app.get("/api/teacher/batch/{course_id}/students")
+async def teacher_batch_students(course_id: int, date: Optional[str] = None,
+                                 session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Students in a batch with their present-status for a given date (default today)."""
+    try:
+        assert_course_allowed(session, course_id)
+        the_date = date or datetime.now(timezone).date().strftime("%Y-%m-%d")
+        cur = attendance_system.conn.cursor()
+        students = []
+        for r in cur.execute(
+            "SELECT id, student_id, name, (face_encoding IS NOT NULL) FROM students "
+            "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
+            (course_id,),
+        ).fetchall():
+            marks = cur.execute(
+                "SELECT session_type, time_in, is_manual FROM attendance WHERE student_id = ? AND date = ?",
+                (r[0], the_date),
+            ).fetchall()
+            present = len(marks) > 0
+            sessions_present = [m[0] for m in marks if m[0]]
+            students.append({
+                "id": r[0], "student_id": r[1], "name": r[2], "has_face": bool(r[3]),
+                "present": present, "sessions": sessions_present,
+            })
+        present_count = sum(1 for s in students if s["present"])
+        return {
+            "success": True, "date": the_date, "students": students,
+            "summary": {
+                "total": len(students), "present": present_count,
+                "absent": len(students) - present_count,
+                "rate": round(present_count / len(students) * 100, 1) if students else 0.0,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/attendance/bulk-mark")
+async def bulk_mark_attendance_api(data: dict = Body(...),
+                                   session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Bulk mark attendance for a batch.
+
+    Body:
+        course_id     (required) batch to act on
+        date          (required) YYYY-MM-DD
+        status        'present' | 'absent'   (default 'present')
+        session_type  optional; a slot name, or null/omitted for the whole day
+        student_ids   optional list; omitted/empty = all active students in the batch
+        reason        optional note
+    'present' inserts a manual attendance record (idempotent); 'absent' clears any
+    existing records for that date (and session, if given).
+    """
+    try:
+        course_id = data.get("course_id")
+        the_date = (data.get("date") or "").strip()
+        status = (data.get("status") or "present").strip().lower()
+        session_type = data.get("session_type") or None
+        student_ids = data.get("student_ids") or None
+        reason = (data.get("reason") or "Bulk marked").strip()
+
+        if not course_id or not the_date:
+            return {"success": False, "message": "course_id and date are required"}
+        if status not in ("present", "absent"):
+            return {"success": False, "message": "status must be 'present' or 'absent'"}
+        if session_type and session_type not in SESSION_SLOT_TYPES:
+            return {"success": False, "message": f"Unknown session '{session_type}'"}
+
+        assert_course_allowed(session, course_id)
+        cur = attendance_system.conn.cursor()
+
+        # Resolve target students (validate they belong to this batch)
+        if student_ids:
+            placeholders = ",".join("?" * len(student_ids))
+            rows = cur.execute(
+                f"SELECT id FROM students WHERE course_id = ? AND id IN ({placeholders}) "
+                f"AND status IN ('active','pending_registration')",
+                [course_id, *student_ids],
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT id FROM students WHERE course_id = ? AND status IN ('active','pending_registration')",
+                (course_id,),
+            ).fetchall()
+        target_ids = [r[0] for r in rows]
+        if not target_ids:
+            return {"success": False, "message": "No matching students in this batch"}
+
+        now_time = datetime.now(timezone).strftime("%H:%M:%S")
+        affected = 0
+
+        for sid in target_ids:
+            if status == "present":
+                # Skip if already marked for this date (+ session if given)
+                if session_type:
+                    exists = cur.execute(
+                        "SELECT 1 FROM attendance WHERE student_id = ? AND date = ? AND session_type = ?",
+                        (sid, the_date, session_type),
+                    ).fetchone()
+                else:
+                    exists = cur.execute(
+                        "SELECT 1 FROM attendance WHERE student_id = ? AND date = ?",
+                        (sid, the_date),
+                    ).fetchone()
+                if exists:
+                    continue
+                cur.execute(
+                    "INSERT INTO attendance (student_id, date, time_in, status, is_manual, "
+                    "manual_reason, session_type, course_id) VALUES (?, ?, ?, 'present', 1, ?, ?, ?)",
+                    (sid, the_date, now_time, reason, session_type, course_id),
+                )
+                affected += 1
+            else:  # absent -> remove present records
+                if session_type:
+                    cur.execute(
+                        "DELETE FROM attendance WHERE student_id = ? AND date = ? AND session_type = ?",
+                        (sid, the_date, session_type),
+                    )
+                else:
+                    cur.execute(
+                        "DELETE FROM attendance WHERE student_id = ? AND date = ?",
+                        (sid, the_date),
+                    )
+                affected += cur.rowcount
+
+        attendance_system.conn.commit()
+        scope = f"session '{session_type}'" if session_type else "the whole day"
+        verb = "marked present" if status == "present" else "cleared"
+        return {
+            "success": True,
+            "message": f"{verb.title()} for {len(target_ids)} student(s) on {the_date} ({scope}).",
+            "affected": affected,
+            "students": len(target_ids),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
+# ==================================================================
+# Grievances (attendance disputes) — Phase 9
+# ==================================================================
+
+GRIEVANCE_WINDOW_DAYS = 30
+
+
+@app.post("/api/student/grievance")
+async def raise_grievance(data: dict = Body(...), session: Dict[str, Any] = Depends(require_student)):
+    """A student disputes being marked absent for a date/session (last 30 days)."""
+    try:
+        info = session.get("user_info", {})
+        sid = info.get("id")
+        the_date = (data.get("date") or "").strip()
+        session_type = data.get("session_type") or None
+        reason = (data.get("reason") or "").strip()
+
+        if not the_date or not reason:
+            return {"success": False, "message": "Date and reason are required"}
+        if session_type and session_type not in SESSION_SLOT_TYPES:
+            return {"success": False, "message": "Invalid session"}
+
+        try:
+            d = datetime.strptime(the_date, "%Y-%m-%d").date()
+        except ValueError:
+            return {"success": False, "message": "Invalid date"}
+        today = date.today()
+        if d > today:
+            return {"success": False, "message": "Cannot dispute a future date"}
+        if (today - d).days > GRIEVANCE_WINDOW_DAYS:
+            return {"success": False, "message": f"You can only dispute the last {GRIEVANCE_WINDOW_DAYS} days"}
+
+        cur = attendance_system.conn.cursor()
+        # Block a duplicate pending grievance for the same date/session
+        dup = cur.execute(
+            "SELECT 1 FROM grievances WHERE student_id = ? AND date = ? AND "
+            "IFNULL(session_type,'') = IFNULL(?, '') AND status = 'pending'",
+            (sid, the_date, session_type),
+        ).fetchone()
+        if dup:
+            return {"success": False, "message": "You already have a pending request for this date/session"}
+
+        cur.execute(
+            "INSERT INTO grievances (student_id, course_id, date, session_type, reason, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (sid, info.get("course_id"), the_date, session_type, reason),
+        )
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Your request has been submitted for review"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/grievances")
+async def my_grievances(session: Dict[str, Any] = Depends(require_student)):
+    """A student's own grievance history."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        rows = attendance_system.conn.execute(
+            "SELECT id, date, session_type, reason, status, created_at, review_note "
+            "FROM grievances WHERE student_id = ? ORDER BY created_at DESC",
+            (sid,),
+        ).fetchall()
+        return {"success": True, "grievances": [{
+            "id": r[0], "date": r[1], "session_type": r[2] or "Whole day", "reason": r[3],
+            "status": r[4], "created_at": r[5], "review_note": r[6],
+        } for r in rows]}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/grievances")
+async def teacher_grievances(status: str = "pending",
+                             session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Grievances for the teacher's assigned batches (default: pending)."""
+    try:
+        allowed = teacher_allowed_course_ids(session)  # None = admin (all)
+        rows = attendance_system.conn.execute(
+            "SELECT g.id, g.student_id, s.student_id, s.name, g.course_id, c.name, "
+            "g.date, g.session_type, g.reason, g.status, g.created_at "
+            "FROM grievances g JOIN students s ON s.id = g.student_id "
+            "LEFT JOIN courses c ON c.id = g.course_id "
+            "WHERE g.status = ? ORDER BY g.created_at DESC",
+            (status,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            if allowed is not None and r[4] not in allowed:
+                continue
+            out.append({
+                "id": r[0], "student_db_id": r[1], "roll_no": r[2], "student_name": r[3],
+                "course_id": r[4], "batch": r[5] or "—", "date": r[6],
+                "session_type": r[7] or "Whole day", "reason": r[8], "status": r[9], "created_at": r[10],
+            })
+        return {"success": True, "grievances": out, "count": len(out)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teacher/grievances/action")
+async def act_on_grievances(data: dict = Body(...),
+                            session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Approve (marks present) or reject grievances — single or in bulk."""
+    try:
+        ids = data.get("ids") or []
+        action = (data.get("action") or "").strip().lower()
+        note = (data.get("note") or "").strip() or None
+        if not ids or action not in ("approve", "reject"):
+            return {"success": False, "message": "Provide ids and action ('approve' or 'reject')"}
+
+        allowed = teacher_allowed_course_ids(session)
+        reviewer = session.get("user_info", {}).get("id")
+        new_status = "approved" if action == "approve" else "rejected"
+        cur = attendance_system.conn.cursor()
+        processed = 0
+        marked = 0
+
+        for gid in ids:
+            row = cur.execute(
+                "SELECT student_id, course_id, date, session_type, status FROM grievances WHERE id = ?",
+                (gid,),
+            ).fetchone()
+            if not row or row[4] != "pending":
+                continue
+            student_db_id, course_id, the_date, session_type, _ = row
+            if allowed is not None and course_id not in allowed:
+                continue  # not this teacher's batch
+
+            # On approve, mark the student present (idempotent) for that date/session
+            if action == "approve":
+                if session_type:
+                    exists = cur.execute(
+                        "SELECT 1 FROM attendance WHERE student_id = ? AND date = ? AND session_type = ?",
+                        (student_db_id, the_date, session_type),
+                    ).fetchone()
+                else:
+                    exists = cur.execute(
+                        "SELECT 1 FROM attendance WHERE student_id = ? AND date = ?",
+                        (student_db_id, the_date),
+                    ).fetchone()
+                if not exists:
+                    cur.execute(
+                        "INSERT INTO attendance (student_id, date, time_in, status, is_manual, "
+                        "manual_reason, session_type, course_id) VALUES (?, ?, ?, 'present', 1, ?, ?, ?)",
+                        (student_db_id, the_date,
+                         datetime.now(timezone).strftime("%H:%M:%S"),
+                         "Grievance approved", session_type, course_id),
+                    )
+                    marked += 1
+
+            cur.execute(
+                "UPDATE grievances SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, "
+                "review_note = ? WHERE id = ?",
+                (new_status, reviewer, note, gid),
+            )
+            processed += 1
+
+        attendance_system.conn.commit()
+        msg = f"{new_status.title()} {processed} request(s)"
+        if action == "approve":
+            msg += f" — {marked} student(s) marked present"
+        return {"success": True, "message": msg, "processed": processed, "marked": marked}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/batch/{course_id}/analytics")
+async def teacher_batch_analytics(course_id: int, at_risk_threshold: float = 75.0,
+                                  session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Batch analytics: per-student %, at-risk, attendance trend, day-of-week."""
+    from datetime import date as _date, timedelta as _td
+    try:
+        assert_course_allowed(session, course_id)
+        cur = attendance_system.conn.cursor()
+
+        crow = cur.execute("SELECT start_date FROM courses WHERE id = ?", (course_id,)).fetchone()
+        students = cur.execute(
+            "SELECT id, student_id, name FROM students "
+            "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
+            (course_id,),
+        ).fetchall()
+
+        # Holidays affecting this batch
+        holiday_dates = set()
+        for r in cur.execute(
+            "SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?", (course_id,)
+        ).fetchall():
+            try:
+                holiday_dates.add(datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date())
+            except (ValueError, TypeError):
+                continue
+
+        today = _date.today()
+        # window start = batch start date, capped to 120 days back to keep it light
+        start = today - _td(days=120)
+        if crow and crow[0]:
+            try:
+                cs = datetime.strptime(str(crow[0])[:10], "%Y-%m-%d").date()
+                start = max(cs, start)
+            except (ValueError, TypeError):
+                pass
+        if start > today:
+            start = today
+
+        # Working days in window (Mon–Sat, excl holidays), and per-weekday counts
+        working_days = 0
+        weekday_working = [0] * 7
+        d = start
+        while d <= today:
+            if d.weekday() != 6 and d not in holiday_dates:
+                working_days += 1
+                weekday_working[d.weekday()] += 1
+            d += _td(days=1)
+
+        # Present marks in window for this batch's students
+        sid_list = [s[0] for s in students]
+        present_by_student = {sid: set() for sid in sid_list}
+        weekday_present = [0] * 7
+        trend = {}  # date -> present count (last 14 days)
+        if sid_list:
+            placeholders = ",".join("?" * len(sid_list))
+            rows = cur.execute(
+                f"SELECT student_id, date FROM attendance WHERE student_id IN ({placeholders}) AND date >= ?",
+                [*sid_list, start.strftime("%Y-%m-%d")],
+            ).fetchall()
+            for stu_id, dt in rows:
+                try:
+                    dd = datetime.strptime(str(dt)[:10], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    continue
+                if dd > today:
+                    continue
+                if dd not in present_by_student.get(stu_id, set()):
+                    present_by_student.setdefault(stu_id, set()).add(dd)
+
+        # Per-student rates
+        per_student, at_risk = [], []
+        rate_sum = 0.0
+        for s in students:
+            pres = len(present_by_student.get(s[0], set()))
+            rate = round(pres / working_days * 100, 1) if working_days else 0.0
+            rate_sum += rate
+            entry = {"student_id": s[1], "name": s[2], "present_days": pres,
+                     "working_days": working_days, "rate": rate}
+            per_student.append(entry)
+            if rate < at_risk_threshold:
+                at_risk.append(entry)
+
+        # Weekday present counts (from distinct present dates)
+        for sid, dates in present_by_student.items():
+            for dd in dates:
+                if dd.weekday() != 6:
+                    weekday_present[dd.weekday()] += 1
+
+        # Trend: last 14 calendar days, present count across the batch
+        trend_list = []
+        for i in range(13, -1, -1):
+            dd = today - _td(days=i)
+            cnt = sum(1 for dates in present_by_student.values() if dd in dates)
+            trend_list.append({"date": dd.strftime("%Y-%m-%d"), "present": cnt,
+                               "is_off": dd.weekday() == 6 or dd in holiday_dates})
+
+        # Day-of-week average attendance rate (Mon–Sat)
+        names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        dow = []
+        total_students = len(students)
+        for wd in range(6):
+            denom = weekday_working[wd] * total_students
+            pct = round(weekday_present[wd] / denom * 100, 1) if denom else 0.0
+            dow.append({"day": names[wd], "rate": pct})
+
+        per_student.sort(key=lambda x: x["rate"])
+        return {
+            "success": True,
+            "summary": {
+                "total_students": total_students,
+                "working_days": working_days,
+                "avg_rate": round(rate_sum / total_students, 1) if total_students else 0.0,
+                "at_risk_count": len(at_risk),
+                "since": start.strftime("%Y-%m-%d"),
+            },
+            "per_student": per_student,
+            "at_risk": at_risk,
+            "trend": trend_list,
+            "day_of_week": dow,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -2587,41 +3750,41 @@ async def get_today_slot_attendance():
         return []
 
 @app.get("/api/attendance/analytics/class")
-async def get_class_analytics_data(days: int = 14):
-    """Endpoint for comprehensive class analytics"""
+async def get_class_analytics_data(days: int = 14, course_id: Optional[int] = None):
+    """Endpoint for comprehensive class analytics (optionally scoped to a batch)."""
     try:
-        return analytics_manager.get_class_analytics(days=days)
+        return analytics_manager.get_class_analytics(days=days, course_id=course_id)
     except Exception as e:
         print(f"Error in class analytics API: {e}")
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/heatmap")
-async def get_heatmap_data(days: int = 90):
+async def get_heatmap_data(days: int = 90, course_id: Optional[int] = None):
     """Per-day attendance % for calendar heatmap"""
     try:
-        return analytics_manager.get_heatmap_data(days=days)
+        return analytics_manager.get_heatmap_data(days=days, course_id=course_id)
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/day-of-week")
-async def get_day_of_week_data(days: int = 60):
+async def get_day_of_week_data(days: int = 60, course_id: Optional[int] = None):
     """Average attendance % per weekday"""
     try:
-        return analytics_manager.get_day_of_week_stats(days=days)
+        return analytics_manager.get_day_of_week_stats(days=days, course_id=course_id)
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/at-risk")
-async def get_at_risk_data(threshold: int = 75):
+async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None):
     """All students below attendance threshold with streak info"""
     try:
-        return analytics_manager.get_at_risk_students(threshold=threshold)
+        return analytics_manager.get_at_risk_students(threshold=threshold, course_id=course_id)
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/student/{student_id}/sparkline")
 async def get_student_sparkline(student_id: int, days: int = 14):
-    """14-day per-day slot count sparkline for a single student"""
+    """14-day per-day attendance sparkline for a single student"""
     try:
         return analytics_manager.get_student_sparkline(student_id=student_id, days=days)
     except Exception as e:
@@ -2648,11 +3811,26 @@ async def get_live_attendance_count():
         }
 
 @app.post("/api/detect_attendance_slots")
-async def detect_attendance_with_slots(image_data: DetectionImage):
-    """Enhanced detection with slot-based attendance marking"""
+async def detect_attendance_with_slots(image_data: DetectionImage,
+                                       session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Enhanced detection with slot-based attendance marking.
+
+    When opened as a batch terminal (terminal session), only students of that
+    batch are marked; others are reported as not-in-batch.
+    """
     if not FACE_RECOGNITION_AVAILABLE:
         return {"success": False, "message": "Face recognition not available"}
-    
+
+    # Terminal sessions restrict marking to their batch
+    terminal_batch_ids = None
+    if session and session.get("user_type") == "terminal":
+        tcid = session.get("user_info", {}).get("course_id")
+        terminal_batch_ids = {
+            r[0] for r in attendance_system.conn.execute(
+                "SELECT id FROM students WHERE course_id = ?", (tcid,)
+            ).fetchall()
+        }
+
     try:
         # Convert base64 to image (same as existing detect_attendance)
         if image_data.image_data.startswith('data:image'):
@@ -2726,7 +3904,25 @@ async def detect_attendance_with_slots(image_data: DetectionImage):
                 if best_similarity > RECOGNITION_THRESHOLD:
                     student_id = attendance_system.known_face_ids[best_match_index]
                     student_name = attendance_system.known_face_names[best_match_index]
-                    
+
+                    # Terminal: skip students who aren't in this batch
+                    if terminal_batch_ids is not None and student_id not in terminal_batch_ids:
+                        face_location = face_data['location']
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
+                            "confidence": float(best_similarity),
+                            "status": "wrong_batch",
+                            "message": f"{student_name} is not in this batch",
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
+                        continue
+
                     # Use slot manager for attendance marking
                     attendance_result = manager.mark_attendance_with_slot(
                         student_id=student_id,

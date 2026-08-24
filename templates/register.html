@@ -228,6 +228,15 @@
             { text: "Tilt your head slightly up", description: "Slight upward angle, as if looking at something above the camera" }
         ];
 
+        // Prefill from query params when arriving from the "pending students" list
+        (function prefillFromQuery() {
+            const p = new URLSearchParams(window.location.search);
+            const name = p.get('name'), email = p.get('email'), sid = p.get('student_id');
+            if (name) document.getElementById('student-name').value = name;
+            if (email) document.getElementById('student-email').value = email;
+            if (sid) document.getElementById('student-id').value = sid;
+        })();
+
         function getTimingSetting() {
             const timing = document.querySelector('input[name="timing"]:checked').value;
             return timing === 'manual' ? 0 : parseInt(timing);

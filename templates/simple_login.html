@@ -107,77 +107,135 @@
         <div class="login-card">
             <form id="loginForm">
                 <div class="role-toggle">
-                    <input type="radio" name="role" value="user" id="role-user" checked>
-                    <label for="role-user"><i class="fa-solid fa-user"></i> User</label>
-                    <input type="radio" name="role" value="admin" id="role-admin">
-                    <label for="role-admin"><i class="fa-solid fa-shield-halved"></i> Admin</label>
+                    <input type="radio" name="role" value="student" id="role-student" checked>
+                    <label for="role-student"><i class="fa-solid fa-user-graduate"></i> Student</label>
+                    <input type="radio" name="role" value="staff" id="role-staff">
+                    <label for="role-staff"><i class="fa-solid fa-chalkboard-user"></i> Staff</label>
+                    <input type="radio" name="role" value="terminal" id="role-terminal">
+                    <label for="role-terminal"><i class="fa-solid fa-camera"></i> Terminal</label>
                 </div>
 
-                <div class="app-form-group">
-                    <label class="app-form-label">Username</label>
-                    <input type="text" name="username" class="app-form-input" placeholder="Enter username"
-                        autocomplete="username" required>
+                <!-- Student / Staff fields -->
+                <div id="credFields">
+                    <div class="app-form-group">
+                        <label class="app-form-label" id="usernameLabel">Roll Number</label>
+                        <input type="text" name="username" class="app-form-input" placeholder="Enter your roll number"
+                            autocomplete="username">
+                    </div>
+                    <div class="app-form-group">
+                        <label class="app-form-label">Password</label>
+                        <input type="password" name="password" class="app-form-input" placeholder="Enter password"
+                            autocomplete="current-password">
+                    </div>
                 </div>
 
-                <div class="app-form-group">
-                    <label class="app-form-label">Password</label>
-                    <input type="password" name="password" class="app-form-input" placeholder="Enter password"
-                        autocomplete="current-password" required>
+                <!-- Terminal fields -->
+                <div id="terminalFields" style="display:none;">
+                    <div class="app-form-group">
+                        <label class="app-form-label">Batch</label>
+                        <select name="batch" class="app-form-input" id="terminalBatch">
+                            <option value="">Loading batches…</option>
+                        </select>
+                    </div>
+                    <div class="app-form-group">
+                        <label class="app-form-label">Terminal PIN</label>
+                        <input type="password" name="pin" class="app-form-input" placeholder="Enter batch PIN"
+                            autocomplete="off" inputmode="numeric">
+                    </div>
                 </div>
 
                 <div id="loginError" class="login-error"></div>
 
                 <button type="submit" class="app-btn app-btn-primary app-btn-lg app-btn-block">
-                    Log In
+                    <span id="submitLabel">Log In</span>
                 </button>
             </form>
         </div>
     </div>
 
     <script>
+        let terminalBatchesLoaded = false;
+        async function loadTerminalBatches() {
+            if (terminalBatchesLoaded) return;
+            try {
+                const res = await fetch('/api/terminal/batches');
+                const data = await res.json();
+                const sel = document.getElementById('terminalBatch');
+                if (data.batches && data.batches.length) {
+                    sel.innerHTML = data.batches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                    terminalBatchesLoaded = true;
+                } else {
+                    sel.innerHTML = '<option value="">No terminal-enabled batches</option>';
+                }
+            } catch (e) {
+                document.getElementById('terminalBatch').innerHTML = '<option value="">Failed to load</option>';
+            }
+        }
+
+        // Switch fields + labels based on selected role
+        document.querySelectorAll('input[name="role"]').forEach(function (r) {
+            r.addEventListener('change', function () {
+                const role = this.value;
+                const credFields = document.getElementById('credFields');
+                const terminalFields = document.getElementById('terminalFields');
+                const label = document.getElementById('usernameLabel');
+                const input = document.querySelector('input[name="username"]');
+                const submitLabel = document.getElementById('submitLabel');
+
+                if (role === 'terminal') {
+                    credFields.style.display = 'none';
+                    terminalFields.style.display = 'block';
+                    submitLabel.textContent = 'Open Terminal';
+                    loadTerminalBatches();
+                } else {
+                    credFields.style.display = 'block';
+                    terminalFields.style.display = 'none';
+                    submitLabel.textContent = 'Log In';
+                    if (role === 'staff') { label.textContent = 'Username'; input.placeholder = 'Enter your username'; }
+                    else { label.textContent = 'Roll Number'; input.placeholder = 'Enter your roll number'; }
+                }
+            });
+        });
+
         document.getElementById('loginForm').addEventListener('submit', async function (e) {
             e.preventDefault();
-            const username = this.username.value;
-            const password = this.password.value;
-            let role = this.elements['role'].value;
-
-            if (username.toLowerCase() === 'admin') role = 'admin';
-
+            const role = this.elements['role'].value;
             const errorDiv = document.getElementById('loginError');
             const btn = this.querySelector('button[type="submit"]');
-
             errorDiv.style.display = 'none';
             btn.disabled = true;
-            btn.innerHTML = '<span class="app-spinner"></span> Logging in...';
+            btn.innerHTML = '<span class="app-spinner"></span> Please wait...';
 
-            const endpoint = role === 'admin' ? '/api/admin-login' : '/api/user-login';
+            let endpoint, payload;
+            if (role === 'terminal') {
+                endpoint = '/api/terminal-login';
+                payload = { course_id: parseInt(this.batch.value), pin: this.pin.value };
+                if (!payload.course_id) { errorDiv.textContent = 'Select a batch'; errorDiv.style.display = 'block'; btn.disabled = false; btn.innerHTML = '<span id="submitLabel">Open Terminal</span>'; return; }
+            } else {
+                endpoint = role === 'staff' ? '/api/admin-login' : '/api/user-login';
+                payload = { username: this.username.value, password: this.password.value };
+            }
 
             try {
                 const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
                 });
                 const data = await response.json();
-
                 if (data.success) {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i> Success!';
-                    btn.classList.remove('app-btn-primary');
-                    btn.classList.add('app-btn-success');
-                    setTimeout(() => {
-                        window.location.href = data.redirect_url || (role === 'admin' ? '/dashboard' : '/user/home');
-                    }, 400);
+                    btn.classList.remove('app-btn-primary'); btn.classList.add('app-btn-success');
+                    setTimeout(() => { window.location.href = data.redirect_url || '/'; }, 400);
                 } else {
                     errorDiv.textContent = data.message || 'Invalid credentials';
                     errorDiv.style.display = 'block';
                     btn.disabled = false;
-                    btn.innerHTML = 'Log In';
+                    btn.innerHTML = '<span id="submitLabel">' + (role === 'terminal' ? 'Open Terminal' : 'Log In') + '</span>';
                 }
             } catch (error) {
                 errorDiv.textContent = 'Connection failed. Please try again.';
                 errorDiv.style.display = 'block';
                 btn.disabled = false;
-                btn.innerHTML = 'Log In';
+                btn.innerHTML = '<span id="submitLabel">' + (role === 'terminal' ? 'Open Terminal' : 'Log In') + '</span>';
             }
         });
     </script>

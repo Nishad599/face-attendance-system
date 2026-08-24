@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batches & Teachers — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <style>
+        .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .batch-checks { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto;
+            border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; }
+        .batch-checks label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .muted { color: var(--text-secondary); font-size: 0.9rem; }
+    </style>
+</head>
+
+<body>
+    <nav class="app-navbar">
+        <a href="/dashboard" class="app-navbar-brand"><i class="fa-solid fa-users-viewfinder"></i> CDAC Attendance</a>
+        <div class="app-navbar-links">
+            <a href="/dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
+            <a href="/students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/admin/batches" class="active"><i class="fa-solid fa-layer-group"></i> Batches</a>
+            <a href="/admin"><i class="fa-solid fa-gear"></i> Admin</a>
+        </div>
+        <div class="app-navbar-actions">
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / Batches &amp; Teachers</div>
+        <div class="app-page-header">
+            <h1>Batches &amp; Teachers</h1>
+            <p>Create courses/batches (PGCP-BDA, PGCP-AI, …) and manage teacher accounts and their batch access.</p>
+        </div>
+
+        <div class="app-tabs">
+            <button class="app-tab active" data-tab="batches" onclick="switchTab('batches')">Batches</button>
+            <button class="app-tab" data-tab="teachers" onclick="switchTab('teachers')">Teachers</button>
+            <button class="app-tab" data-tab="pending" onclick="switchTab('pending')">Pending Faces</button>
+        </div>
+
+        <!-- ===== BATCHES TAB ===== -->
+        <div id="tab-batches">
+            <div class="toolbar">
+                <span class="muted" id="batchCount"></span>
+                <button class="app-btn app-btn-primary app-btn-sm" onclick="openBatchModal()">
+                    <i class="fa-solid fa-plus"></i> New Batch
+                </button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr><th>Name</th><th>Start</th><th>End</th><th>Students</th><th>Status</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="batchRows">
+                        <tr><td colspan="6" class="muted">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== TEACHERS TAB ===== -->
+        <div id="tab-teachers" style="display:none;">
+            <div class="toolbar">
+                <span class="muted" id="teacherCount"></span>
+                <button class="app-btn app-btn-primary app-btn-sm" onclick="openTeacherModal()">
+                    <i class="fa-solid fa-plus"></i> New Teacher
+                </button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr><th>Username</th><th>Name</th><th>Assigned Batches</th><th>Status</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody id="teacherRows">
+                        <tr><td colspan="5" class="muted">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+        <!-- ===== PENDING FACES TAB ===== -->
+        <div id="tab-pending" style="display:none;">
+            <div class="toolbar">
+                <span class="muted" id="pendingCount"></span>
+                <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadPending()">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                </button>
+            </div>
+            <p class="muted" style="margin-top:-8px;margin-bottom:16px;">
+                Students uploaded via CSV who still need their face registered. Call them in and click
+                <strong>Register Face</strong> — their details are pre-filled.
+            </p>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr><th>Roll No</th><th>Name</th><th>Batch</th><th>DOB</th><th>Action</th></tr>
+                    </thead>
+                    <tbody id="pendingRows">
+                        <tr><td colspan="5" class="muted">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    <!-- ===== BATCH MODAL ===== -->
+    <div class="app-modal-overlay" id="batchModal">
+        <div class="app-modal">
+            <div class="app-modal-header">
+                <h3 id="batchModalTitle">New Batch</h3>
+                <button class="app-modal-close" onclick="closeModal('batchModal')">&times;</button>
+            </div>
+            <div class="app-modal-body">
+                <input type="hidden" id="batchId">
+                <div class="app-form-group">
+                    <label class="app-form-label">Batch Name *</label>
+                    <input type="text" id="batchName" class="app-form-input" placeholder="e.g. PGCP-BDA">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Start Date</label>
+                    <input type="date" id="batchStart" class="app-form-input">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">End Date</label>
+                    <input type="date" id="batchEnd" class="app-form-input">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Description</label>
+                    <input type="text" id="batchDesc" class="app-form-input" placeholder="Optional">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Assign Teachers</label>
+                    <div class="batch-checks" id="batchTeacherChecks"></div>
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Attendance Terminal PIN</label>
+                    <input type="text" id="batchPin" class="app-form-input" placeholder="e.g. 4-6 digits" autocomplete="off">
+                    <span class="muted" id="batchPinHint">Used to open the face-recognition terminal for this batch.</span>
+                </div>
+            </div>
+            <div class="app-modal-footer">
+                <button class="app-btn app-btn-subtle" onclick="closeModal('batchModal')">Cancel</button>
+                <button class="app-btn app-btn-primary" id="batchSaveBtn" onclick="saveBatch()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TEACHER MODAL ===== -->
+    <div class="app-modal-overlay" id="teacherModal">
+        <div class="app-modal">
+            <div class="app-modal-header">
+                <h3 id="teacherModalTitle">New Teacher</h3>
+                <button class="app-modal-close" onclick="closeModal('teacherModal')">&times;</button>
+            </div>
+            <div class="app-modal-body">
+                <input type="hidden" id="teacherId">
+                <div class="app-form-group">
+                    <label class="app-form-label">Username *</label>
+                    <input type="text" id="teacherUsername" class="app-form-input" placeholder="e.g. rsharma"
+                        autocomplete="off">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Full Name</label>
+                    <input type="text" id="teacherName" class="app-form-input" placeholder="e.g. R. Sharma">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label" id="teacherPwLabel">Password *</label>
+                    <input type="text" id="teacherPassword" class="app-form-input"
+                        placeholder="Set an initial password" autocomplete="off">
+                    <span class="muted" id="teacherPwHint">Teacher must change this on first login.</span>
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Assigned Batches</label>
+                    <div class="batch-checks" id="teacherBatchChecks"></div>
+                </div>
+            </div>
+            <div class="app-modal-footer">
+                <button class="app-btn app-btn-subtle" onclick="closeModal('teacherModal')">Cancel</button>
+                <button class="app-btn app-btn-primary" id="teacherSaveBtn" onclick="saveTeacher()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-toast" id="toast" style="display:none;"></div>
+
+    <script>
+        let coursesCache = [];
+        let teachersCache = [];
+
+        async function loadTeachersCache() {
+            const res = await fetch('/api/teachers');
+            const data = await res.json();
+            teachersCache = data.teachers || [];
+        }
+
+        function renderBatchTeacherChecks(selectedIds) {
+            const box = document.getElementById('batchTeacherChecks');
+            if (!teachersCache.length) { box.innerHTML = '<span class="muted">No teacher accounts yet. Create one in the Teachers tab.</span>'; return; }
+            box.innerHTML = teachersCache.map(t =>
+                `<label><input type="checkbox" value="${t.id}" ${selectedIds.includes(t.id) ? 'checked' : ''}> ${esc(t.name || t.username)}</label>`
+            ).join('');
+        }
+
+        function toast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'app-toast app-toast-' + (type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'));
+            t.style.display = 'block';
+            setTimeout(() => { t.style.display = 'none'; }, 3000);
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            document.getElementById('tab-batches').style.display = tab === 'batches' ? '' : 'none';
+            document.getElementById('tab-teachers').style.display = tab === 'teachers' ? '' : 'none';
+            document.getElementById('tab-pending').style.display = tab === 'pending' ? '' : 'none';
+            if (tab === 'pending') loadPending();
+        }
+
+        async function loadPending() {
+            const tbody = document.getElementById('pendingRows');
+            tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+            const res = await fetch('/api/students/pending');
+            const data = await res.json();
+            const pending = data.pending || [];
+            document.getElementById('pendingCount').textContent = pending.length + ' awaiting face registration';
+            if (!pending.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">No students awaiting face registration.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = pending.map(s => {
+                const url = '/register?student_id=' + encodeURIComponent(s.student_id) +
+                    '&name=' + encodeURIComponent(s.name) + '&email=' + encodeURIComponent(s.email);
+                return `<tr>
+                    <td><strong>${esc(s.student_id)}</strong></td>
+                    <td>${esc(s.name)}</td>
+                    <td><span class="app-badge app-badge-info">${esc(s.batch)}</span></td>
+                    <td>${esc(s.dob || '—')}</td>
+                    <td><a class="app-btn app-btn-primary app-btn-sm" href="${url}"><i class="fa-solid fa-camera"></i> Register Face</a></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+        function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+        // ---------- Batches ----------
+        async function loadBatches() {
+            const res = await fetch('/api/courses');
+            const data = await res.json();
+            coursesCache = data.courses || [];
+            const tbody = document.getElementById('batchRows');
+            document.getElementById('batchCount').textContent = coursesCache.length + ' batch(es)';
+            if (!coursesCache.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="muted">No batches yet. Create one to get started.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = coursesCache.map(c => `
+                <tr>
+                    <td><strong>${esc(c.name)}</strong>${c.description ? '<br><span class="muted">' + esc(c.description) + '</span>' : ''}
+                        <div style="margin-top:4px;">
+                        ${(c.teachers || []).length ? (c.teachers || []).map(t => '<span class="app-badge app-badge-info">' + esc(t.name) + '</span>').join(' ') : '<span class="muted" style="font-size:.8rem;">no teacher</span>'}
+                        ${c.has_pin ? '<span class="app-badge app-badge-success" title="Terminal PIN set"><i class="fa-solid fa-lock"></i> PIN</span>' : ''}
+                        </div>
+                    </td>
+                    <td>${esc(c.start_date || '—')}</td>
+                    <td>${esc(c.end_date || '—')}</td>
+                    <td>${c.student_count}</td>
+                    <td><span class="app-badge ${c.is_active ? 'app-badge-success' : 'app-badge-neutral'}">${c.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td><div class="row-actions">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick='editBatch(${c.id})'><i class="fa-solid fa-pen"></i></button>
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick='toggleBatch(${c.id}, ${c.is_active ? 0 : 1})'>${c.is_active ? 'Deactivate' : 'Activate'}</button>
+                        <button class="app-btn app-btn-danger app-btn-sm" onclick='deleteBatch(${c.id}, "${esc(c.name)}", ${c.student_count})'><i class="fa-solid fa-trash"></i></button>
+                    </div></td>
+                </tr>`).join('');
+        }
+
+        function openBatchModal() {
+            document.getElementById('batchModalTitle').textContent = 'New Batch';
+            document.getElementById('batchId').value = '';
+            document.getElementById('batchName').value = '';
+            document.getElementById('batchStart').value = '';
+            document.getElementById('batchEnd').value = '';
+            document.getElementById('batchDesc').value = '';
+            document.getElementById('batchPin').value = '';
+            document.getElementById('batchPinHint').textContent = 'Used to open the face-recognition terminal for this batch.';
+            renderBatchTeacherChecks([]);
+            document.getElementById('batchModal').classList.add('active');
+        }
+
+        function editBatch(id) {
+            const c = coursesCache.find(x => x.id === id);
+            if (!c) return;
+            document.getElementById('batchModalTitle').textContent = 'Edit Batch';
+            document.getElementById('batchId').value = c.id;
+            document.getElementById('batchName').value = c.name || '';
+            document.getElementById('batchStart').value = c.start_date || '';
+            document.getElementById('batchEnd').value = c.end_date || '';
+            document.getElementById('batchDesc').value = c.description || '';
+            document.getElementById('batchPin').value = '';
+            document.getElementById('batchPinHint').textContent = c.has_pin
+                ? 'A PIN is already set. Leave blank to keep it, or type a new one to change it.'
+                : 'No PIN set yet. Enter one to enable the terminal for this batch.';
+            renderBatchTeacherChecks((c.teachers || []).map(t => t.id));
+            document.getElementById('batchModal').classList.add('active');
+        }
+
+        async function saveBatch() {
+            const id = document.getElementById('batchId').value;
+            const teacher_ids = Array.from(document.querySelectorAll('#batchTeacherChecks input:checked')).map(i => parseInt(i.value));
+            const pin = document.getElementById('batchPin').value.trim();
+            const payload = {
+                name: document.getElementById('batchName').value.trim(),
+                start_date: document.getElementById('batchStart').value || null,
+                end_date: document.getElementById('batchEnd').value || null,
+                description: document.getElementById('batchDesc').value.trim() || null,
+                teacher_ids: teacher_ids,
+            };
+            // On create, always send teacher_ids; send PIN only if typed.
+            // On edit, send teacher_ids (replaces) and PIN only if typed (blank keeps existing).
+            if (pin) payload.terminal_pin = pin;
+            if (!payload.name) { toast('Batch name is required', 'error'); return; }
+            const btn = document.getElementById('batchSaveBtn'); btn.disabled = true;
+            try {
+                const res = await fetch(id ? '/api/courses/' + id : '/api/courses', {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (data.success) { toast(data.message); closeModal('batchModal'); loadBatches(); }
+                else toast(data.message || 'Failed', 'error');
+            } finally { btn.disabled = false; }
+        }
+
+        async function toggleBatch(id, active) {
+            const res = await fetch('/api/courses/' + id, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: !!active })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Updated' : 'Failed'), data.success ? 'success' : 'error');
+            loadBatches();
+        }
+
+        async function deleteBatch(id, name, count) {
+            if (count > 0) { toast(`"${name}" has ${count} student(s). Deactivate it instead, or move students first.`, 'error'); return; }
+            if (!confirm(`Delete batch "${name}"? This cannot be undone.`)) return;
+            const res = await fetch('/api/courses/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Deleted' : 'Failed'), data.success ? 'success' : 'error');
+            loadBatches();
+        }
+
+        // ---------- Teachers ----------
+        async function loadTeachers() {
+            const res = await fetch('/api/teachers');
+            const data = await res.json();
+            const teachers = data.teachers || [];
+            teachersCache = teachers;
+            document.getElementById('teacherCount').textContent = teachers.length + ' teacher(s)';
+            const tbody = document.getElementById('teacherRows');
+            if (!teachers.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">No teacher accounts yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = teachers.map(t => `
+                <tr>
+                    <td><strong>${esc(t.username)}</strong></td>
+                    <td>${esc(t.name || '—')}</td>
+                    <td>${t.batches.length ? t.batches.map(b => '<span class="app-badge app-badge-info">' + esc(b.name) + '</span>').join(' ') : '<span class="muted">none</span>'}</td>
+                    <td><span class="app-badge ${t.is_active ? 'app-badge-success' : 'app-badge-neutral'}">${t.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td><div class="row-actions">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick='editTeacher(${t.id})'><i class="fa-solid fa-pen"></i></button>
+                        <button class="app-btn app-btn-danger app-btn-sm" onclick='deleteTeacher(${t.id}, "${esc(t.username)}")'><i class="fa-solid fa-trash"></i></button>
+                    </div></td>
+                </tr>`).join('');
+            window._teachersCache = teachers;
+        }
+
+        function renderBatchChecks(selectedIds) {
+            const box = document.getElementById('teacherBatchChecks');
+            const active = coursesCache.filter(c => c.is_active);
+            if (!active.length) { box.innerHTML = '<span class="muted">No active batches. Create one first.</span>'; return; }
+            box.innerHTML = active.map(c =>
+                `<label><input type="checkbox" value="${c.id}" ${selectedIds.includes(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`
+            ).join('');
+        }
+
+        function openTeacherModal() {
+            document.getElementById('teacherModalTitle').textContent = 'New Teacher';
+            document.getElementById('teacherId').value = '';
+            document.getElementById('teacherUsername').value = '';
+            document.getElementById('teacherUsername').disabled = false;
+            document.getElementById('teacherName').value = '';
+            document.getElementById('teacherPassword').value = '';
+            document.getElementById('teacherPwLabel').textContent = 'Password *';
+            document.getElementById('teacherPwHint').textContent = 'Teacher must change this on first login.';
+            renderBatchChecks([]);
+            document.getElementById('teacherModal').classList.add('active');
+        }
+
+        function editTeacher(id) {
+            const t = (window._teachersCache || []).find(x => x.id === id);
+            if (!t) return;
+            document.getElementById('teacherModalTitle').textContent = 'Edit Teacher';
+            document.getElementById('teacherId').value = t.id;
+            document.getElementById('teacherUsername').value = t.username;
+            document.getElementById('teacherUsername').disabled = true;
+            document.getElementById('teacherName').value = t.name || '';
+            document.getElementById('teacherPassword').value = '';
+            document.getElementById('teacherPwLabel').textContent = 'Reset Password';
+            document.getElementById('teacherPwHint').textContent = 'Leave blank to keep the current password.';
+            renderBatchChecks(t.batches.map(b => b.id));
+            document.getElementById('teacherModal').classList.add('active');
+        }
+
+        async function saveTeacher() {
+            const id = document.getElementById('teacherId').value;
+            const batch_ids = Array.from(document.querySelectorAll('#teacherBatchChecks input:checked')).map(i => parseInt(i.value));
+            const username = document.getElementById('teacherUsername').value.trim();
+            const name = document.getElementById('teacherName').value.trim();
+            const password = document.getElementById('teacherPassword').value;
+
+            if (!id && (!username || !password)) { toast('Username and password are required', 'error'); return; }
+
+            const btn = document.getElementById('teacherSaveBtn'); btn.disabled = true;
+            try {
+                let res;
+                if (id) {
+                    const payload = { name, batch_ids };
+                    if (password) payload.password = password;
+                    res = await fetch('/api/teachers/' + id, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                    });
+                } else {
+                    res = await fetch('/api/teachers', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, name, password, batch_ids })
+                    });
+                }
+                const data = await res.json();
+                if (data.success) { toast(data.message); closeModal('teacherModal'); loadTeachers(); }
+                else toast(data.message || 'Failed', 'error');
+            } finally { btn.disabled = false; }
+        }
+
+        async function deleteTeacher(id, username) {
+            if (!confirm(`Delete teacher "${username}"?`)) return;
+            const res = await fetch('/api/teachers/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Deleted' : 'Failed'), data.success ? 'success' : 'error');
+            loadTeachers();
+        }
+
+        async function performLogout() {
+            if (!confirm('Log out?')) return;
+            try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (e) { }
+            window.location.href = '/login';
+        }
+
+        // init
+        (async function () { await loadTeachersCache(); await loadBatches(); await loadTeachers(); })();
+    </script>
+</body>
+
+</html>

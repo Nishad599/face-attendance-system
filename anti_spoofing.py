@@ -25,16 +25,29 @@ except ImportError:
 class AntiSpoofChecker:
     """MiniFASNetV2-based passive liveness detection."""
 
-    def __init__(self, model_path=None, threshold=0.45, scale=2.7):
+    def __init__(self, model_path=None, threshold=None, scale=2.7):
         """
         Args:
             model_path: Path to MiniFASNetV2.onnx. Auto-detected if None.
             threshold: Minimum "Real" score to pass liveness (0-1).
+                       Defaults to the ANTISPOOF_THRESHOLD env var, else 0.45.
             scale: Bounding box expansion factor (2.7 for MiniFASNetV2).
         """
+        # Allow disabling liveness entirely (e.g. bad lighting blocking real faces).
+        # Set env ANTISPOOF_DISABLED=1 to bypass the check (fail-open).
+        self.disabled = os.getenv("ANTISPOOF_DISABLED", "").strip() in ("1", "true", "True", "yes")
+        if threshold is None:
+            try:
+                threshold = float(os.getenv("ANTISPOOF_THRESHOLD", "0.45"))
+            except ValueError:
+                threshold = 0.45
         self.threshold = threshold
         self.scale = scale
         self.ready = False
+
+        if self.disabled:
+            print("[WARN] Anti-spoofing DISABLED via ANTISPOOF_DISABLED — all faces pass liveness")
+            return
 
         if not ONNX_AVAILABLE or not CV2_AVAILABLE:
             print("[WARN] Anti-spoofing disabled: missing onnxruntime or cv2")
@@ -138,6 +151,9 @@ class AntiSpoofChecker:
                 - score (float): The "Real" confidence score (0-1).
                 - label (str): "Real" or "Spoof".
         """
+        if self.disabled:
+            return {"is_real": True, "score": 1.0, "label": "Real (liveness off)"}
+
         if not self.ready:
             # Fail-open: if model not loaded, allow through
             return {"is_real": True, "score": 1.0, "label": "Real (unchecked)"}

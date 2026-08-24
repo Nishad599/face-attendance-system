@@ -437,7 +437,11 @@
             <div id="overview-tab" class="tab-content active">
                 <div class="date-filter-row">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <label style="font-weight: 500; font-size: 0.875rem;">Range:</label>
+                        <label style="font-weight: 500; font-size: 0.875rem;">Batch:</label>
+                        <select id="analyticsBatch" class="app-select" onchange="loadClassAnalytics()">
+                            <option value="">All batches</option>
+                        </select>
+                        <label style="font-weight: 500; font-size: 0.875rem; margin-left: 0.75rem;">Range:</label>
                         <select id="overviewDateRange" class="app-select" onchange="loadClassAnalytics()">
                             <option value="7">Last 7 Days</option>
                             <option value="14" selected>Last 14 Days</option>
@@ -1443,18 +1447,35 @@
         let dayOfWeekChart = null;
         let sparklineChart = null;
 
+        async function ensureAnalyticsBatches() {
+            const sel = document.getElementById('analyticsBatch');
+            if (sel.dataset.loaded) return;
+            try {
+                const r = await fetch('/api/courses');
+                const d = await r.json();
+                (d.courses || []).filter(b => b.is_active).forEach(b => {
+                    const o = document.createElement('option');
+                    o.value = b.id; o.textContent = b.name; sel.appendChild(o);
+                });
+                sel.dataset.loaded = '1';
+            } catch (e) { }
+        }
+
         async function loadClassAnalytics() {
+            await ensureAnalyticsBatches();
             const range = document.getElementById('overviewDateRange').value;
+            const cid = document.getElementById('analyticsBatch').value;
+            const cq = cid ? `&course_id=${cid}` : '';
             const loader = document.getElementById('loadingIndicator');
             if (loader) loader.style.display = 'block';
 
             try {
                 // Parallel requests for better performance
                 const [classRes, heatmapRes, dayOfWeekRes, atRiskRes] = await Promise.all([
-                    fetch(`/api/attendance/analytics/class?days=${range}`),
-                    fetch(`/api/analytics/heatmap?days=90`),
-                    fetch(`/api/analytics/day-of-week?days=60`),
-                    fetch(`/api/analytics/at-risk?threshold=75`)
+                    fetch(`/api/attendance/analytics/class?days=${range}${cq}`),
+                    fetch(`/api/analytics/heatmap?days=90${cq}`),
+                    fetch(`/api/analytics/day-of-week?days=60${cq}`),
+                    fetch(`/api/analytics/at-risk?threshold=75${cq}`)
                 ]);
 
                 const classData = await classRes.json();

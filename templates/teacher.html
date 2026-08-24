@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Portal — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <style>
+        body { background: var(--bg-page); }
+        .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
+        .controls .app-form-group { margin-bottom: 0; }
+        .controls select, .controls input { min-width: 160px; }
+        .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .pill { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px;
+            padding: 10px 16px; min-width: 90px; }
+        .pill .n { font-size: 1.4rem; font-weight: 700; }
+        .pill .l { font-size: .75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .4px; }
+        .bulkbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .muted { color: var(--text-secondary); }
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg);
+            padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
+        .card h2 { margin: 0 0 16px; font-size: 1.05rem; }
+        .inline-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+        .chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding-top: 10px; }
+        .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+        .chart .col .bar { width: 70%; min-height: 2px; background: var(--color-primary); border-radius: 4px 4px 0 0; transition: height .3s; }
+        .chart .col .bar.off { background: #C1C7D0; }
+        .chart .col .cap { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; }
+        .chart .col .val { font-size: .72rem; font-weight: 600; }
+        @media (max-width:820px){ #tab-analytics > div[style*="grid"]{ grid-template-columns:1fr !important; } }
+    </style>
+</head>
+
+<body>
+    <nav class="app-navbar">
+        <a href="/teacher" class="app-navbar-brand"><i class="fa-solid fa-chalkboard-user"></i> Teacher Portal</a>
+        <div class="app-navbar-actions">
+            <a class="app-btn app-btn-subtle app-btn-sm" href="/change-password"><i class="fa-solid fa-key"></i> Password</a>
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <div class="app-page-header">
+            <h1>Welcome, {{ user_name }}</h1>
+            <p class="muted">Manage attendance, holidays and onboarding for your assigned batches.</p>
+        </div>
+
+        <div class="app-form-group" style="max-width:320px;">
+            <label class="app-form-label">Batch</label>
+            <select id="batchSelect" class="app-form-input" onchange="onBatchChange()"></select>
+        </div>
+
+        <div class="app-tabs">
+            <button class="app-tab active" data-tab="mark" onclick="switchTab('mark')">Mark Attendance</button>
+            <button class="app-tab" data-tab="analytics" onclick="switchTab('analytics')">Analytics</button>
+            <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
+            <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
+            <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
+        </div>
+
+        <!-- ===== MARK ATTENDANCE ===== -->
+        <div id="tab-mark">
+            <div class="controls">
+                <div class="app-form-group">
+                    <label class="app-form-label">Date</label>
+                    <input type="date" id="markDate" class="app-form-input" onchange="loadRoster()">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">Session</label>
+                    <select id="markSession" class="app-form-input" onchange="loadRoster()">
+                        <option value="">Whole day</option>
+                        <option value="morning_1">Morning 1</option>
+                        <option value="morning_2">Morning 2</option>
+                        <option value="afternoon_1">Afternoon 1</option>
+                        <option value="afternoon_2">Afternoon 2</option>
+                    </select>
+                </div>
+                <button class="app-btn app-btn-subtle" onclick="loadRoster()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+
+            <div class="summary" id="markSummary"></div>
+
+            <div class="bulkbar">
+                <button class="app-btn app-btn-success app-btn-sm" onclick="bulkMark('present', false)"><i class="fa-solid fa-check-double"></i> Mark ALL present</button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="bulkMark('absent', false)"><i class="fa-solid fa-xmark"></i> Mark ALL absent</button>
+                <span style="width:1px;background:var(--border-color);"></span>
+                <button class="app-btn app-btn-success app-btn-sm" onclick="bulkMark('present', true)">Mark selected present</button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="bulkMark('absent', true)">Mark selected absent</button>
+            </div>
+
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;"><input type="checkbox" id="selAll" onchange="toggleAll(this)"></th>
+                            <th>Roll No</th><th>Name</th><th>Face</th><th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rosterRows"><tr><td colspan="5" class="muted">Select a batch…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== ANALYTICS ===== -->
+        <div id="tab-analytics" style="display:none;">
+            <div class="summary" id="anSummary"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                <div class="card"><h2>Attendance trend (14 days)</h2><div id="anTrend" class="chart"></div></div>
+                <div class="card"><h2>By day of week</h2><div id="anDow" class="chart"></div></div>
+            </div>
+            <div class="card">
+                <h2>At-risk students (&lt; 75%)</h2>
+                <div id="anAtRisk"></div>
+            </div>
+            <div class="card" style="margin-bottom:0;">
+                <h2>All students</h2>
+                <div class="app-table-wrapper">
+                    <table class="app-table">
+                        <thead><tr><th>Roll No</th><th>Name</th><th>Present</th><th>Rate</th></tr></thead>
+                        <tbody id="anPerStudent"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== GRIEVANCES ===== -->
+        <div id="tab-grievances" style="display:none;">
+            <div class="controls">
+                <div class="app-form-group">
+                    <label class="app-form-label">Show</label>
+                    <select id="grStatus" class="app-form-input" onchange="loadGrievances()">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <button class="app-btn app-btn-subtle" onclick="loadGrievances()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <div class="bulkbar" id="grBulkbar" style="display:none;">
+                <button class="app-btn app-btn-success app-btn-sm" onclick="actGrievances('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="actGrievances('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;" id="grSelAllCell"><input type="checkbox" id="grSelAll" onchange="grToggleAll(this)"></th>
+                            <th>Roll No</th><th>Name</th><th>Date</th><th>Session</th><th>Reason</th><th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="grievanceRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== HOLIDAYS ===== -->
+        <div id="tab-holidays" style="display:none;">
+            <div class="card">
+                <h2>Declare a holiday</h2>
+                <div class="inline-form">
+                    <div class="app-form-group"><label class="app-form-label">Date</label><input type="date" id="holDate" class="app-form-input"></div>
+                    <div class="app-form-group"><label class="app-form-label">Name</label><input type="text" id="holName" class="app-form-input" placeholder="e.g. Independence Day"></div>
+                    <div class="app-form-group"><label class="app-form-label">Applies to</label>
+                        <select id="holScope" class="app-form-input">
+                            <option value="batch">This batch only</option>
+                            <option value="all">All batches</option>
+                        </select>
+                    </div>
+                    <button class="app-btn app-btn-primary" onclick="addHoliday()"><i class="fa-solid fa-plus"></i> Add</button>
+                </div>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr><th>Date</th><th>Name</th><th>Batch</th><th></th></tr></thead>
+                    <tbody id="holidayRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== STUDENTS ===== -->
+        <div id="tab-students" style="display:none;">
+            <div class="card">
+                <h2>Bulk upload students (CSV)</h2>
+                <p class="muted">Upload student details; faces are registered later. Include a <code>batch</code> column
+                    matching one of your assigned batches.</p>
+                <div class="inline-form">
+                    <button class="app-btn app-btn-subtle" onclick="downloadTemplate()"><i class="fa-solid fa-download"></i> Template</button>
+                    <input type="file" id="csvFile" accept=".csv" class="app-form-input" style="max-width:280px;">
+                    <button class="app-btn app-btn-primary" onclick="uploadCsv()"><i class="fa-solid fa-upload"></i> Upload</button>
+                </div>
+                <div id="uploadMsg" class="muted" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card" style="margin-bottom:0;">
+                <h2>Pending face registration</h2>
+                <div class="app-table-wrapper">
+                    <table class="app-table">
+                        <thead><tr><th>Roll No</th><th>Name</th><th>Batch</th><th>DOB</th><th>Action</th></tr></thead>
+                        <tbody id="pendingRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="app-toast" id="toast" style="display:none;"></div>
+
+    <script>
+        let batches = [];
+        function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+        function toast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'app-toast app-toast-' + (type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'));
+            t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3200);
+        }
+        function currentBatch() { return parseInt(document.getElementById('batchSelect').value) || null; }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+            ['mark', 'analytics', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            if (tab === 'holidays') loadHolidays();
+            if (tab === 'students') loadPending();
+            if (tab === 'grievances') loadGrievances();
+            if (tab === 'analytics') loadAnalytics();
+        }
+
+        // ---------- Analytics ----------
+        async function loadAnalytics() {
+            const cid = currentBatch(); if (!cid) return;
+            const res = await fetch(`/api/teacher/batch/${cid}/analytics`);
+            const data = await res.json();
+            if (!data.success) { document.getElementById('anSummary').innerHTML = `<span class="muted">${esc(data.message || 'Failed')}</span>`; return; }
+
+            const s = data.summary;
+            document.getElementById('anSummary').innerHTML = `
+                <div class="pill"><div class="n">${s.total_students}</div><div class="l">Students</div></div>
+                <div class="pill"><div class="n">${s.avg_rate}%</div><div class="l">Avg attendance</div></div>
+                <div class="pill"><div class="n" style="color:#FF5630;">${s.at_risk_count}</div><div class="l">At risk</div></div>
+                <div class="pill"><div class="n">${s.working_days}</div><div class="l">Working days</div></div>`;
+
+            // Trend chart (present counts) — scale to max
+            const trend = data.trend || [];
+            const maxT = Math.max(1, ...trend.map(t => t.present));
+            document.getElementById('anTrend').innerHTML = trend.map(t => {
+                const h = Math.round(t.present / maxT * 130);
+                return `<div class="col" title="${t.date}: ${t.present} present">
+                    <div class="val">${t.present}</div>
+                    <div class="bar ${t.is_off ? 'off' : ''}" style="height:${h}px"></div>
+                    <div class="cap">${t.date.slice(5)}</div></div>`;
+            }).join('');
+
+            // Day-of-week rate chart
+            const dow = data.day_of_week || [];
+            document.getElementById('anDow').innerHTML = dow.map(d => {
+                const h = Math.round(d.rate / 100 * 130);
+                return `<div class="col" title="${d.day}: ${d.rate}%">
+                    <div class="val">${d.rate}%</div>
+                    <div class="bar" style="height:${h}px"></div>
+                    <div class="cap">${d.day}</div></div>`;
+            }).join('');
+
+            // At-risk
+            const risk = data.at_risk || [];
+            document.getElementById('anAtRisk').innerHTML = risk.length
+                ? risk.map(r => `<span class="app-badge app-badge-danger" style="margin:3px;">${esc(r.name)} · ${r.rate}%</span>`).join(' ')
+                : '<span class="muted">No students below 75%. 🎉</span>';
+
+            // Per-student table
+            const ps = data.per_student || [];
+            const tb = document.getElementById('anPerStudent');
+            tb.innerHTML = ps.length ? ps.map(p => `
+                <tr>
+                    <td><strong>${esc(p.student_id)}</strong></td>
+                    <td>${esc(p.name)}</td>
+                    <td>${p.present_days}/${p.working_days}</td>
+                    <td><span class="app-badge ${p.rate < 75 ? 'app-badge-danger' : (p.rate < 85 ? 'app-badge-warning' : 'app-badge-success')}">${p.rate}%</span></td>
+                </tr>`).join('') : '<tr><td colspan="4" class="muted">No students.</td></tr>';
+        }
+
+        // ---------- Grievances ----------
+        async function loadGrievances() {
+            const status = document.getElementById('grStatus').value;
+            const tbody = document.getElementById('grievanceRows');
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+            const res = await fetch('/api/teacher/grievances?status=' + status);
+            const data = await res.json();
+            const g = data.grievances || [];
+            const isPending = status === 'pending';
+            document.getElementById('grBulkbar').style.display = isPending && g.length ? 'flex' : 'none';
+            document.getElementById('grSelAllCell').style.visibility = isPending ? 'visible' : 'hidden';
+            if (!g.length) { tbody.innerHTML = `<tr><td colspan="7" class="muted">No ${status} requests.</td></tr>`; return; }
+            tbody.innerHTML = g.map(x => `
+                <tr>
+                    <td>${isPending ? `<input type="checkbox" class="grchk" value="${x.id}">` : ''}</td>
+                    <td><strong>${esc(x.roll_no)}</strong></td>
+                    <td>${esc(x.student_name)}</td>
+                    <td>${esc(x.date)}</td>
+                    <td>${esc(x.session_type)}</td>
+                    <td>${esc(x.reason)}</td>
+                    <td>${isPending ? `<div class="row-actions">
+                        <button class="app-btn app-btn-success app-btn-sm" onclick="actGrievances('approve', false, ${x.id})">Approve</button>
+                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actGrievances('reject', false, ${x.id})">Reject</button>
+                    </div>` : `<span class="app-badge ${x.status === 'approved' ? 'app-badge-success' : 'app-badge-danger'}">${esc(x.status)}</span>`}</td>
+                </tr>`).join('');
+            document.getElementById('grSelAll').checked = false;
+        }
+        function grToggleAll(cb) { document.querySelectorAll('.grchk').forEach(c => c.checked = cb.checked); }
+        async function actGrievances(action, selectedOnly, singleId) {
+            let ids;
+            if (singleId) ids = [singleId];
+            else {
+                ids = Array.from(document.querySelectorAll('.grchk:checked')).map(c => parseInt(c.value));
+                if (!ids.length) { toast('No requests selected', 'error'); return; }
+            }
+            const verb = action === 'approve' ? 'Approve' : 'Reject';
+            if (!confirm(`${verb} ${ids.length} request(s)?` + (action === 'approve' ? ' They will be marked present.' : ''))) return;
+            const res = await fetch('/api/teacher/grievances/action', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, action })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) loadGrievances();
+        }
+
+        async function init() {
+            document.getElementById('markDate').value = new Date().toISOString().slice(0, 10);
+            const res = await fetch('/api/courses');
+            const data = await res.json();
+            batches = (data.courses || []).filter(c => c.is_active);
+            const sel = document.getElementById('batchSelect');
+            if (!batches.length) { sel.innerHTML = '<option value="">No batches assigned</option>'; document.getElementById('rosterRows').innerHTML = '<tr><td colspan="5" class="muted">No batches assigned. Ask an admin.</td></tr>'; return; }
+            sel.innerHTML = batches.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+            loadRoster();
+        }
+        function onBatchChange() {
+            loadRoster();
+            if (document.getElementById('tab-holidays').style.display !== 'none') loadHolidays();
+            if (document.getElementById('tab-students').style.display !== 'none') loadPending();
+            if (document.getElementById('tab-analytics').style.display !== 'none') loadAnalytics();
+            if (document.getElementById('tab-grievances').style.display !== 'none') loadGrievances();
+        }
+
+        // ---------- Mark attendance ----------
+        async function loadRoster() {
+            const cid = currentBatch(); if (!cid) return;
+            const date = document.getElementById('markDate').value;
+            const tbody = document.getElementById('rosterRows');
+            tbody.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+            const res = await fetch(`/api/teacher/batch/${cid}/students?date=${date}`);
+            const data = await res.json();
+            if (!data.success) { tbody.innerHTML = `<tr><td colspan="5" class="muted">${esc(data.message || 'Failed')}</td></tr>`; return; }
+
+            const s = data.summary;
+            document.getElementById('markSummary').innerHTML = `
+                <div class="pill"><div class="n">${s.total}</div><div class="l">Students</div></div>
+                <div class="pill"><div class="n" style="color:#36B37E;">${s.present}</div><div class="l">Present</div></div>
+                <div class="pill"><div class="n" style="color:#FF5630;">${s.absent}</div><div class="l">Absent</div></div>
+                <div class="pill"><div class="n">${s.rate}%</div><div class="l">Rate</div></div>`;
+
+            if (!data.students.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">No students in this batch.</td></tr>'; return; }
+            tbody.innerHTML = data.students.map(st => `
+                <tr>
+                    <td><input type="checkbox" class="rowchk" value="${st.id}"></td>
+                    <td><strong>${esc(st.student_id)}</strong></td>
+                    <td>${esc(st.name)}</td>
+                    <td>${st.has_face ? '<span class="app-badge app-badge-success">Yes</span>' : '<span class="app-badge app-badge-neutral">No</span>'}</td>
+                    <td>${st.present ? '<span class="app-badge app-badge-success">Present</span>' : '<span class="app-badge app-badge-danger">Absent</span>'}</td>
+                </tr>`).join('');
+            document.getElementById('selAll').checked = false;
+        }
+
+        function toggleAll(cb) { document.querySelectorAll('.rowchk').forEach(c => c.checked = cb.checked); }
+
+        async function bulkMark(status, selectedOnly) {
+            const cid = currentBatch(); if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const date = document.getElementById('markDate').value;
+            const session_type = document.getElementById('markSession').value || null;
+            let student_ids = null;
+            if (selectedOnly) {
+                student_ids = Array.from(document.querySelectorAll('.rowchk:checked')).map(c => parseInt(c.value));
+                if (!student_ids.length) { toast('No students selected', 'error'); return; }
+            }
+            const scopeTxt = session_type ? session_type.replace('_', ' ') : 'the whole day';
+            const whoTxt = selectedOnly ? `${student_ids.length} selected student(s)` : 'ALL students';
+            if (!confirm(`Mark ${whoTxt} ${status.toUpperCase()} on ${date} for ${scopeTxt}?`)) return;
+
+            const res = await fetch('/api/attendance/bulk-mark', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ course_id: cid, date, status, session_type, student_ids })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) loadRoster();
+        }
+
+        // ---------- Holidays ----------
+        async function loadHolidays() {
+            const res = await fetch('/api/holidays');
+            const data = await res.json();
+            const tbody = document.getElementById('holidayRows');
+            const hols = data.holidays || [];
+            if (!hols.length) { tbody.innerHTML = '<tr><td colspan="4" class="muted">No holidays yet.</td></tr>'; return; }
+            tbody.innerHTML = hols.map(h => `
+                <tr>
+                    <td>${esc(h.date)}</td>
+                    <td>${esc(h.name)}</td>
+                    <td>${esc(h.batch || 'All batches')}</td>
+                    <td><button class="app-btn app-btn-danger app-btn-sm" onclick="delHoliday(${h.id})"><i class="fa-solid fa-trash"></i></button></td>
+                </tr>`).join('');
+        }
+        async function addHoliday() {
+            const date = document.getElementById('holDate').value;
+            const name = document.getElementById('holName').value.trim();
+            const scope = document.getElementById('holScope').value;
+            if (!date || !name) { toast('Date and name are required', 'error'); return; }
+            const course_id = scope === 'batch' ? currentBatch() : null;
+            const res = await fetch('/api/holidays', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date, name, type: 'holiday', course_id })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Added' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) { document.getElementById('holName').value = ''; loadHolidays(); }
+        }
+        async function delHoliday(id) {
+            if (!confirm('Delete this holiday?')) return;
+            const res = await fetch('/api/holidays/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Deleted' : 'Failed'), data.success ? 'success' : 'error');
+            loadHolidays();
+        }
+
+        // ---------- Students ----------
+        async function downloadTemplate() {
+            const res = await fetch('/api/students/bulk-upload/template');
+            const blob = await res.blob();
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = 'student_template.csv'; a.click(); URL.revokeObjectURL(a.href);
+        }
+        async function uploadCsv() {
+            const f = document.getElementById('csvFile').files[0];
+            if (!f) { toast('Choose a CSV file', 'error'); return; }
+            const fd = new FormData(); fd.append('file', f);
+            document.getElementById('uploadMsg').textContent = 'Uploading…';
+            const res = await fetch('/api/students/bulk-upload', { method: 'POST', body: fd });
+            const data = await res.json();
+            document.getElementById('uploadMsg').innerHTML = esc(data.message || '') +
+                (data.errors && data.errors.length ? '<br><span style="color:#BF2600;">' + data.errors.map(esc).join('<br>') + '</span>' : '');
+            if (data.success) { document.getElementById('csvFile').value = ''; loadPending(); }
+        }
+        async function loadPending() {
+            const res = await fetch('/api/students/pending');
+            const data = await res.json();
+            const tbody = document.getElementById('pendingRows');
+            const pending = data.pending || [];
+            if (!pending.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">Nobody awaiting face registration.</td></tr>'; return; }
+            tbody.innerHTML = pending.map(s => {
+                const url = '/register?student_id=' + encodeURIComponent(s.student_id) + '&name=' + encodeURIComponent(s.name) + '&email=' + encodeURIComponent(s.email);
+                return `<tr><td><strong>${esc(s.student_id)}</strong></td><td>${esc(s.name)}</td>
+                    <td><span class="app-badge app-badge-info">${esc(s.batch)}</span></td><td>${esc(s.dob || '—')}</td>
+                    <td><a class="app-btn app-btn-primary app-btn-sm" href="${url}"><i class="fa-solid fa-camera"></i> Register Face</a></td></tr>`;
+            }).join('');
+        }
+
+        async function logout() {
+            if (!confirm('Log out?')) return;
+            try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (e) { }
+            window.location.href = '/login';
+        }
+
+        init();
+    </script>
+</body>
+
+</html>

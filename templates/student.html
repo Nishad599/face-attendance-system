@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Attendance — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <style>
+        body { background: var(--bg-page); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg);
+            padding: 20px; box-shadow: var(--shadow-sm); }
+        .stat-card .big { font-size: 2.2rem; font-weight: 700; line-height: 1; margin: 4px 0; }
+        .stat-card .lbl { color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; letter-spacing: .4px; }
+        .ring { --pct: 0; width: 120px; height: 120px; border-radius: 50%;
+            background: conic-gradient(var(--color-primary) calc(var(--pct) * 1%), #E4E7EB 0);
+            display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+        .ring-inner { width: 92px; height: 92px; border-radius: 50%; background: var(--bg-card);
+            display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .ring-inner b { font-size: 1.6rem; }
+        .muted { color: var(--text-secondary); }
+        .spark { display: flex; gap: 5px; align-items: flex-end; height: 44px; }
+        .spark .bar { flex: 1; border-radius: 3px; min-width: 8px; }
+        .spark .p { background: #36B37E; height: 100%; }
+        .spark .a { background: #FF5630; height: 40%; }
+        .spark .h { background: #C1C7D0; height: 20%; }
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg);
+            padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 24px; }
+        .card h2 { margin: 0 0 16px; font-size: 1.1rem; }
+        .banner { background: #FFFAE6; border: 1px solid #FFC400; color: #7A5B00; padding: 14px 18px;
+            border-radius: var(--border-radius); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+    </style>
+</head>
+
+<body>
+    <nav class="app-navbar">
+        <a href="/student" class="app-navbar-brand"><i class="fa-solid fa-users-viewfinder"></i> CDAC Attendance</a>
+        <div class="app-navbar-actions">
+            <a class="app-btn app-btn-subtle app-btn-sm" href="/change-password"><i class="fa-solid fa-key"></i> Password</a>
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+        </div>
+    </nav>
+
+    <div class="app-page">
+        <div class="app-page-header">
+            <h1 id="greeting">My Attendance</h1>
+            <p id="subhead" class="muted"></p>
+        </div>
+
+        <div id="faceBanner" class="banner" style="display:none;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <div>Your face isn't registered yet, so you can't be marked automatically. Please visit the
+                attendance desk to complete face registration.</div>
+        </div>
+
+        <div class="grid">
+            <div class="stat-card" style="text-align:center;">
+                <div class="lbl">Attendance</div>
+                <div class="ring" id="ring"><div class="ring-inner"><b id="ratePct">—</b><span class="muted" style="font-size:.75rem;">present</span></div></div>
+            </div>
+            <div class="stat-card"><div class="lbl">Present Days</div><div class="big" id="presentDays">—</div><span class="muted">days marked present</span></div>
+            <div class="stat-card"><div class="lbl">Absent Days</div><div class="big" id="absentDays">—</div><span class="muted">working days missed</span></div>
+            <div class="stat-card"><div class="lbl">Working Days</div><div class="big" id="workingDays">—</div><span class="muted" id="sinceLbl"></span></div>
+        </div>
+
+        <div class="card">
+            <h2>Last 14 days</h2>
+            <div class="spark" id="spark"></div>
+            <p class="muted" style="margin:12px 0 0;font-size:.85rem;">
+                <span style="color:#36B37E;">■</span> Present &nbsp;
+                <span style="color:#FF5630;">■</span> Absent &nbsp;
+                <span style="color:#C1C7D0;">■</span> Holiday / Sunday
+            </p>
+        </div>
+
+        <div class="card">
+            <h2>Recent attendance</h2>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr><th>Date</th><th>Time In</th><th>Session</th><th>Type</th></tr></thead>
+                    <tbody id="historyRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Attendance dispute</h2>
+            <p class="muted" style="margin-top:-8px;">Were you present but not marked? Raise a request (last 30 days). Your teacher will review it.</p>
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Date</label>
+                    <input type="date" id="grDate" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Session</label>
+                    <select id="grSession" class="app-form-input">
+                        <option value="">Whole day</option>
+                        <option value="morning_1">Morning 1</option>
+                        <option value="morning_2">Morning 2</option>
+                        <option value="afternoon_1">Afternoon 1</option>
+                        <option value="afternoon_2">Afternoon 2</option>
+                    </select>
+                </div>
+                <div class="app-form-group" style="margin:0;flex:1;min-width:220px;">
+                    <label class="app-form-label">Reason</label>
+                    <input type="text" id="grReason" class="app-form-input" placeholder="e.g. Camera didn't recognise me">
+                </div>
+                <button class="app-btn app-btn-primary" onclick="submitGrievance()">Submit</button>
+            </div>
+            <div id="grMsg" class="muted" style="margin-top:10px;"></div>
+
+            <div class="app-table-wrapper" style="margin-top:16px;">
+                <table class="app-table">
+                    <thead><tr><th>Date</th><th>Session</th><th>Reason</th><th>Status</th></tr></thead>
+                    <tbody id="grievanceRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+        async function load() {
+            const res = await fetch('/api/student/me');
+            const data = await res.json();
+            if (!data.success) { document.getElementById('subhead').textContent = data.message || 'Failed to load'; return; }
+
+            const p = data.profile, s = data.summary;
+            document.getElementById('greeting').textContent = 'Hi, ' + p.name.split(' ')[0];
+            document.getElementById('subhead').textContent = `Roll ${p.student_id} · ${p.batch}`;
+
+            document.getElementById('ratePct').textContent = s.attendance_rate + '%';
+            document.getElementById('ring').style.setProperty('--pct', s.attendance_rate);
+            document.getElementById('presentDays').textContent = s.present_days;
+            document.getElementById('absentDays').textContent = s.absent_days;
+            document.getElementById('workingDays').textContent = s.working_days;
+            document.getElementById('sinceLbl').textContent = 'since ' + s.since;
+
+            if (!p.has_face) document.getElementById('faceBanner').style.display = 'flex';
+
+            // sparkline
+            const spark = document.getElementById('spark');
+            spark.innerHTML = data.sparkline.map(d => {
+                const cls = d.value === 1 ? 'p' : (d.value === 0 ? 'a' : 'h');
+                const label = d.value === 1 ? 'Present' : (d.value === 0 ? 'Absent' : 'Holiday/Sunday');
+                return `<div class="bar ${cls}" title="${d.date}: ${label}"></div>`;
+            }).join('');
+
+            // history
+            const tbody = document.getElementById('historyRows');
+            if (!data.recent.length) {
+                tbody.innerHTML = '<tr><td colspan="4" class="muted">No attendance recorded yet.</td></tr>';
+            } else {
+                tbody.innerHTML = data.recent.map(r => `
+                    <tr>
+                        <td>${esc(r.date)}</td>
+                        <td>${esc(r.time_in || '—')}</td>
+                        <td>${esc(r.session_type || '—')}</td>
+                        <td>${r.is_manual ? '<span class="app-badge app-badge-info">Manual</span>' : (r.is_late ? '<span class="app-badge app-badge-warning">Late</span>' : '<span class="app-badge app-badge-success">Present</span>')}</td>
+                    </tr>`).join('');
+            }
+        }
+
+        const statusBadge = { pending: 'app-badge-warning', approved: 'app-badge-success', rejected: 'app-badge-danger' };
+
+        async function loadGrievances() {
+            const res = await fetch('/api/student/grievances');
+            const data = await res.json();
+            const tbody = document.getElementById('grievanceRows');
+            const g = data.grievances || [];
+            if (!g.length) { tbody.innerHTML = '<tr><td colspan="4" class="muted">No requests yet.</td></tr>'; return; }
+            tbody.innerHTML = g.map(x => `
+                <tr>
+                    <td>${esc(x.date)}</td>
+                    <td>${esc(x.session_type)}</td>
+                    <td>${esc(x.reason)}${x.review_note ? '<br><span class="muted">Note: ' + esc(x.review_note) + '</span>' : ''}</td>
+                    <td><span class="app-badge ${statusBadge[x.status] || 'app-badge-neutral'}">${esc(x.status)}</span></td>
+                </tr>`).join('');
+        }
+
+        async function submitGrievance() {
+            const date = document.getElementById('grDate').value;
+            const session_type = document.getElementById('grSession').value || null;
+            const reason = document.getElementById('grReason').value.trim();
+            const msg = document.getElementById('grMsg');
+            if (!date || !reason) { msg.style.color = '#BF2600'; msg.textContent = 'Date and reason are required.'; return; }
+            const res = await fetch('/api/student/grievance', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date, session_type, reason })
+            });
+            const data = await res.json();
+            msg.style.color = data.success ? '#006644' : '#BF2600';
+            msg.textContent = data.message || '';
+            if (data.success) { document.getElementById('grReason').value = ''; loadGrievances(); }
+        }
+
+        async function logout() {
+            if (!confirm('Log out?')) return;
+            try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (e) { }
+            window.location.href = '/login';
+        }
+
+        // Default grievance date to today, cap to last 30 days
+        (function initGrievanceDate() {
+            const t = new Date(); const el = document.getElementById('grDate');
+            el.value = t.toISOString().slice(0, 10); el.max = t.toISOString().slice(0, 10);
+            const min = new Date(t.getTime() - 30 * 86400000); el.min = min.toISOString().slice(0, 10);
+        })();
+
+        load();
+        loadGrievances();
+    </script>
+</body>
+
+</html>

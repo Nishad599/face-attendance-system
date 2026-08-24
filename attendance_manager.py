@@ -239,64 +239,61 @@ class AttendanceSlotManager:
         
         return next_slot
     
-    def update_session_timing(self, session_type: str, start_time: str, end_time: str):
-        """Update session timing in session_configs table"""
+    def update_session_timing(self, session_type: str, start_time: str, end_time: str, course_id=None):
+        """Update session timing in session_configs table (optionally scoped to a batch)."""
         try:
             cursor = self.conn.cursor()
-            
+
             # Validate time format and logic
             try:
                 start_time_obj = datetime.strptime(start_time, '%H:%M').time()
                 end_time_obj = datetime.strptime(end_time, '%H:%M').time()
             except ValueError:
                 return False, "Invalid time format. Use HH:MM format."
-            
+
             if start_time_obj >= end_time_obj:
                 return False, "Start time must be before end time"
-            
-            # Check for overlapping slots
-            other_session = 'afternoon' if session_type == 'morning' else 'morning'
-            cursor.execute('''
-                SELECT start_time, end_time FROM session_configs 
-                WHERE session_type = ? AND is_active = 1
-            ''', (other_session,))
-            
-            other_row = cursor.fetchone()
-            if other_row:
-                other_start = datetime.strptime(other_row[0], '%H:%M:%S').time()
-                other_end = datetime.strptime(other_row[1], '%H:%M:%S').time()
-                
-                # Check for overlap
-                if not (end_time_obj <= other_start or start_time_obj >= other_end):
-                    return False, f"Time slot overlaps with {other_session} session"
-            
-            # Update existing session_configs table
-            cursor.execute('''
-                UPDATE session_configs 
-                SET start_time = ?, end_time = ?
-                WHERE session_type = ? AND is_active = 1
-            ''', (start_time + ':00', end_time + ':00', session_type))
-            
+
+            # Update session_configs (scoped to a course when given)
+            if course_id is not None:
+                cursor.execute('''
+                    UPDATE session_configs
+                    SET start_time = ?, end_time = ?
+                    WHERE session_type = ? AND course_id = ?
+                ''', (start_time + ':00', end_time + ':00', session_type, course_id))
+            else:
+                cursor.execute('''
+                    UPDATE session_configs
+                    SET start_time = ?, end_time = ?
+                    WHERE session_type = ? AND is_active = 1
+                ''', (start_time + ':00', end_time + ':00', session_type))
+
             if cursor.rowcount > 0:
                 self.conn.commit()
-                # Reload configuration
                 self.reload_config()
-                return True, f"Session '{session_type}' updated successfully to {start_time}-{end_time}"
+                return True, f"Session '{session_type}' updated to {start_time}-{end_time}"
             else:
                 return False, "Session not found"
-                
+
         except Exception as e:
             logger.error(f"Error updating session timing: {str(e)}")
             return False, f"Error updating session: {str(e)}"
-    
-    def get_session_configs(self):
-        """Get current session configuration"""
+
+    def get_session_configs(self, course_id=None):
+        """Get session configuration, optionally scoped to a batch."""
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT id, course_id, session_type, start_time, end_time, is_active
-            FROM session_configs
-            ORDER BY start_time
-        ''')
+        if course_id is not None:
+            cursor.execute('''
+                SELECT id, course_id, session_type, start_time, end_time, is_active
+                FROM session_configs WHERE course_id = ?
+                ORDER BY start_time
+            ''', (course_id,))
+        else:
+            cursor.execute('''
+                SELECT id, course_id, session_type, start_time, end_time, is_active
+                FROM session_configs
+                ORDER BY start_time
+            ''')
         
         configs = []
         for row in cursor.fetchall():

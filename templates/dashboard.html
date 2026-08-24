@@ -21,7 +21,9 @@
             <a href="/dashboard" id="nav-dashboard" class="active"><i class="fa-solid fa-house"></i> Dashboard</a>
             <a href="/attendance" id="nav-attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
             <a href="/students" id="nav-students"><i class="fa-solid fa-users"></i> Students</a>
+            <a href="/admin/batches" id="nav-batches"><i class="fa-solid fa-layer-group"></i> Batches</a>
             <a href="/attendance-management" id="nav-reports"><i class="fa-solid fa-table-list"></i> Reports</a>
+            <a href="/admin" id="nav-admin"><i class="fa-solid fa-gear"></i> Admin</a>
             <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
         </div>
         <div class="app-navbar-actions">
@@ -91,6 +93,11 @@
                 <h3>Manage Students</h3>
                 <p>Edit student info and data</p>
             </a>
+            <a href="/admin/batches" class="app-nav-card">
+                <div class="app-nav-card-icon blue"><i class="fa-solid fa-layer-group"></i></div>
+                <h3>Batches &amp; Teachers</h3>
+                <p>Create batches, set dates, assign teachers, terminal PIN</p>
+            </a>
         </div>
 
         <!-- Slot Configuration (admin only) -->
@@ -106,6 +113,10 @@
                             <i class="fa-regular fa-clock"></i> Check Current
                         </button>
                     </div>
+                </div>
+                <div class="app-form-group" style="max-width:280px;margin:12px 0;">
+                    <label class="app-form-label">Batch</label>
+                    <select id="slotBatchSelect" class="app-form-input" onchange="onSlotBatchChange()"></select>
                 </div>
                 <div id="currentSlotStatus"></div>
                 <div id="sessionConfigContainer"></div>
@@ -152,11 +163,33 @@
             } catch (e) { console.error('Stats error:', e); }
         }
 
+        let slotCourseId = null;
+
+        async function ensureSlotBatches() {
+            const sel = document.getElementById('slotBatchSelect');
+            if (sel.options.length) return;
+            try {
+                const r = await fetch('/api/courses');
+                const d = await r.json();
+                const batches = (d.courses || []).filter(b => b.is_active);
+                sel.innerHTML = batches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                if (batches.length) slotCourseId = batches[0].id;
+            } catch (e) { }
+        }
+
+        function onSlotBatchChange() {
+            slotCourseId = parseInt(document.getElementById('slotBatchSelect').value) || null;
+            loadSessionConfig();
+        }
+
         async function loadSessionConfig() {
             try {
-                const r = await fetch('/api/admin/session-config');
+                await ensureSlotBatches();
+                const url = slotCourseId ? `/api/admin/session-config?course_id=${slotCourseId}` : '/api/admin/session-config';
+                const r = await fetch(url);
                 const d = await r.json();
                 if (d.success) {
+                    if (d.course_id) { slotCourseId = d.course_id; document.getElementById('slotBatchSelect').value = d.course_id; }
                     displaySessionConfig(d.config);
                     await loadCurrentSlotStatus();
                 }
@@ -224,7 +257,7 @@
             try {
                 const r = await fetch(`/api/admin/session-config/${sessionType}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ start_time: st, end_time: et })
+                    body: JSON.stringify({ start_time: st, end_time: et, course_id: slotCourseId })
                 });
                 const d = await r.json();
                 if (d.success) {
