@@ -1,9 +1,9 @@
-import sqlite3
+import os
 from datetime import datetime, timedelta
+from db import get_connection, is_postgres
 
 def bulk_mark():
-    db_path = 'attendance.db'
-    conn = sqlite3.connect(db_path)
+    conn = get_connection()
     cursor = conn.cursor()
     
     # 1. Set Joining Date for everyone
@@ -40,12 +40,22 @@ def bulk_mark():
         print(f"📅 Processing {date_str}...")
         for student_id in student_ids:
             for slot in slots:
-                # Insert if not exists
-                cursor.execute('''
-                    INSERT OR IGNORE INTO slot_attendance 
-                    (student_id, date, slot_id, time_marked, is_manual, manual_reason)
-                    VALUES (?, ?, ?, ?, 1, 'Bulk marked by admin')
-                ''', (student_id, date_str, slot, '09:00:00'))
+                created_at_val = date_str + ' 09:00:00'
+                if is_postgres():
+                    cursor.execute('''
+                        INSERT INTO slot_attendance 
+                        (student_id, date, slot_id, time_marked, is_manual, manual_reason, created_at)
+                        VALUES (?, ?, ?, ?, 1, 'Bulk marked by admin', ?)
+                        ON CONFLICT (student_id, date, slot_id) DO NOTHING
+                    ''', (student_id, date_str, slot, '09:00:00', created_at_val))
+                else:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO slot_attendance 
+                        (student_id, date, slot_id, time_marked, is_manual, manual_reason, created_at)
+                        VALUES (?, ?, ?, ?, 1, 'Bulk marked by admin', ?)
+                    ''', (student_id, date_str, slot, '09:00:00', created_at_val))
+                
+                # Check rows affected
                 if cursor.rowcount > 0:
                     attendance_count += 1
                     

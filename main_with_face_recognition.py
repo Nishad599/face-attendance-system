@@ -8,7 +8,7 @@ import sys
 from fastapi.responses import HTMLResponse
 from photo_utils import create_student_photo_directory, get_student_photo_path
 import os
-import sqlite3
+from db import get_connection, is_postgres
 import base64
 import json
 import uuid
@@ -121,8 +121,7 @@ SESSION_SECRET_KEY = secrets.token_urlsafe(32)
 SESSION_TIMEOUT_HOURS = 24
 
 # Dedicated connection for session storage (persistent across restarts).
-_session_conn = sqlite3.connect('attendance.db', check_same_thread=False)
-_session_conn.row_factory = sqlite3.Row
+_session_conn = get_connection(dict_rows=True)
 _session_conn.execute(
     """CREATE TABLE IF NOT EXISTS sessions (
             token TEXT PRIMARY KEY,
@@ -337,7 +336,7 @@ class AttendanceSystem:
         self.known_face_names = []
         self.known_face_ids = []
         self.embedding_method = None  # Track which method was used for stored embeddings
-        self.conn = sqlite3.connect('attendance.db', check_same_thread=False)
+        self.conn = get_connection()
         self.load_student_faces()
         self.init_extended_tables()
         self.init_advanced_tables()
@@ -656,10 +655,12 @@ class AttendanceSystem:
     def init_extended_tables(self):
         """Initialize additional tables for enhanced attendance management"""
         cursor = self.conn.cursor()
+        SERIAL = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        
         # Create holidays table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS holidays (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 date DATE NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 type TEXT NOT NULL,
@@ -667,9 +668,9 @@ class AttendanceSystem:
             )
         ''')
         # Create course_settings table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS course_settings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 academic_year TEXT NOT NULL,
                 semester TEXT NOT NULL,
                 start_date DATE NOT NULL,
@@ -678,25 +679,24 @@ class AttendanceSystem:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
         # Add new columns to attendance table if they don't exist
-        try:
+        from db import column_exists
+        if not column_exists(self.conn, 'attendance', 'manual_reason'):
             cursor.execute('ALTER TABLE attendance ADD COLUMN manual_reason TEXT')
-        except Exception:
-            pass  # Column already exists
-        try:
+        if not column_exists(self.conn, 'attendance', 'is_manual'):
             cursor.execute('ALTER TABLE attendance ADD COLUMN is_manual BOOLEAN DEFAULT FALSE')
-        except Exception:
-            pass  # Column already exists
         self.conn.commit()
     
     def init_advanced_tables(self):
         """Initialize advanced tables for course and session management"""
         cursor = self.conn.cursor()
+        SERIAL = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
         
         # Courses table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS courses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 name TEXT NOT NULL,
                 start_date DATE NOT NULL,
                 end_date DATE NOT NULL,
@@ -707,9 +707,9 @@ class AttendanceSystem:
         ''')
         
         # Session configurations table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS session_configs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 course_id INTEGER,
                 session_type TEXT NOT NULL,
                 start_time TIME NOT NULL,
@@ -720,9 +720,9 @@ class AttendanceSystem:
         ''')
         
         # Session attendance table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS session_attendance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 student_id INTEGER NOT NULL,
                 course_id INTEGER NOT NULL,
                 session_type TEXT NOT NULL,
@@ -738,16 +738,12 @@ class AttendanceSystem:
             )
         ''')
         
-        # Add columns to existing attendance table
-        try:
-            cursor.execute('ALTER TABLE attendance ADD COLUMN session_type TEXT DEFAULT "morning"')
-        except sqlite3.OperationalError:
-            pass
-        
-        try:
+        # Add columns to existing attendance table if they don't exist
+        from db import column_exists
+        if not column_exists(self.conn, 'attendance', 'session_type'):
+            cursor.execute("ALTER TABLE attendance ADD COLUMN session_type TEXT DEFAULT 'morning'")
+        if not column_exists(self.conn, 'attendance', 'is_late'):
             cursor.execute('ALTER TABLE attendance ADD COLUMN is_late BOOLEAN DEFAULT FALSE')
-        except sqlite3.OperationalError:
-            pass
         
         # Create default course if none exists
         cursor.execute('SELECT COUNT(*) FROM courses WHERE is_active = TRUE')
@@ -2363,10 +2359,16 @@ async def create_course(data: CourseCreate, session: Dict[str, Any] = Depends(re
         )
         # Assign teachers to the new batch
         for tid in (data.teacher_ids or []):
-            cur.execute(
-                "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
-                (tid, course_id),
-            )
+            if is_postgres():
+                cur.execute(
+                    "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",
+                    (tid, course_id),
+                )
+            else:
+                cur.execute(
+                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                    (tid, course_id),
+                )
         # Set the terminal PIN if provided
         if data.terminal_pin:
             cur.execute(
@@ -2408,10 +2410,16 @@ async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, A
         if data.teacher_ids is not None:
             cur.execute("DELETE FROM teacher_batches WHERE course_id = ?", (course_id,))
             for tid in data.teacher_ids:
-                cur.execute(
-                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
-                    (tid, course_id),
-                )
+                if is_postgres():
+                    cur.execute(
+                        "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",
+                        (tid, course_id),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                        (tid, course_id),
+                    )
         if not fields and data.teacher_ids is None:
             return {"success": False, "message": "No fields to update"}
         attendance_system.conn.commit()
@@ -2492,10 +2500,16 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
         )
         user_id = cur.lastrowid
         for cid in (data.batch_ids or []):
-            cur.execute(
-                "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
-                (user_id, cid),
-            )
+            if is_postgres():
+                cur.execute(
+                    "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",
+                    (user_id, cid),
+                )
+            else:
+                cur.execute(
+                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                    (user_id, cid),
+                )
         attendance_system.conn.commit()
         return {"success": True, "message": f"Teacher '{username}' created", "user_id": user_id}
     except Exception as e:
@@ -2527,10 +2541,16 @@ async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, A
         if data.batch_ids is not None:
             cur.execute("DELETE FROM teacher_batches WHERE user_id = ?", (user_id,))
             for cid in data.batch_ids:
-                cur.execute(
-                    "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
-                    (user_id, cid),
-                )
+                if is_postgres():
+                    cur.execute(
+                        "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",
+                        (user_id, cid),
+                    )
+                else:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, ?)",
+                        (user_id, cid),
+                    )
         attendance_system.conn.commit()
         return {"success": True, "message": "Teacher updated"}
     except HTTPException:
@@ -4034,7 +4054,7 @@ if __name__ == "__main__":
     
     # Generate self-signed certificate if it doesn't exist
     if not os.path.exists(cert_file) or not os.path.exists(key_file):
-        print("🔧 Generating SSL certificates...")
+        print("[SETUP] Generating SSL certificates...")
         try:
             # Create self-signed certificate with dynamic host
             subprocess.run([
@@ -4050,9 +4070,9 @@ if __name__ == "__main__":
             exit()
     
     # Run with HTTPS
-    print(f"🔒 HTTPS Dashboard: https://{display_host}:{port}/")
-    print("[WARN]  You may see a security warning - click 'Advanced' → 'Proceed to site (unsafe)'")
-    print("💡 Tip: Bookmark the HTTPS URL to avoid the warning next time")
+    print(f"[INFO] HTTPS Dashboard: https://{display_host}:{port}/")
+    print("[WARN]  You may see a security warning - click 'Advanced' -> 'Proceed to site (unsafe)'")
+    print("[TIP] Tip: Bookmark the HTTPS URL to avoid the warning next time")
     
     try:
         uvicorn.run(

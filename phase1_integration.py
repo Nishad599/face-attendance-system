@@ -2,7 +2,7 @@
 # Phase 1 Integration - Enhanced Attendance System
 # Multi-Session Support with Saturday-First Calendar
 
-import sqlite3
+from db import get_connection, is_postgres
 import json
 from datetime import datetime, timedelta, date, time
 from typing import Dict, List, Optional, Tuple
@@ -24,11 +24,12 @@ def enhance_existing_attendance_system(attendance_system):
         cursor = self.conn.cursor()
         
         # Create working_days_config table if not exists
-        cursor.execute('''
+        SERIAL = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS working_days_config (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {SERIAL},
                 day_of_week INTEGER NOT NULL UNIQUE, -- 0=Sunday, 1=Monday, ..., 6=Saturday
-                is_working BOOLEAN DEFAULT 1,
+                is_working BOOLEAN DEFAULT TRUE,
                 day_name TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -46,11 +47,21 @@ def enhance_existing_attendance_system(attendance_system):
         ]
         
         for day_of_week, is_working, day_name in working_days_data:
-            cursor.execute('''
-                INSERT OR REPLACE INTO working_days_config 
-                (day_of_week, is_working, day_name) 
-                VALUES (?, ?, ?)
-            ''', (day_of_week, is_working, day_name))
+            if is_postgres():
+                cursor.execute('''
+                    INSERT INTO working_days_config 
+                    (day_of_week, is_working, day_name) 
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (day_of_week) DO UPDATE SET
+                        is_working = EXCLUDED.is_working,
+                        day_name = EXCLUDED.day_name
+                ''', (day_of_week, is_working, day_name))
+            else:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO working_days_config 
+                    (day_of_week, is_working, day_name) 
+                    VALUES (?, ?, ?)
+                ''', (day_of_week, is_working, day_name))
         
         self.conn.commit()
         print("✅ Working days configuration updated: Saturday-Friday working, Sunday off")
@@ -85,8 +96,15 @@ def enhance_existing_attendance_system(attendance_system):
         cursor = self.conn.cursor()
         
         # Check if session_windows table exists and has the required columns
-        cursor.execute("PRAGMA table_info(session_windows)")
-        columns = [row[1] for row in cursor.fetchall()]
+        if is_postgres():
+            cursor.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'session_windows'
+            """)
+            columns = [row[0] for row in cursor.fetchall()]
+        else:
+            cursor.execute("PRAGMA table_info(session_windows)")
+            columns = [row[1] for row in cursor.fetchall()]
         
         # Add missing columns if they don't exist
         if 'attendance_window_minutes' not in columns:
@@ -310,21 +328,47 @@ def enhance_existing_attendance_system(attendance_system):
             daily_status = 'absent'
         
         # Update or insert daily attendance record
-        cursor.execute('''
-            INSERT OR REPLACE INTO attendance 
-            (student_id, date, time_in, session_data, total_sessions_today, 
-             attended_sessions, is_manual, manual_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            student_id,
-            attendance_date.strftime('%Y-%m-%d'),
-            primary_time,
-            json.dumps(session_data),
-            total_sessions,
-            attended_sessions,
-            any(r[2] == 'manual' for r in session_records),
-            'Multi-session attendance summary'
-        ))
+        cursor.execute(
+            "SELECT id FROM attendance WHERE student_id = ? AND date = ?",
+            (student_id, attendance_date.strftime('%Y-%m-%d'))
+        )
+        existing = cursor.fetchone()
+        
+        if existing:
+            cursor.execute('''
+                UPDATE attendance SET 
+                    time_in = ?, 
+                    session_data = ?, 
+                    total_sessions_today = ?, 
+                    attended_sessions = ?, 
+                    is_manual = ?, 
+                    manual_reason = ?
+                WHERE id = ?
+            ''', (
+                primary_time,
+                json.dumps(session_data),
+                total_sessions,
+                attended_sessions,
+                any(r[2] == 'manual' for r in session_records),
+                'Multi-session attendance summary',
+                existing[0]
+            ))
+        else:
+            cursor.execute('''
+                INSERT INTO attendance 
+                (student_id, date, time_in, session_data, total_sessions_today, 
+                 attended_sessions, is_manual, manual_reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                student_id,
+                attendance_date.strftime('%Y-%m-%d'),
+                primary_time,
+                json.dumps(session_data),
+                total_sessions,
+                attended_sessions,
+                any(r[2] == 'manual' for r in session_records),
+                'Multi-session attendance summary'
+            ))
     
     def generate_saturday_first_calendar(self, year, month):
         """Generate calendar with Saturday-first week layout"""

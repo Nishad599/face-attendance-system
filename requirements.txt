@@ -83,3 +83,4 @@ wcwidth==0.2.13
 websockets==15.0.1
 
 pytz==2024.1
+psycopg2-binary>=2.9.0

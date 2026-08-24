@@ -40,7 +40,7 @@ class AsianFaceRecognizer:
                 self.use_insightface = False
         
         if not self.use_insightface:
-            raise Exception("[FATAL] buffalo_l w600k model is required!")
+            print("[WARN] [FATAL] buffalo_l w600k model is required, but failed to load. The app will start, but face recognition will not function.")
     
     def detect_faces_optimized(self, frame):
         """Detect faces and generate 512D embeddings using buffalo_l w600k"""

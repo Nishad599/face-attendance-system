@@ -3,14 +3,15 @@
 Enhanced Attendance Manager with Configurable Time-based Slots and Live Counting
 Handles attendance marking within specific time slots and provides real-time student count
 Now reads slot timings from session_configs database table for admin configurability
+Now supports both SQLite and PostgreSQL via db.py.
 Fixed with proper IST timezone handling
 """
 
-import sqlite3
 from datetime import datetime, time
 from typing import Dict, List, Tuple, Optional
 import logging
 import pytz
+from db import get_connection, is_postgres
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,12 +21,12 @@ logger = logging.getLogger(__name__)
 IST = pytz.timezone('Asia/Kolkata')
 
 def get_ist_time():
-    """Get current IST time"""
+    """Get current time in IST"""
     return datetime.now(IST)
 
 def get_ist_date_str():
     """Get current IST date as string"""
-    return get_ist_time().date().strftime('%Y-%m-%d')
+    return get_ist_time().strftime('%Y-%m-%d')
 
 def get_ist_time_str():
     """Get current IST time as string"""
@@ -40,7 +41,7 @@ class AttendanceSlotManager:
     
     def __init__(self, db_path: str = 'attendance.db'):
         self.db_path = db_path
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn = get_connection(db_path)
         self.init_slot_tables()
         
         # Load attendance slots from database instead of hardcoded values
@@ -61,34 +62,62 @@ class AttendanceSlotManager:
         cursor = self.conn.cursor()
         
         # Create slot_attendance table to track attendance by slots
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS slot_attendance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                date DATE NOT NULL,
-                slot_id TEXT NOT NULL,
-                time_marked TEXT NOT NULL,
-                detection_confidence REAL,
-                is_manual BOOLEAN DEFAULT FALSE,
-                manual_reason TEXT,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (student_id) REFERENCES students (id),
-                UNIQUE(student_id, date, slot_id)
-            )
-        ''')
-        
-        # Create daily_attendance_summary for quick counts
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS daily_attendance_summary (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date DATE NOT NULL UNIQUE,
-                total_students INTEGER DEFAULT 0,
-                present_morning INTEGER DEFAULT 0,
-                present_afternoon INTEGER DEFAULT 0,
-                total_present INTEGER DEFAULT 0,
-                last_updated TEXT NOT NULL
-            )
-        ''')
+        if is_postgres():
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS slot_attendance (
+                    id SERIAL PRIMARY KEY,
+                    student_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    slot_id TEXT NOT NULL,
+                    time_marked TEXT NOT NULL,
+                    detection_confidence REAL,
+                    is_manual BOOLEAN DEFAULT FALSE,
+                    manual_reason TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (student_id) REFERENCES students (id),
+                    UNIQUE(student_id, date, slot_id)
+                )
+            ''')
+            # Create daily_attendance_summary for quick counts
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS daily_attendance_summary (
+                    id SERIAL PRIMARY KEY,
+                    date DATE NOT NULL UNIQUE,
+                    total_students INTEGER DEFAULT 0,
+                    present_morning INTEGER DEFAULT 0,
+                    present_afternoon INTEGER DEFAULT 0,
+                    total_present INTEGER DEFAULT 0,
+                    last_updated TEXT NOT NULL
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS slot_attendance (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER NOT NULL,
+                    date DATE NOT NULL,
+                    slot_id TEXT NOT NULL,
+                    time_marked TEXT NOT NULL,
+                    detection_confidence REAL,
+                    is_manual BOOLEAN DEFAULT FALSE,
+                    manual_reason TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (student_id) REFERENCES students (id),
+                    UNIQUE(student_id, date, slot_id)
+                )
+            ''')
+            # Create daily_attendance_summary for quick counts
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS daily_attendance_summary (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date DATE NOT NULL UNIQUE,
+                    total_students INTEGER DEFAULT 0,
+                    present_morning INTEGER DEFAULT 0,
+                    present_afternoon INTEGER DEFAULT 0,
+                    total_present INTEGER DEFAULT 0,
+                    last_updated TEXT NOT NULL
+                )
+            ''')
         
         self.conn.commit()
         logger.info("Slot attendance tables initialized")
@@ -156,14 +185,33 @@ class AttendanceSlotManager:
                 course_id = cursor.lastrowid
             
             # Create default session configs for 4 slots
-            cursor.execute('''
-                INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
-                VALUES 
-                (?, 'morning_1', '08:30:00', '09:30:00', 1),
-                (?, 'morning_2', '11:00:00', '11:15:00', 1),
-                (?, 'afternoon_1', '13:45:00', '14:00:00', 1),
-                (?, 'afternoon_2', '16:15:00', '16:45:00', 1)
-            ''', (course_id, course_id, course_id, course_id))
+            if is_postgres():
+                # On PostgreSQL, we should do separate inserts or standard multi-value insert
+                cursor.execute('''
+                    INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                    VALUES (?, 'morning_1', '08:30:00', '09:30:00', 1)
+                ''', (course_id,))
+                cursor.execute('''
+                    INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                    VALUES (?, 'morning_2', '11:00:00', '11:15:00', 1)
+                ''', (course_id,))
+                cursor.execute('''
+                    INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                    VALUES (?, 'afternoon_1', '13:45:00', '14:00:00', 1)
+                ''', (course_id,))
+                cursor.execute('''
+                    INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                    VALUES (?, 'afternoon_2', '16:15:00', '16:45:00', 1)
+                ''', (course_id,))
+            else:
+                cursor.execute('''
+                    INSERT INTO session_configs (course_id, session_type, start_time, end_time, is_active)
+                    VALUES 
+                    (?, 'morning_1', '08:30:00', '09:30:00', 1),
+                    (?, 'morning_2', '11:00:00', '11:15:00', 1),
+                    (?, 'afternoon_1', '13:45:00', '14:00:00', 1),
+                    (?, 'afternoon_2', '16:15:00', '16:45:00', 1)
+                ''', (course_id, course_id, course_id, course_id))
             
             self.conn.commit()
             
@@ -404,12 +452,22 @@ class AttendanceSlotManager:
                   force_slot is not None, current_timestamp))
             
             # Also mark in main attendance table for compatibility
-            cursor.execute('''
-                INSERT OR IGNORE INTO attendance 
-                (student_id, date, time_in, is_manual, manual_reason)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (student_id, today_str, current_time_only, 
-                  force_slot is not None, f'{slot_name} slot attendance'))
+            if is_postgres():
+                # On PG, UNIQUE index conflict checking is done if constraint exists, but since no UNIQUE constraint
+                # exists on attendance(student_id, date), a standard INSERT behaves the same as INSERT OR IGNORE.
+                cursor.execute('''
+                    INSERT INTO attendance 
+                    (student_id, date, time_in, is_manual, manual_reason)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (student_id, today_str, current_time_only, 
+                      force_slot is not None, f'{slot_name} slot attendance'))
+            else:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO attendance 
+                    (student_id, date, time_in, is_manual, manual_reason)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (student_id, today_str, current_time_only, 
+                      force_slot is not None, f'{slot_name} slot attendance'))
             
             self.conn.commit()
             
@@ -523,13 +581,13 @@ class AttendanceSlotManager:
             
             cursor.execute('''
                 SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE "morning%"
+                WHERE date = ? AND slot_id LIKE 'morning%'
             ''', (date_str,))
             morning_count = cursor.fetchone()[0]
             
             cursor.execute('''
                 SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE "afternoon%" 
+                WHERE date = ? AND slot_id LIKE 'afternoon%' 
             ''', (date_str,))
             afternoon_count = cursor.fetchone()[0]
             
@@ -540,11 +598,24 @@ class AttendanceSlotManager:
             total_present = cursor.fetchone()[0]
             
             # Update summary with IST timestamp
-            cursor.execute('''
-                INSERT OR REPLACE INTO daily_attendance_summary
-                (date, total_students, present_morning, present_afternoon, total_present, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
+            if is_postgres():
+                cursor.execute('''
+                    INSERT INTO daily_attendance_summary
+                    (date, total_students, present_morning, present_afternoon, total_present, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (date) DO UPDATE SET
+                        total_students = EXCLUDED.total_students,
+                        present_morning = EXCLUDED.present_morning,
+                        present_afternoon = EXCLUDED.present_afternoon,
+                        total_present = EXCLUDED.total_present,
+                        last_updated = EXCLUDED.last_updated
+                ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
+            else:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO daily_attendance_summary
+                    (date, total_students, present_morning, present_afternoon, total_present, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
             
             self.conn.commit()
             

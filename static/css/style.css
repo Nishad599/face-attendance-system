@@ -301,7 +301,7 @@ body {
     margin-bottom: 2rem;
 }
 
-h2:contains("Registered Students"),
+h2.students-heading,
 .students-section h2:first-child {
     color: #FF7601 !important;
 }
@@ -311,7 +311,7 @@ h2:contains("Registered Students"),
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1.5rem;
-    margin: 2rem 0
+    margin: 2rem 0;
 }
 
 .nav-card {

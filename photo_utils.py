@@ -1,9 +1,7 @@
 import os
 import shutil
 import re
-import json
-import sqlite3
-from datetime import datetime
+from db import get_connection
 
 def create_student_photo_directory(student_id, student_name):
     """Create a directory for student's photos"""
@@ -38,7 +36,7 @@ def organize_existing_photos():
         return
     
     # Get all students from database
-    conn = sqlite3.connect('attendance.db')
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('SELECT student_id, name FROM students WHERE status = "active"')
     students = cursor.fetchall()

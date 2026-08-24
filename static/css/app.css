@@ -34,6 +34,22 @@
     --nav-height: 56px;
 }
 
+/* --- Dark Theme --- */
+[data-theme="dark"] {
+    --bg-page: #0f172a;
+    --bg-card: #1e293b;
+    --bg-nav: #1e293b;
+    --bg-input: #334155;
+    --border-color: #334155;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-subtle: #64748b;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4);
+    --color-primary: #3b82f6;
+}
+
 /* --- Reset & Base --- */
 *,
 *::before,
@@ -1683,10 +1699,6 @@ input[type="text"].search-input {
 
 .text-white {
     color: white;
-}
-
-.text-center {
-    text-align: center;
 }
 
 .text-3xl {

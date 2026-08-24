@@ -1,6 +1,6 @@
-import sqlite3
 from datetime import datetime, timedelta
 import pytz
+from db import get_connection
 
 # Analytics read from the primary `attendance` table (day-level: a student is
 # "present" on a date if they have any attendance row that day). All methods
@@ -38,7 +38,8 @@ class AnalyticsManager:
             f"SELECT student_id, date FROM attendance WHERE student_id IN ({ph}) AND date >= ?",
             [*sids, since.strftime('%Y-%m-%d')],
         )
-        for sid, dt in cursor.fetchall():
+        for row in cursor.fetchall():
+            sid, dt = row[0], row[1]
             try:
                 d = datetime.strptime(str(dt)[:10], '%Y-%m-%d').date()
             except (ValueError, TypeError):
@@ -52,16 +53,16 @@ class AnalyticsManager:
             (course_id,),
         )
         out = set()
-        for (dt,) in cursor.fetchall():
+        for row in cursor.fetchall():
             try:
-                out.add(datetime.strptime(str(dt)[:10], '%Y-%m-%d').date())
+                out.add(datetime.strptime(str(row[0])[:10], '%Y-%m-%d').date())
             except (ValueError, TypeError):
                 continue
         return out
 
     # ---- analytics -----------------------------------------------------
     def get_class_analytics(self, days=14, course_id=None):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         end_date = datetime.now(self.tz).date()
         start_date = end_date - timedelta(days=days)
@@ -136,7 +137,7 @@ class AnalyticsManager:
         }
 
     def get_heatmap_data(self, days=90, course_id=None):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         end_date = datetime.now(self.tz).date()
         start_date = end_date - timedelta(days=days)
@@ -158,7 +159,7 @@ class AnalyticsManager:
         return {"success": True, "heatmap": heatmap, "total_students": len(students)}
 
     def get_day_of_week_stats(self, days=60, course_id=None):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         end_date = datetime.now(self.tz).date()
         start_date = end_date - timedelta(days=days)
@@ -185,7 +186,7 @@ class AnalyticsManager:
         return {"success": True, "days": result}
 
     def get_at_risk_students(self, threshold=75, course_id=None):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         today = datetime.now(self.tz).date()
         start_date = today - timedelta(days=30)
@@ -227,7 +228,7 @@ class AnalyticsManager:
         return {"success": True, "at_risk": at_risk, "count": len(at_risk)}
 
     def get_student_sparkline(self, student_id, days=14, course_id=None):
-        conn = sqlite3.connect(self.db_path)
+        conn = get_connection(self.db_path)
         cur = conn.cursor()
         today = datetime.now(self.tz).date()
         start_date = today - timedelta(days=days)

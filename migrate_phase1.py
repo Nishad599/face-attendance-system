@@ -1,38 +1,40 @@
 """Phase 1 migration: batches, DB-backed accounts, persistent sessions, security.
 
-Idempotent — safe to run multiple times. Backs up attendance.db first.
-
-Adds:
-  * students:  course_id, password_hash, must_change_password, dob
-  * users table (admin/teacher accounts) + seeds admin/teacher
-  * teacher_batches table (teacher -> assigned course_id)
-  * attendance.course_id, slot_attendance.course_id, holidays.course_id
-  * sessions table (persistent login sessions)
-  * assigns existing students to the default course (id=1)
+Idempotent — safe to run multiple times. Backs up SQLite database first if SQLite is used.
+Now supports PostgreSQL natively.
 """
 import os
 import shutil
-import sqlite3
 from datetime import datetime
-
+from db import get_connection, is_postgres
 from auth_utils import hash_password, default_student_password
 
 DB_PATH = "attendance.db"
 
 
 def backup_db():
+    if is_postgres():
+        return
     if not os.path.exists(DB_PATH):
-        print(f"[WARN] {DB_PATH} not found; a fresh DB will be created on app start.")
+        print("[WARN] attendance.db not found; a fresh DB will be created on app start.")
         return
     os.makedirs("backups", exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = os.path.join("backups", f"attendance.db.migrate-{stamp}")
     shutil.copy2(DB_PATH, dest)
-    print(f"[OK] Backed up DB -> {dest}")
+    print(f"[OK] Backed up SQLite DB -> {dest}")
 
 
 def columns(cur, table):
-    return {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+    if is_postgres():
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            (table,)
+        )
+        return {row[0] for row in cur.fetchall()}
+    else:
+        return {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
 
 
 def add_column(cur, table, col, decl):
@@ -58,8 +60,10 @@ def ensure_default_course(cur):
 
 def migrate():
     backup_db()
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     cur = conn.cursor()
+
+    SERIAL = "SERIAL PRIMARY KEY" if is_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
 
     # --- students: new columns ---
     add_column(cur, "students", "course_id", "INTEGER")
@@ -74,8 +78,8 @@ def migrate():
 
     # --- users table (admin/teacher) ---
     cur.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+        f"""CREATE TABLE IF NOT EXISTS users (
+                id {SERIAL},
                 username TEXT UNIQUE NOT NULL,
                 name TEXT,
                 password_hash TEXT NOT NULL,
@@ -89,8 +93,8 @@ def migrate():
 
     # --- teacher_batches (teacher -> course) ---
     cur.execute(
-        """CREATE TABLE IF NOT EXISTS teacher_batches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+        f"""CREATE TABLE IF NOT EXISTS teacher_batches (
+                id {SERIAL},
                 user_id INTEGER NOT NULL,
                 course_id INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -164,10 +168,16 @@ def migrate():
     cur.execute("SELECT id FROM users WHERE username = 'teacher'")
     row = cur.fetchone()
     if row:
-        cur.execute(
-            "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, 1)",
-            (row[0],),
-        )
+        if is_postgres():
+            cur.execute(
+                "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, 1) ON CONFLICT (user_id, course_id) DO NOTHING",
+                (row[0],),
+            )
+        else:
+            cur.execute(
+                "INSERT OR IGNORE INTO teacher_batches (user_id, course_id) VALUES (?, 1)",
+                (row[0],),
+            )
 
     conn.commit()
     conn.close()
