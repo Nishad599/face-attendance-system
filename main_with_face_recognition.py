@@ -1643,7 +1643,7 @@ async def contact_page():
     
 
 @app.get("/register", response_class=HTMLResponse)
-async def registration_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
+async def registration_page(request: Request, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Student registration page"""
     return templates.TemplateResponse("register.html", {
         "request": request,

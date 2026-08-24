@@ -70,6 +70,11 @@ def migrate():
     add_column(cur, "students", "password_hash", "TEXT")
     add_column(cur, "students", "must_change_password", "INTEGER DEFAULT 1")
     add_column(cur, "students", "dob", "TEXT")
+    # Base columns that some older/minimal schemas are missing (idempotent).
+    add_column(cur, "students", "joining_date", "DATE")
+    add_column(cur, "students", "registration_date", "TIMESTAMP")
+    add_column(cur, "students", "photo_count", "INTEGER DEFAULT 0")
+    add_column(cur, "students", "verification_score", "REAL DEFAULT 0.0")
 
     # --- attendance / slot_attendance / holidays: course_id ---
     add_column(cur, "attendance", "course_id", "INTEGER")
