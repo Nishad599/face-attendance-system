@@ -455,9 +455,14 @@ class AttendanceSystem:
             face_data = detected_faces[0]
             
             # --- ANTI-SPOOFING GATE (Registration) ---
-            liveness = anti_spoof_checker.check(image_array, face_data['location'])
-            if not liveness['is_real']:
-                return None, f"Liveness check failed — live face required (score: {liveness['score']:.2f}). Photos and screens are not accepted."
+            # Registration is done in person by staff, and the liveness model is
+            # erratic on real faces, so liveness is SKIPPED here by default.
+            # (Attendance detection still enforces liveness.) To enforce it during
+            # registration too, set ANTISPOOF_ON_REGISTRATION=1.
+            if os.getenv("ANTISPOOF_ON_REGISTRATION", "").strip() in ("1", "true", "True", "yes"):
+                liveness = anti_spoof_checker.check(image_array, face_data['location'])
+                if not liveness['is_real']:
+                    return None, f"Liveness check failed — live face required (score: {liveness['score']:.2f}). Photos and screens are not accepted."
             # --- END ANTI-SPOOFING GATE ---
             
             face_encoding = face_data['embedding']
@@ -2633,6 +2638,17 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
     """Update student details including joining date"""
     try:
         cursor = attendance_system.conn.cursor()
+        # Batch scope for teachers
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is not None:
+            row = cursor.execute("SELECT course_id FROM students WHERE id = ?", (student_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Student not found")
+            if row[0] not in allowed:
+                raise HTTPException(status_code=403, detail="Not assigned to this student's batch")
+            # A teacher can't move a student into a batch they don't own
+            if "course_id" in data and data["course_id"] not in allowed:
+                raise HTTPException(status_code=403, detail="Cannot move student to a batch you aren't assigned to")
         # Only update fields that are present
         fields = []
         values = []
@@ -2651,17 +2667,21 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
         return {"success": False, "message": str(e)}
 
 @app.delete("/api/students/{student_id}")
-async def delete_student(student_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
-    """Delete a student and all related data"""
+async def delete_student(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Delete a student and all related data (teachers limited to their batches)."""
     try:
         cursor = attendance_system.conn.cursor()
-        
-        # Check if student exists
-        cursor.execute('SELECT name FROM students WHERE id = ?', (student_id,))
+
+        # Check if student exists (+ batch scope for teachers)
+        cursor.execute('SELECT name, course_id FROM students WHERE id = ?', (student_id,))
         student = cursor.fetchone()
-        
+
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is not None and student[1] not in allowed:
+            raise HTTPException(status_code=403, detail="Not assigned to this student's batch")
         
         # Delete student's attendance records
         cursor.execute('DELETE FROM attendance WHERE student_id = ?', (student_id,))
@@ -2681,6 +2701,88 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
         
     except Exception as e:
         return {"success": False, "message": f"Failed to delete student: {str(e)}"}
+
+
+@app.post("/api/students/{student_id}/reset-password")
+async def reset_student_password(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Reset a student's password to their DOB default; they must change it next login."""
+    try:
+        cur = attendance_system.conn.cursor()
+        row = cur.execute("SELECT course_id, dob FROM students WHERE id = ?", (student_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is not None and row[0] not in allowed:
+            raise HTTPException(status_code=403, detail="Not assigned to this student's batch")
+        new_pw = default_student_password(row[1])
+        cur.execute(
+            "UPDATE students SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (hash_password(new_pw), student_id),
+        )
+        attendance_system.conn.commit()
+        return {"success": True, "message": f"Password reset to: {new_pw}", "password": new_pw}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teachers/{user_id}/reset-password")
+async def reset_teacher_password(user_id: int, data: dict = Body(default={}),
+                                 session: Dict[str, Any] = Depends(require_admin_access)):
+    """Admin resets a teacher's password (to a provided value or 'teacher@123')."""
+    try:
+        cur = attendance_system.conn.cursor()
+        if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        new_pw = (data.get("password") or "").strip() or "teacher@123"
+        cur.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (hash_password(new_pw), user_id),
+        )
+        attendance_system.conn.commit()
+        return {"success": True, "message": f"Password reset to: {new_pw}", "password": new_pw}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/students/add")
+async def add_single_student(data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Add one student (pending face registration). Teachers limited to their batches."""
+    try:
+        student_id = (data.get("student_id") or "").strip()
+        name = (data.get("name") or "").strip()
+        email = (data.get("email") or "").strip()
+        dob = (data.get("dob") or "").strip()
+        course_id = data.get("course_id")
+
+        if not student_id or not name or not email:
+            return {"success": False, "message": "Roll number, name and email are required"}
+        if not course_id:
+            return {"success": False, "message": "Batch is required"}
+
+        assert_course_allowed(session, course_id)
+
+        cur = attendance_system.conn.cursor()
+        if cur.execute("SELECT id FROM students WHERE student_id = ? OR email = ?",
+                       (student_id, email)).fetchone():
+            return {"success": False, "message": "A student with this roll number or email already exists"}
+
+        cur.execute('''
+            INSERT INTO students
+            (student_id, name, email, dob, course_id, password_hash, must_change_password, status)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 'pending_registration')
+        ''', (student_id, name, email, dob or None, course_id,
+              hash_password(default_student_password(dob))))
+        attendance_system.conn.commit()
+        return {"success": True, "message": f"Added {name} (pending face registration)"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 
 @app.post("/api/students/bulk-upload")
 async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -2963,7 +3065,7 @@ async def teacher_batch_students(course_id: int, date: Optional[str] = None,
         cur = attendance_system.conn.cursor()
         students = []
         for r in cur.execute(
-            "SELECT id, student_id, name, (face_encoding IS NOT NULL) FROM students "
+            "SELECT id, student_id, name, (face_encoding IS NOT NULL), email, dob FROM students "
             "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
             (course_id,),
         ).fetchall():
@@ -2975,6 +3077,7 @@ async def teacher_batch_students(course_id: int, date: Optional[str] = None,
             sessions_present = [m[0] for m in marks if m[0]]
             students.append({
                 "id": r[0], "student_id": r[1], "name": r[2], "has_face": bool(r[3]),
+                "email": r[4], "dob": r[5],
                 "present": present, "sessions": sessions_present,
             })
         present_count = sum(1 for s in students if s["present"])
@@ -3382,6 +3485,88 @@ async def teacher_batch_analytics(course_id: int, at_risk_threshold: float = 75.
             "trend": trend_list,
             "day_of_week": dow,
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/batch/{course_id}/export")
+async def export_batch_attendance(course_id: int, start: Optional[str] = None, end: Optional[str] = None,
+                                  session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """CSV: daily present/absent register for a batch over a date range + per-student %."""
+    from datetime import date as _date, timedelta as _td
+    try:
+        assert_course_allowed(session, course_id)
+        cur = attendance_system.conn.cursor()
+
+        today = _date.today()
+        try:
+            end_d = datetime.strptime(end, "%Y-%m-%d").date() if end else today
+        except (ValueError, TypeError):
+            end_d = today
+        try:
+            start_d = datetime.strptime(start, "%Y-%m-%d").date() if start else end_d.replace(day=1)
+        except (ValueError, TypeError):
+            start_d = end_d.replace(day=1)
+        if start_d > end_d:
+            start_d, end_d = end_d, start_d
+        # cap the grid to ~100 days to keep the file sane
+        if (end_d - start_d).days > 100:
+            start_d = end_d - _td(days=100)
+
+        batch = cur.execute("SELECT name FROM courses WHERE id = ?", (course_id,)).fetchone()
+        batch_name = batch[0] if batch else f"batch-{course_id}"
+
+        students = cur.execute(
+            "SELECT id, student_id, name FROM students "
+            "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
+            (course_id,),
+        ).fetchall()
+
+        holidays = set()
+        for r in cur.execute("SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?", (course_id,)):
+            try:
+                holidays.add(datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date())
+            except (ValueError, TypeError):
+                continue
+
+        # working dates (Mon–Sat, excl holidays)
+        work_dates = []
+        d = start_d
+        while d <= end_d:
+            if d.weekday() != 6 and d not in holidays:
+                work_dates.append(d)
+            d += _td(days=1)
+
+        # present map
+        present = {s[0]: set() for s in students}
+        if students:
+            ph = ",".join("?" * len(students))
+            for sid, dt in cur.execute(
+                f"SELECT student_id, date FROM attendance WHERE student_id IN ({ph}) AND date >= ? AND date <= ?",
+                [*[s[0] for s in students], start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d")],
+            ).fetchall():
+                try:
+                    present[sid].add(datetime.strptime(str(dt)[:10], "%Y-%m-%d").date())
+                except (ValueError, TypeError):
+                    continue
+
+        out = StringIO()
+        w = csv.writer(out)
+        w.writerow(["Roll No", "Name"] + [d.strftime("%d-%b") for d in work_dates]
+                   + ["Present", "Working Days", "Rate %"])
+        wd = len(work_dates)
+        for sid, roll, name in students:
+            pres = present.get(sid, set())
+            row = [roll, name] + ["P" if d in pres else "A" for d in work_dates]
+            pcount = sum(1 for d in work_dates if d in pres)
+            row += [pcount, wd, round(pcount / wd * 100, 1) if wd else 0]
+            w.writerow(row)
+
+        filename = f"attendance_{batch_name.replace(' ', '_')}_{start_d}_{end_d}.csv"
+        return Response(content=out.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except HTTPException:
         raise
     except Exception as e:

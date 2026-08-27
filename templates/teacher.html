@@ -108,6 +108,14 @@
 
         <!-- ===== ANALYTICS ===== -->
         <div id="tab-analytics" style="display:none;">
+            <div class="card" style="margin-bottom:16px;">
+                <div class="inline-form">
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">Export from</label><input type="date" id="expStart" class="app-form-input"></div>
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">to</label><input type="date" id="expEnd" class="app-form-input"></div>
+                    <button class="app-btn app-btn-success" onclick="exportAttendance()"><i class="fa-solid fa-file-csv"></i> Export CSV</button>
+                </div>
+                <span class="muted" style="font-size:.85rem;">Downloads a daily present/absent register + per-student % for this batch.</span>
+            </div>
             <div class="summary" id="anSummary"></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
                 <div class="card"><h2>Attendance trend (14 days)</h2><div id="anTrend" class="chart"></div></div>
@@ -185,9 +193,21 @@
         <!-- ===== STUDENTS ===== -->
         <div id="tab-students" style="display:none;">
             <div class="card">
+                <h2>Add a student</h2>
+                <p class="muted">Adds one student to the selected batch (face registered later). Password = their DOB digits.</p>
+                <div class="inline-form">
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">Roll No *</label><input type="text" id="addRoll" class="app-form-input"></div>
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">Name *</label><input type="text" id="addName" class="app-form-input"></div>
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">Email *</label><input type="email" id="addEmail" class="app-form-input"></div>
+                    <div class="app-form-group" style="margin:0;"><label class="app-form-label">DOB</label><input type="date" id="addDob" class="app-form-input"></div>
+                    <button class="app-btn app-btn-primary" onclick="addStudent()"><i class="fa-solid fa-user-plus"></i> Add</button>
+                </div>
+                <div id="addMsg" class="muted" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card">
                 <h2>Bulk upload students (CSV)</h2>
-                <p class="muted">Upload student details; faces are registered later. Include a <code>batch</code> column
-                    matching one of your assigned batches.</p>
+                <p class="muted">Upload many at once. Include a <code>batch</code> column matching one of your assigned batches.</p>
                 <div class="inline-form">
                     <button class="app-btn app-btn-subtle" onclick="downloadTemplate()"><i class="fa-solid fa-download"></i> Template</button>
                     <input type="file" id="csvFile" accept=".csv" class="app-form-input" style="max-width:280px;">
@@ -197,13 +217,49 @@
             </div>
 
             <div class="card" style="margin-bottom:0;">
-                <h2>Pending face registration</h2>
+                <div class="toolbar">
+                    <h2 style="margin:0;">Students in this batch</h2>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="stuSearch" class="app-form-input" placeholder="Search roll or name…"
+                            style="max-width:220px;" oninput="renderStudents()">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadBatchStudents()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                    </div>
+                </div>
                 <div class="app-table-wrapper">
                     <table class="app-table">
-                        <thead><tr><th>Roll No</th><th>Name</th><th>Batch</th><th>DOB</th><th>Action</th></tr></thead>
-                        <tbody id="pendingRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+                        <thead><tr><th>Roll No</th><th>Name</th><th>Face</th><th>Actions</th></tr></thead>
+                        <tbody id="studentRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
                     </table>
                 </div>
+                <div class="toolbar" style="margin-top:12px;">
+                    <span class="muted" id="stuCount"></span>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <button class="app-btn app-btn-subtle app-btn-sm" id="stuPrev" onclick="stuPage(-1)">Prev</button>
+                        <span class="muted" id="stuPageLbl"></span>
+                        <button class="app-btn app-btn-subtle app-btn-sm" id="stuNext" onclick="stuPage(1)">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit student modal -->
+    <div class="app-modal-overlay" id="editStuModal">
+        <div class="app-modal">
+            <div class="app-modal-header">
+                <h3>Edit student</h3>
+                <button class="app-modal-close" onclick="document.getElementById('editStuModal').classList.remove('active')">&times;</button>
+            </div>
+            <div class="app-modal-body">
+                <input type="hidden" id="editStuId">
+                <div class="app-form-group"><label class="app-form-label">Roll No</label><input type="text" id="editStuRoll" class="app-form-input"></div>
+                <div class="app-form-group"><label class="app-form-label">Name</label><input type="text" id="editStuName" class="app-form-input"></div>
+                <div class="app-form-group"><label class="app-form-label">Email</label><input type="email" id="editStuEmail" class="app-form-input"></div>
+                <div class="app-form-group"><label class="app-form-label">DOB</label><input type="date" id="editStuDob" class="app-form-input"></div>
+            </div>
+            <div class="app-modal-footer">
+                <button class="app-btn app-btn-subtle" onclick="document.getElementById('editStuModal').classList.remove('active')">Cancel</button>
+                <button class="app-btn app-btn-primary" onclick="saveStudentEdit()">Save</button>
             </div>
         </div>
     </div>
@@ -231,8 +287,24 @@
         }
 
         // ---------- Analytics ----------
+        function exportAttendance() {
+            const cid = currentBatch(); if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const s = document.getElementById('expStart').value;
+            const e = document.getElementById('expEnd').value;
+            const qs = [];
+            if (s) qs.push('start=' + s);
+            if (e) qs.push('end=' + e);
+            window.location.href = `/api/teacher/batch/${cid}/export` + (qs.length ? '?' + qs.join('&') : '');
+        }
+
         async function loadAnalytics() {
             const cid = currentBatch(); if (!cid) return;
+            // default export range: 1st of this month → today
+            if (!document.getElementById('expEnd').value) {
+                const t = new Date();
+                document.getElementById('expEnd').value = t.toISOString().slice(0, 10);
+                document.getElementById('expStart').value = new Date(t.getFullYear(), t.getMonth(), 1).toISOString().slice(0, 10);
+            }
             const res = await fetch(`/api/teacher/batch/${cid}/analytics`);
             const data = await res.json();
             if (!data.success) { document.getElementById('anSummary').innerHTML = `<span class="muted">${esc(data.message || 'Failed')}</span>`; return; }
@@ -455,18 +527,125 @@
                 (data.errors && data.errors.length ? '<br><span style="color:#BF2600;">' + data.errors.map(esc).join('<br>') + '</span>' : '');
             if (data.success) { document.getElementById('csvFile').value = ''; loadPending(); }
         }
-        async function loadPending() {
-            const res = await fetch('/api/students/pending');
+        // Full batch student list with actions (searchable + paginated)
+        let _batchStudents = [];
+        let _stuPage = 0;
+        const STU_PER_PAGE = 25;
+
+        async function loadBatchStudents() {
+            const cid = currentBatch();
+            const tbody = document.getElementById('studentRows');
+            if (!cid) { tbody.innerHTML = '<tr><td colspan="4" class="muted">Pick a batch.</td></tr>'; return; }
+            tbody.innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
+            const res = await fetch(`/api/teacher/batch/${cid}/students`);
             const data = await res.json();
-            const tbody = document.getElementById('pendingRows');
-            const pending = data.pending || [];
-            if (!pending.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">Nobody awaiting face registration.</td></tr>'; return; }
-            tbody.innerHTML = pending.map(s => {
-                const url = '/register?student_id=' + encodeURIComponent(s.student_id) + '&name=' + encodeURIComponent(s.name) + '&email=' + encodeURIComponent(s.email);
-                return `<tr><td><strong>${esc(s.student_id)}</strong></td><td>${esc(s.name)}</td>
-                    <td><span class="app-badge app-badge-info">${esc(s.batch)}</span></td><td>${esc(s.dob || '—')}</td>
-                    <td><a class="app-btn app-btn-primary app-btn-sm" href="${url}"><i class="fa-solid fa-camera"></i> Register Face</a></td></tr>`;
-            }).join('');
+            _batchStudents = data.students || [];
+            _stuPage = 0;
+            renderStudents();
+        }
+
+        function stuPage(delta) { _stuPage += delta; renderStudents(); }
+
+        function renderStudents() {
+            const tbody = document.getElementById('studentRows');
+            const q = (document.getElementById('stuSearch').value || '').toLowerCase().trim();
+            const filtered = _batchStudents.filter(s =>
+                !q || (s.student_id + ' ' + s.name).toLowerCase().includes(q));
+
+            const pages = Math.max(1, Math.ceil(filtered.length / STU_PER_PAGE));
+            if (_stuPage > pages - 1) _stuPage = pages - 1;
+            if (_stuPage < 0) _stuPage = 0;
+            const slice = filtered.slice(_stuPage * STU_PER_PAGE, (_stuPage + 1) * STU_PER_PAGE);
+
+            if (!filtered.length) {
+                tbody.innerHTML = `<tr><td colspan="4" class="muted">${_batchStudents.length ? 'No matches.' : 'No students in this batch yet.'}</td></tr>`;
+            } else {
+                tbody.innerHTML = slice.map(s => {
+                    const url = '/register?student_id=' + encodeURIComponent(s.student_id) + '&name=' + encodeURIComponent(s.name) + '&email=' + encodeURIComponent(s.email || '');
+                    const faceBadge = s.has_face ? '<span class="app-badge app-badge-success">Registered</span>' : '<span class="app-badge app-badge-warning">Pending</span>';
+                    return `<tr>
+                        <td><strong>${esc(s.student_id)}</strong></td>
+                        <td>${esc(s.name)}</td>
+                        <td>${faceBadge}</td>
+                        <td><div class="row-actions">
+                            <a class="app-btn app-btn-primary app-btn-sm" href="${url}"><i class="fa-solid fa-camera"></i> ${s.has_face ? 'Re-register' : 'Register'}</a>
+                            <button class="app-btn app-btn-subtle app-btn-sm" onclick='editStudent(${s.id})'><i class="fa-solid fa-pen"></i></button>
+                            <button class="app-btn app-btn-subtle app-btn-sm" title="Reset password" onclick='resetStudentPw(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-key"></i></button>
+                            <button class="app-btn app-btn-danger app-btn-sm" onclick='deleteStudent(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-trash"></i></button>
+                        </div></td></tr>`;
+                }).join('');
+            }
+            document.getElementById('stuCount').textContent = `${filtered.length} student(s)`;
+            document.getElementById('stuPageLbl').textContent = `Page ${_stuPage + 1} / ${pages}`;
+            document.getElementById('stuPrev').disabled = _stuPage <= 0;
+            document.getElementById('stuNext').disabled = _stuPage >= pages - 1;
+        }
+        // backward-compat: some handlers still call loadPending()
+        function loadPending() { loadBatchStudents(); }
+
+        async function addStudent() {
+            const cid = currentBatch();
+            if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const payload = {
+                student_id: document.getElementById('addRoll').value.trim(),
+                name: document.getElementById('addName').value.trim(),
+                email: document.getElementById('addEmail').value.trim(),
+                dob: document.getElementById('addDob').value || null,
+                course_id: cid,
+            };
+            if (!payload.student_id || !payload.name || !payload.email) { toast('Roll, name and email are required', 'error'); return; }
+            const res = await fetch('/api/students/add', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            const msg = document.getElementById('addMsg');
+            msg.style.color = data.success ? '#006644' : '#BF2600';
+            msg.textContent = data.message || '';
+            if (data.success) {
+                ['addRoll', 'addName', 'addEmail', 'addDob'].forEach(id => document.getElementById(id).value = '');
+                loadBatchStudents();
+            }
+        }
+
+        function editStudent(id) {
+            const s = _batchStudents.find(x => x.id === id);
+            if (!s) return;
+            document.getElementById('editStuId').value = s.id;
+            document.getElementById('editStuRoll').value = s.student_id;
+            document.getElementById('editStuName').value = s.name;
+            document.getElementById('editStuEmail').value = s.email || '';
+            document.getElementById('editStuDob').value = s.dob || '';
+            document.getElementById('editStuModal').classList.add('active');
+        }
+        async function saveStudentEdit() {
+            const id = document.getElementById('editStuId').value;
+            const payload = {
+                student_id: document.getElementById('editStuRoll').value.trim(),
+                name: document.getElementById('editStuName').value.trim(),
+                email: document.getElementById('editStuEmail').value.trim(),
+                dob: document.getElementById('editStuDob').value || null,
+            };
+            const res = await fetch('/api/students/' + id, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Saved' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) { document.getElementById('editStuModal').classList.remove('active'); loadBatchStudents(); }
+        }
+        async function resetStudentPw(id, name) {
+            if (!confirm(`Reset ${name}'s password to their DOB? They'll be asked to change it on next login.`)) return;
+            const res = await fetch('/api/students/' + id + '/reset-password', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) { alert(`${name}'s new password is:  ${data.password}\n\nShare it with them. They must change it on first login.`); }
+            else toast(data.message || 'Failed', 'error');
+        }
+
+        async function deleteStudent(id, name) {
+            if (!confirm(`Delete ${name}? This removes their attendance and face data. Cannot be undone.`)) return;
+            const res = await fetch('/api/students/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Deleted' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) loadBatchStudents();
         }
 
         async function logout() {

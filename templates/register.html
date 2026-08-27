@@ -261,7 +261,8 @@
                     if (result.success) {
                         currentSessionId = result.session_id;
                     } else {
-                        alert('Registration failed: ' + result.message);
+                        const msg = result.message || result.detail || 'Unknown error';
+                        alert('Registration failed: ' + msg);
                         return;
                     }
                 } catch (error) {
@@ -395,7 +396,7 @@
                     }
                 } else {
                     // Check for liveness failure
-                    const msg = result.message || '';
+                    const msg = result.message || result.detail || 'Unknown error';
                     if (msg.toLowerCase().includes('liveness')) {
                         document.getElementById('capture-instructions').innerHTML =
                             `<div class="status-error" style="background: #FFEBE6; color: #BF2600; padding: 12px; border-radius: 8px; border-left: 4px solid #DE350B;">
@@ -447,7 +448,8 @@
                     nextStep();
                     stopCamera();
                 } else {
-                    alert('Registration failed: ' + result.message);
+                    const msg = result.message || result.detail || 'Unknown error';
+                    alert('Registration failed: ' + msg);
                 }
             } catch (error) {
                 alert('Registration failed');
