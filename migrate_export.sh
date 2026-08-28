@@ -5,8 +5,10 @@
 #
 #   ./migrate_export.sh                 # db + photos + config
 #   ./migrate_export.sh --with-models    # also bundle the InsightFace models
-#                                        # (~300MB; use when the new server has
-#                                        #  no internet to re-download them)
+#                                        # (~300MB; new server has no internet)
+#   ./migrate_export.sh --offline        # FULLY self-contained: also bundles the
+#                                        # source code and all pip wheels, so the
+#                                        # new server needs NO internet at all
 #
 # Produces:  migration-<host>-<timestamp>.tar.gz  (+ .sha256)
 #
@@ -20,7 +22,14 @@
 set -uo pipefail
 
 WITH_MODELS=0
-[ "${1:-}" = "--with-models" ] && WITH_MODELS=1
+OFFLINE=0
+for arg in "$@"; do
+    case "$arg" in
+        --with-models) WITH_MODELS=1 ;;
+        --offline)     WITH_MODELS=1; OFFLINE=1 ;;   # offline implies models
+        *) echo "unknown option: $arg"; exit 1 ;;
+    esac
+done
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 HOSTTAG="$(hostname -s 2>/dev/null || echo host)"
@@ -108,6 +117,26 @@ if [ "${WITH_MODELS}" -eq 1 ]; then
     fi
 fi
 
+# ---------------------------------------------------------------- offline extras
+if [ "${OFFLINE}" -eq 1 ]; then
+    # (a) the source code itself, so the new host needs no git access
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        git archive --format=tar HEAD | gzip > "${STAGE}/source.tar.gz"             && log "bundled source code ($(du -h "${STAGE}/source.tar.gz" | cut -f1))"             || log "WARNING: could not archive source"
+    fi
+    # (b) pip wheels for every dependency, so the new host needs no PyPI
+    if [ -f "requirements.txt" ]; then
+        log "downloading pip wheels (needs internet HERE, once)…"
+        PIP="./venv/bin/pip"; [ -x "$PIP" ] || PIP="pip3"
+        mkdir -p "${STAGE}/wheels"
+        if "$PIP" download -r requirements.txt -d "${STAGE}/wheels" >/dev/null 2>&1; then
+            log "  bundled $(ls -1 "${STAGE}/wheels" | wc -l) wheel(s), $(du -sh "${STAGE}/wheels" | cut -f1)"
+        else
+            log "  WARNING: wheel download failed — the new host will need PyPI access"
+            rmdir "${STAGE}/wheels" 2>/dev/null
+        fi
+    fi
+fi
+
 # record the commit so the new host checks out the same code
 {
     echo ""
@@ -116,6 +145,7 @@ fi
     echo "GIT COMMIT  : $(git rev-parse HEAD 2>/dev/null || echo unknown)"
     echo "GIT BRANCH  : $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
     echo "MODELS      : $([ "${WITH_MODELS}" -eq 1 ] && echo included || echo 'not included')"
+    echo "OFFLINE     : $([ "${OFFLINE}" -eq 1 ] && echo 'yes - source + wheels included' || echo 'no - new host needs git + PyPI')"
 } >> "${STAGE}/MANIFEST.txt"
 
 # ---------------------------------------------------------------- archive

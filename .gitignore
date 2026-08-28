@@ -67,3 +67,7 @@ student_photos/
 
 # Environment file — contains SMTP/DB credentials, never commit
 .env
+
+# Migration bundles — contain .env, TLS keys, DB and student photos
+migration-*.tar.gz
+migration-*.sha256

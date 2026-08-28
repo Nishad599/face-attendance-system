@@ -22,15 +22,46 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 [ -n "${ARCHIVE}" ] || fail "usage: ./migrate_restore.sh <migration-archive.tar.gz> [--dry-run]"
 [ -f "${ARCHIVE}" ] || fail "archive not found: ${ARCHIVE}"
-[ -f "main_with_face_recognition.py" ] || fail "run this from the project root (after git clone)"
+# Normally run from a fresh git clone. If the app isn't here but the bundle
+# carries source.tar.gz (--offline export), unpack that instead — no git needed.
+if [ ! -f "main_with_face_recognition.py" ]; then
+    # Pure-bash substring match: NO pipe. `grep -q` exits early, which
+    # SIGPIPEs whatever feeds it; with `set -o pipefail` the pipeline then
+    # reports failure (exit 141) even though the match succeeded.
+    ARCHIVE_LIST="$(tar -tzf "${ARCHIVE}" 2>/dev/null)"
+    if [ "${ARCHIVE_LIST#*source.tar.gz}" != "${ARCHIVE_LIST}" ]; then
+        echo "[bootstrap] no source here — extracting the bundled code…"
+        tar -xzf "${ARCHIVE}" -O ./source.tar.gz | tar -xz ||             fail "could not unpack the bundled source"
+        [ -f "main_with_face_recognition.py" ] || fail "bundled source looks incomplete"
+        chmod +x ./*.sh 2>/dev/null
+        echo "[bootstrap] source unpacked"
+    else
+        fail "run this from the project root (after git clone), or use an --offline bundle"
+    fi
+fi
 
 log "=== migration restore (dry-run=${DRY}) ==="
 
 # ---------------------------------------------------------------- checksum
 if [ -f "${ARCHIVE}.sha256" ]; then
+    # Compare the hash VALUES rather than using `sha256sum -c`, which resolves
+    # the filename inside the .sha256 relative to the current directory and so
+    # fails whenever the archive lives somewhere else (e.g. ~/migration-*.tar.gz).
+    EXPECTED="$(awk '{print $1}' "${ARCHIVE}.sha256" | head -1)"
+    ACTUAL=""
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum -c "${ARCHIVE}.sha256" >/dev/null 2>&1 \
-            && log "checksum OK" || fail "CHECKSUM MISMATCH — the archive is corrupt or truncated"
+        ACTUAL="$(sha256sum "${ARCHIVE}" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL="$(shasum -a 256 "${ARCHIVE}" | awk '{print $1}')"
+    fi
+    if [ -z "${ACTUAL}" ]; then
+        log "no sha256 tool available — skipping integrity check"
+    elif [ "${EXPECTED}" = "${ACTUAL}" ]; then
+        log "checksum OK"
+    else
+        echo "  expected: ${EXPECTED}" >&2
+        echo "  actual  : ${ACTUAL}" >&2
+        fail "CHECKSUM MISMATCH — the archive is corrupt or was truncated in transfer"
     fi
 else
     log "no .sha256 alongside the archive — skipping integrity check"
@@ -126,8 +157,13 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv || fail "could not create venv (need python3-venv installed)"
 fi
 log "installing dependencies (this takes a few minutes)…"
-./venv/bin/pip install --quiet --upgrade pip >/dev/null 2>&1
-./venv/bin/pip install --quiet -r requirements.txt || fail "pip install failed"
+if [ -d "${WHEELS_DIR:-}" ] && [ -n "$(ls -A "${WHEELS_DIR}" 2>/dev/null)" ]; then
+    log "  using the ${WHEELS_DIR} bundled with the archive (no internet needed)"
+    ./venv/bin/pip install --quiet --no-index --find-links "${WHEELS_DIR}"         -r requirements.txt || fail "offline pip install failed"
+else
+    ./venv/bin/pip install --quiet --upgrade pip >/dev/null 2>&1
+    ./venv/bin/pip install --quiet -r requirements.txt         || fail "pip install failed (no internet? re-export with --offline)"
+fi
 log "dependencies installed"
 
 # ---------------------------------------------------------------- migrate + verify
@@ -141,6 +177,7 @@ log "verifying schema…"
 ./venv/bin/python check_db.py || log "WARNING: check_db reported problems (see above)"
 
 chmod +x ./*.sh 2>/dev/null
+[ -n "${WHEELS_DIR:-}" ] && rm -rf "${WHEELS_DIR}" && log "removed temporary wheel cache"
 
 echo ""
 log "=== restore complete ==="
