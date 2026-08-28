@@ -8,7 +8,7 @@ Configuration (put these in .env — NEVER commit real credentials):
     SMTP_USER=youraddress@gmail.com
     SMTP_PASSWORD=your_16_char_app_password   # Gmail App Password (needs 2FA)
     SMTP_FROM_NAME=CDAC Attendance
-    APP_BASE_URL=https://10.212.13.129:8000   # used for links in emails
+    APP_BASE_URL=https://YOUR.SERVER.IP:8000  # used for links in emails
 
 Gmail note: a normal account password will NOT work. Create an App Password at
 https://myaccount.google.com/apppasswords (requires 2-Step Verification).

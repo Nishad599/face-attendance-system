@@ -17,7 +17,8 @@ if ps -p $(cat app.pid) > /dev/null 2>&1; then
     echo "✅ Application started!"
     echo "🔹 PID: $(cat app.pid)"
     echo "🔹 Logs: tail -f app.log"
-    echo "🔹 URL: https://10.212.13.129:8000"
+    HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; [ -n "$HOST_IP" ] || HOST_IP="localhost"
+    echo "🔹 URL: https://${HOST_IP}:8000"
 else
     echo "❌ Application failed to start!"
     echo "📋 Error log:"

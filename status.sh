@@ -19,7 +19,8 @@ PYTHON_FILE="main_with_face_recognition.py"
 PID_FILE="app.pid"
 LOG_FILE="app.log"
 PORT=5000
-HOST_IP="10.212.13.129"
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[ -n "$HOST_IP" ] || HOST_IP="localhost"
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
