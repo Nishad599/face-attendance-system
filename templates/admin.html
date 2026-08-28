@@ -85,6 +85,21 @@
                     </a>
                 </div>
 
+                <!-- Email / SMTP -->
+                <div class="admin-card info-zone">
+                    <h3><i class="fa-solid fa-envelope"></i> Email &amp; Reports</h3>
+                    <p>Check SMTP status, send a test email, and see recent send attempts.</p>
+                    <div style="margin-bottom:10px;">
+                        <input type="email" id="testEmailTo" placeholder="your@email.com"
+                            style="display:block;width:100%;margin-bottom:8px;padding:8px;">
+                        <button class="btn btn-info" onclick="sendTestEmail()" id="mailBtn" style="width:100%;">
+                            <span id="mailSpinner"></span>
+                            <i class="fa-solid fa-paper-plane"></i> Send Test Email
+                        </button>
+                    </div>
+                    <div id="emailStatus"></div>
+                </div>
+
                 <!-- Bulk Upload Students -->
                 <div class="admin-card success-zone">
                     <h3>📤 Bulk Upload Students</h3>
@@ -300,6 +315,57 @@
             }
         }
 
+        // Email status + test
+        async function loadEmailStatus() {
+            try {
+                const r = await fetch('/api/admin/email-status');
+                const d = await r.json();
+                if (!d.success) { showResult('emailStatus', d.message || 'Failed', 'error'); return; }
+
+                let html = d.configured
+                    ? `<div class="result success"><i class="fa-solid fa-check text-green-500"></i> SMTP configured as <b>${d.smtp_user || '—'}</b></div>`
+                    : `<div class="result error"><i class="fa-solid fa-xmark text-red-500"></i> SMTP not configured — set SMTP_USER and SMTP_PASSWORD in .env, then restart.</div>`;
+
+                if (d.recent && d.recent.length) {
+                    html += '<div style="max-height:180px;overflow-y:auto;margin-top:10px;font-size:0.85rem;">';
+                    d.recent.forEach(e => {
+                        const colour = e.status === 'sent' ? '#00875A' : (e.status === 'failed' ? '#DE350B' : '#6B778C');
+                        html += `<div style="padding:4px 0;border-bottom:1px solid #eee;">
+                            <span style="color:${colour};font-weight:600;">${e.status}</span> &middot;
+                            ${e.to} <span style="color:#6B778C;">(${e.kind || '—'}, ${e.sent_at || ''})</span>
+                            ${e.error ? '<br><span style="color:#DE350B;font-size:.8rem;">' + e.error + '</span>' : ''}
+                        </div>`;
+                    });
+                    html += '</div>';
+                } else {
+                    html += '<p style="color:#6B778C;font-size:.85rem;margin-top:8px;">No emails sent yet.</p>';
+                }
+                document.getElementById('emailStatus').innerHTML = html;
+            } catch (e) {
+                showResult('emailStatus', 'Error: ' + e.message, 'error');
+            }
+        }
+
+        async function sendTestEmail() {
+            const to = document.getElementById('testEmailTo').value.trim();
+            if (!to) { showResult('emailStatus', 'Enter an email address first', 'error'); return; }
+            showLoading('mailBtn', 'mailSpinner');
+            try {
+                const r = await fetch('/api/admin/email-test', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to })
+                });
+                const d = await r.json();
+                showResult('emailStatus', (d.success ? '<i class="fa-solid fa-check text-green-500"></i> ' : '<i class="fa-solid fa-xmark text-red-500"></i> ') + d.message,
+                    d.success ? 'success' : 'error');
+                setTimeout(loadEmailStatus, 1500);
+            } catch (e) {
+                showResult('emailStatus', 'Error: ' + e.message, 'error');
+            } finally {
+                hideLoading('mailBtn', 'mailSpinner');
+            }
+        }
+
         // Session handling (kept)
         async function performLogout() {
             if (confirm('Are you sure you want to logout?')) {
@@ -338,6 +404,7 @@
         window.onload = function () {
             checkSystem();
             getDatabaseStats();
+            loadEmailStatus();
         };
         setInterval(() => {
             checkSystem();

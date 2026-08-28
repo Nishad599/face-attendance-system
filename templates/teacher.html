@@ -58,6 +58,7 @@
         <div class="app-tabs">
             <button class="app-tab active" data-tab="mark" onclick="switchTab('mark')">Mark Attendance</button>
             <button class="app-tab" data-tab="analytics" onclick="switchTab('analytics')">Analytics</button>
+            <button class="app-tab" data-tab="facereq" onclick="switchTab('facereq')">Face Requests</button>
             <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
             <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
             <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
@@ -133,6 +134,27 @@
                         <tbody id="anPerStudent"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- ===== FACE REQUESTS ===== -->
+        <div id="tab-facereq" style="display:none;">
+            <div class="toolbar">
+                <span class="muted">Students who registered their own face and need your approval.</span>
+                <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadFaceRequests()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <div class="bulkbar" id="frBulkbar" style="display:none;">
+                <button class="app-btn app-btn-success app-btn-sm" onclick="actFaceRequests('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="actFaceRequests('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr>
+                        <th style="width:36px;"><input type="checkbox" id="frSelAll" onchange="frToggleAll(this)"></th>
+                        <th>Roll No</th><th>Name</th><th>Batch</th><th>Photos</th><th>Submitted</th><th>Action</th>
+                    </tr></thead>
+                    <tbody id="faceReqRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+                </table>
             </div>
         </div>
 
@@ -279,11 +301,12 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['mark', 'analytics', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            ['mark', 'analytics', 'facereq', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
             if (tab === 'holidays') loadHolidays();
             if (tab === 'students') loadPending();
             if (tab === 'grievances') loadGrievances();
             if (tab === 'analytics') loadAnalytics();
+            if (tab === 'facereq') loadFaceRequests();
         }
 
         // ---------- Analytics ----------
@@ -353,6 +376,57 @@
                     <td>${p.present_days}/${p.working_days}</td>
                     <td><span class="app-badge ${p.rate < 75 ? 'app-badge-danger' : (p.rate < 85 ? 'app-badge-warning' : 'app-badge-success')}">${p.rate}%</span></td>
                 </tr>`).join('') : '<tr><td colspan="4" class="muted">No students.</td></tr>';
+        }
+
+        // ---------- Face registration requests ----------
+        async function loadFaceRequests() {
+            const tbody = document.getElementById('faceReqRows');
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+            const res = await fetch('/api/teacher/face-requests?status=pending');
+            const data = await res.json();
+            const reqs = data.requests || [];
+            document.getElementById('frBulkbar').style.display = reqs.length ? 'flex' : 'none';
+            if (!reqs.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="muted">No face registrations awaiting approval.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = reqs.map(r => `
+                <tr>
+                    <td><input type="checkbox" class="frchk" value="${r.id}"></td>
+                    <td><strong>${esc(r.roll_no)}</strong></td>
+                    <td>${esc(r.student_name)}</td>
+                    <td><span class="app-badge app-badge-info">${esc(r.batch)}</span></td>
+                    <td>${r.photo_count}</td>
+                    <td class="muted">${esc(r.created_at)}</td>
+                    <td><div class="row-actions">
+                        <button class="app-btn app-btn-success app-btn-sm" onclick="actFaceRequests('approve', false, ${r.id})">Approve</button>
+                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actFaceRequests('reject', false, ${r.id})">Reject</button>
+                    </div></td>
+                </tr>`).join('');
+            document.getElementById('frSelAll').checked = false;
+        }
+        function frToggleAll(cb) { document.querySelectorAll('.frchk').forEach(c => c.checked = cb.checked); }
+        async function actFaceRequests(action, selectedOnly, singleId) {
+            let ids;
+            if (singleId) ids = [singleId];
+            else {
+                ids = Array.from(document.querySelectorAll('.frchk:checked')).map(c => parseInt(c.value));
+                if (!ids.length) { toast('No requests selected', 'error'); return; }
+            }
+            const verb = action === 'approve' ? 'Approve' : 'Reject';
+            let note = null;
+            if (action === 'reject') {
+                note = prompt('Reason for rejecting (shown to the student, optional):') || null;
+            } else if (!confirm(`Approve ${ids.length} face registration(s)? They will be recognised at the terminal.`)) {
+                return;
+            }
+            const res = await fetch('/api/teacher/face-requests/action', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, action, note })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) { loadFaceRequests(); loadBatchStudents(); }
         }
 
         // ---------- Grievances ----------

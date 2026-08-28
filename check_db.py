@@ -7,13 +7,17 @@ import sys
 from db import get_connection, is_postgres
 
 REQUIRED_COLUMNS = {
-    "students": ["course_id", "password_hash", "must_change_password", "dob"],
+    "students": ["course_id", "password_hash", "must_change_password", "dob",
+                 "joining_date"],
     "courses": ["terminal_pin_hash"],
-    "attendance": ["course_id"],
+    "attendance": ["course_id", "is_late"],
     "slot_attendance": ["course_id"],
     "holidays": ["course_id"],
+    "users": ["email"],
 }
-REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances"]
+REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
+                   "email_log", "password_resets", "face_registration_requests",
+                   "audit_log"]
 
 
 def table_exists(cur, table_name):

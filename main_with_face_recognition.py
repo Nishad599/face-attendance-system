@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File, BackgroundTasks
 from typing import Optional, Dict, Any, List
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -423,6 +423,85 @@ class AttendanceSystem:
         self.conn.commit()
         return session_id, "Registration session started"
     
+    DUPLICATE_FACE_THRESHOLD = 0.60
+
+    def find_matching_student(self, encoding, exclude_student_code=None, exclude_db_id=None):
+        """Return (student_name, similarity) if `encoding` already belongs to a
+        registered student, else (None, 0.0).
+
+        Used to stop the same person registering under two roll numbers.
+        """
+        try:
+            if encoding is None or not len(self.known_face_encodings):
+                return None, 0.0
+
+            exclude_ids = set()
+            cur = self.conn.cursor()
+            if exclude_student_code is not None:
+                row = cur.execute(
+                    "SELECT id FROM students WHERE student_id = ?", (exclude_student_code,)
+                ).fetchone()
+                if row:
+                    exclude_ids.add(row[0])
+            if exclude_db_id is not None:
+                exclude_ids.add(exclude_db_id)
+
+            enc = np.asarray(encoding, dtype=np.float64)
+            enc_norm = enc / np.linalg.norm(enc)
+
+            best_name, best_sim = None, 0.0
+            for known, db_id, name in zip(self.known_face_encodings,
+                                          self.known_face_ids,
+                                          self.known_face_names):
+                if db_id in exclude_ids:
+                    continue
+                k = np.asarray(known, dtype=np.float64)
+                if k.shape != enc_norm.shape:
+                    continue
+                sim = float(np.dot(enc_norm, k / np.linalg.norm(k)))
+                if sim > best_sim:
+                    best_sim, best_name = sim, name
+
+            if best_sim >= self.DUPLICATE_FACE_THRESHOLD:
+                return best_name, best_sim
+            return None, best_sim
+        except Exception as e:
+            print(f"[WARN] duplicate-face check skipped: {e}")
+            return None, 0.0
+
+    def build_session_encoding(self, session_id: str):
+        """Average the captured photos of a registration session.
+
+        Returns (average_encoding, photos_uploaded, verification_score) or
+        (None, 0, 0.0) when the session has no usable photos.
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "SELECT photos_uploaded FROM registration_sessions WHERE session_id = ?",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            photos_uploaded = row[0] if row else 0
+
+            temp_file = f"temp_encodings_{session_id}.npy"
+            if not os.path.exists(temp_file):
+                return None, photos_uploaded, 0.0
+
+            encodings_data = np.load(temp_file, allow_pickle=True).tolist()
+            encodings = [np.array(item['encoding']) for item in encodings_data]
+            if not encodings:
+                return None, photos_uploaded, 0.0
+
+            average_encoding = np.mean(encodings, axis=0)
+            avg_norm = average_encoding / np.linalg.norm(average_encoding)
+            sims = [float(np.dot(e / np.linalg.norm(e), avg_norm)) for e in encodings]
+            verification_score = float(np.mean(sims)) if sims else 0.8
+            return average_encoding, len(encodings), verification_score
+        except Exception as e:
+            print(f"[ERROR] build_session_encoding: {e}")
+            return None, 0, 0.0
+
     def process_face_photo(self, image_data: str, session_id: str):
         """Process a face photo and extract encoding"""
         if not FACE_RECOGNITION_AVAILABLE:
@@ -590,6 +669,19 @@ class AttendanceSystem:
             else:
                 verification_score = 0.8  # Default score
             
+            # --- DUPLICATE FACE CHECK -------------------------------------
+            # Reject if this face is already registered to a DIFFERENT student,
+            # which would otherwise allow one person to hold two roll numbers
+            # (or a student to register a friend's face on their own account).
+            dup_name, dup_sim = self.find_matching_student(
+                average_encoding, exclude_student_code=student_data['student_id']
+            )
+            if dup_name:
+                return False, (f"This face is already registered to {dup_name} "
+                               f"(match {dup_sim:.0%}). A person can only be registered once. "
+                               f"If this is wrong, ask an admin to remove the other record.")
+            # --- END DUPLICATE FACE CHECK ---------------------------------
+
             # If the student was pre-loaded (CSV onboarding), UPDATE that row so
             # we don't create a duplicate; otherwise INSERT a new student.
             cursor.execute(
@@ -1290,6 +1382,36 @@ class StudentLogin(BaseModel):
     password: str
 
 
+# --- Login rate limiting (in-memory, per identifier) ----------------------
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "8") or 8)
+LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "10") or 10)
+_login_attempts: Dict[str, List[datetime]] = {}
+
+
+def login_blocked(identifier: str):
+    """(blocked, seconds_remaining) for this identifier."""
+    key = (identifier or "").strip().lower()
+    if not key:
+        return False, 0
+    window_start = datetime.now() - timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+    tries = [t for t in _login_attempts.get(key, []) if t > window_start]
+    _login_attempts[key] = tries
+    if len(tries) >= LOGIN_MAX_ATTEMPTS:
+        remaining = int((tries[0] + timedelta(minutes=LOGIN_LOCKOUT_MINUTES) - datetime.now()).total_seconds())
+        return True, max(remaining, 1)
+    return False, 0
+
+
+def record_login_failure(identifier: str):
+    key = (identifier or "").strip().lower()
+    if key:
+        _login_attempts.setdefault(key, []).append(datetime.now())
+
+
+def clear_login_failures(identifier: str):
+    _login_attempts.pop((identifier or "").strip().lower(), None)
+
+
 def authenticate_user(username: str, password: str, roles: List[str]) -> Optional[dict]:
     """Authenticate an admin/teacher against the users table.
 
@@ -1348,13 +1470,73 @@ async def simple_login_page(request: Request):
     """Simple dual login page"""
     return templates.TemplateResponse("simple_login.html", {"request": request})
 
+def audit(session, action, target=None, details=None, course_id=None):
+    """Record a sensitive action (who did what). Best-effort: never raises."""
+    try:
+        info = (session or {}).get("user_info", {}) or {}
+        attendance_system.conn.execute(
+            "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, target, details, course_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ((session or {}).get("user_type"), info.get("id"),
+             info.get("name") or info.get("username"),
+             action, str(target) if target is not None else None,
+             str(details) if details is not None else None, course_id),
+        )
+        attendance_system.conn.commit()
+    except Exception as e:
+        print(f"[WARN] audit log skipped ({action}): {e}")
+
+
+LATE_GRACE_MINUTES = int(os.getenv("LATE_GRACE_MINUTES", "10") or 10)
+
+
+def compute_is_late(slot_key: str = None, when: datetime = None) -> bool:
+    """True when the arrival is more than LATE_GRACE_MINUTES after the slot start.
+
+    Falls back to False when no slot is active or slot timings can't be read,
+    so a failure here can never wrongly flag a student.
+    """
+    try:
+        if attendance_manager is None:
+            return False
+        now = when or datetime.now(timezone)
+        slots = getattr(attendance_manager, "attendance_slots", {}) or {}
+
+        if slot_key and slot_key in slots:
+            slot = slots[slot_key]
+        else:
+            current = attendance_manager.get_current_slot(now)
+            if not current:
+                return False
+            slot = current.get("slot_info") or {}
+
+        start = slot.get("start_time")
+        if start is None:
+            return False
+
+        now_t = now.time()
+        start_minutes = start.hour * 60 + start.minute
+        now_minutes = now_t.hour * 60 + now_t.minute
+        return (now_minutes - start_minutes) > LATE_GRACE_MINUTES
+    except Exception as e:
+        print(f"[WARN] late check skipped: {e}")
+        return False
+
+
+# Session cookies are marked Secure by default because this app serves HTTPS
+# (both the VM and the local dev server). Set COOKIE_SECURE=0 in .env only if you
+# deliberately run it over plain HTTP — without Secure, the session cookie can be
+# sent over an unencrypted request and stolen.
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "1").strip().lower() not in ("0", "false", "no")
+
+
 def _set_session_cookie(response: Response, session_token: str):
     response.set_cookie(
         key="session_token",
         value=session_token,
         max_age=SESSION_TIMEOUT_HOURS * 3600,
         httponly=True,
-        secure=False,  # Set to True in production behind HTTPS with a trusted cert
+        secure=COOKIE_SECURE,
         samesite="lax",
     )
 
@@ -1366,9 +1548,16 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
         username = (login_data.username or "").strip()
         password = login_data.password or ""
 
+        blocked, wait = login_blocked(username)
+        if blocked:
+            return {"success": False,
+                    "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."}
+
         user_info = authenticate_user(username, password, roles=["admin", "teacher"])
         if not user_info:
+            record_login_failure(username)
             return {"success": False, "message": "Invalid username or password"}
+        clear_login_failures(username)
 
         role = user_info["role"]
         session_token = SessionManager.create_session(role, user_info)
@@ -1400,6 +1589,11 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
         if not student_id or not password:
             return {"success": False, "message": "Roll number and password are required"}
 
+        blocked, wait = login_blocked(student_id)
+        if blocked:
+            return {"success": False,
+                    "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."}
+
         row = attendance_system.conn.execute(
             "SELECT id, student_id, name, password_hash, status, course_id, "
             "must_change_password, face_encoding IS NOT NULL AS has_face "
@@ -1408,8 +1602,10 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
         ).fetchone()
 
         if not row or not row[3] or not verify_password(password, row[3]):
+            record_login_failure(student_id)
             print(f"[ERROR] Failed student login attempt: {student_id}")
             return {"success": False, "message": "Invalid roll number or password"}
+        clear_login_failures(student_id)
 
         if row[4] not in ("active", "pending_registration"):
             return {"success": False, "message": "Account is inactive. Contact admin."}
@@ -1743,6 +1939,249 @@ async def change_password_api(
     redirect = {"admin": "/dashboard", "teacher": "/teacher", "student": "/student"}.get(user_type, "/")
     return {"success": True, "message": "Password updated", "redirect_url": redirect}
 
+
+# ==================================================================
+# Forgot password — emailed one-time code (OTP)
+# ==================================================================
+
+OTP_TTL_MINUTES = 15
+OTP_MAX_ATTEMPTS = 5
+# Deliberately identical for found/not-found so the endpoint can't be used to
+# discover which roll numbers or usernames exist.
+_OTP_GENERIC = ("If that account exists and has an email address on file, "
+                "a reset code has been sent to it.")
+
+
+def _find_principal(identifier: str):
+    """Look up a student (by roll no or email) or staff (by username or email).
+
+    Returns (kind, id, name, email) or None.
+    """
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    cur = attendance_system.conn.cursor()
+
+    row = cur.execute(
+        "SELECT id, name, email FROM students WHERE student_id = ? OR LOWER(email) = LOWER(?)",
+        (ident, ident),
+    ).fetchone()
+    if row:
+        return ("student", row[0], row[1], row[2])
+
+    row = cur.execute(
+        "SELECT id, name, COALESCE(NULLIF(email,''), username) FROM users "
+        "WHERE (username = ? OR LOWER(email) = LOWER(?)) AND is_active = 1",
+        (ident, ident),
+    ).fetchone()
+    if row:
+        return ("staff", row[0], row[1], row[2])
+    return None
+
+
+@app.post("/api/forgot-password")
+async def forgot_password(background_tasks: BackgroundTasks, data: dict = Body(...)):
+    """Email a one-time reset code. Always returns the same generic message."""
+    try:
+        identifier = (data.get("identifier") or "").strip()
+        found = _find_principal(identifier)
+
+        if found:
+            kind, pid, name, email = found
+            if email and "@" in str(email):
+                otp = f"{secrets.randbelow(1000000):06d}"
+                expires = datetime.now() + timedelta(minutes=OTP_TTL_MINUTES)
+                cur = attendance_system.conn.cursor()
+                # Invalidate any earlier unused codes for this principal
+                cur.execute(
+                    "UPDATE password_resets SET used = 1 WHERE principal_type = ? "
+                    "AND principal_id = ? AND used = 0",
+                    (kind, pid),
+                )
+                cur.execute(
+                    "INSERT INTO password_resets (principal_type, principal_id, otp_hash, expires_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (kind, pid, hash_password(otp), expires.isoformat()),
+                )
+                attendance_system.conn.commit()
+
+                def _send(to_email=email, who=name, code=otp):
+                    try:
+                        import mailer as _m, reports as _r
+                        ok, msg = _m.send_email(to_email, "Your password reset code",
+                                                _r.otp_email(who, code, OTP_TTL_MINUTES), kind="otp")
+                        if not ok:
+                            print(f"[MAIL] OTP -> {to_email} failed: {msg}")
+                    except Exception as e:
+                        print(f"[MAIL] OTP task error: {e}")
+
+                background_tasks.add_task(_send)
+
+        return {"success": True, "message": _OTP_GENERIC}
+    except Exception as e:
+        print(f"[ERROR] forgot-password: {e}")
+        return {"success": True, "message": _OTP_GENERIC}
+
+
+@app.post("/api/reset-password-otp")
+async def reset_password_with_otp(data: dict = Body(...)):
+    """Verify the emailed code and set a new password."""
+    try:
+        identifier = (data.get("identifier") or "").strip()
+        otp = (data.get("otp") or "").strip()
+        new_password = (data.get("new_password") or "").strip()
+
+        if not identifier or not otp or not new_password:
+            return {"success": False, "message": "Account, code and new password are required"}
+        if len(new_password) < 6:
+            return {"success": False, "message": "New password must be at least 6 characters"}
+
+        found = _find_principal(identifier)
+        if not found:
+            return {"success": False, "message": "Invalid or expired code"}
+        kind, pid, _name, _email = found
+
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT id, otp_hash, expires_at, attempts FROM password_resets "
+            "WHERE principal_type = ? AND principal_id = ? AND used = 0 "
+            "ORDER BY id DESC LIMIT 1",
+            (kind, pid),
+        ).fetchone()
+        if not row:
+            return {"success": False, "message": "Invalid or expired code"}
+
+        reset_id, otp_hash, expires_at, attempts = row[0], row[1], row[2], row[3] or 0
+
+        if attempts >= OTP_MAX_ATTEMPTS:
+            cur.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (reset_id,))
+            attendance_system.conn.commit()
+            return {"success": False, "message": "Too many attempts. Request a new code."}
+
+        try:
+            expired = datetime.now() > datetime.fromisoformat(str(expires_at))
+        except (ValueError, TypeError):
+            expired = True
+        if expired:
+            cur.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (reset_id,))
+            attendance_system.conn.commit()
+            return {"success": False, "message": "That code has expired. Request a new one."}
+
+        if not verify_password(otp, otp_hash):
+            cur.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE id = ?", (reset_id,))
+            attendance_system.conn.commit()
+            return {"success": False, "message": "Invalid or expired code"}
+
+        # Code is good — set the new password and burn the code
+        if kind == "student":
+            cur.execute(
+                "UPDATE students SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+                (hash_password(new_password), pid),
+            )
+        else:
+            cur.execute(
+                "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?",
+                (hash_password(new_password), pid),
+            )
+        cur.execute("UPDATE password_resets SET used = 1 WHERE id = ?", (reset_id,))
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Password updated. You can now log in.",
+                "redirect_url": "/login"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page(request: Request):
+    return templates.TemplateResponse("forgot_password.html", {"request": request})
+
+
+# ==================================================================
+# Email status / test (admin)
+# ==================================================================
+
+@app.get("/api/admin/email-status")
+async def email_status(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Whether SMTP is configured, plus the most recent send attempts."""
+    try:
+        import mailer as _m
+        recent = []
+        try:
+            rows = attendance_system.conn.execute(
+                "SELECT to_email, subject, kind, status, error, sent_at "
+                "FROM email_log ORDER BY id DESC LIMIT 20"
+            ).fetchall()
+            recent = [{"to": r[0], "subject": r[1], "kind": r[2], "status": r[3],
+                       "error": r[4], "sent_at": str(r[5])[:19]} for r in rows]
+        except Exception:
+            pass  # table may not exist until migrate_phase3 runs
+
+        counts = {"sent": 0, "failed": 0, "skipped": 0}
+        for r in recent:
+            if r["status"] in counts:
+                counts[r["status"]] += 1
+
+        return {
+            "success": True,
+            "configured": _m.is_configured(),
+            "from_name": os.getenv("SMTP_FROM_NAME", "CDAC Attendance"),
+            "smtp_user": os.getenv("SMTP_USER", ""),
+            "base_url": _m.base_url(),
+            "recent": recent,
+            "recent_counts": counts,
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/admin/audit-log")
+async def get_audit_log(limit: int = 100, action: Optional[str] = None,
+                        session: Dict[str, Any] = Depends(require_admin_access)):
+    """Recent sensitive actions: who marked/deleted/approved what."""
+    try:
+        limit = max(1, min(int(limit or 100), 500))
+        cur = attendance_system.conn.cursor()
+        if action:
+            rows = cur.execute(
+                "SELECT actor_type, actor_name, action, target, details, created_at "
+                "FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT ?", (action, limit)
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT actor_type, actor_name, action, target, details, created_at "
+                "FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return {"success": True, "entries": [{
+            "actor_type": r[0], "actor_name": r[1], "action": r[2],
+            "target": r[3], "details": r[4], "at": str(r[5])[:19],
+        } for r in rows]}
+    except Exception as e:
+        return {"success": False, "message": str(e), "entries": []}
+
+
+@app.post("/api/admin/email-test")
+async def email_test(data: dict = Body(...), session: Dict[str, Any] = Depends(require_admin_access)):
+    """Send a test email to verify SMTP settings."""
+    try:
+        import mailer as _m
+        to = (data.get("to") or "").strip()
+        if not to or "@" not in to:
+            return {"success": False, "message": "Enter a valid email address"}
+        if not _m.is_configured():
+            return {"success": False,
+                    "message": "SMTP not configured. Set SMTP_USER and SMTP_PASSWORD in .env, then restart."}
+        html = _m.render_email(
+            "SMTP test successful",
+            "If you can read this, the attendance system can send email.",
+            _m.stat_table([("Sent at", datetime.now().strftime("%d %b %Y, %H:%M")),
+                           ("From", os.getenv("SMTP_USER", ""))]),
+        )
+        ok, msg = _m.send_email(to, "CDAC Attendance — SMTP test", html, kind="test")
+        return {"success": ok, "message": "Test email sent." if ok else msg}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/api/attendance/student/{student_id}/slots")
 async def get_student_slot_attendance(student_id: int):
     """Get detailed slot-based attendance data for a specific student"""
@@ -1864,15 +2303,19 @@ async def detect_attendance(image_data: DetectionImage):
                         status = "already_marked"
                         message = f"{student_name} already marked present today"
                     else:
-                        # Mark attendance (carry the student's batch for per-batch views)
+                        # Mark attendance (carry the student's batch + late flag)
+                        late = compute_is_late()
                         cursor.execute('''
-                            INSERT INTO attendance (student_id, date, time_in, is_manual, course_id)
-                            VALUES (?, ?, ?, ?, (SELECT course_id FROM students WHERE id = ?))
-                        ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'), False, student_id))
-                        
+                            INSERT INTO attendance (student_id, date, time_in, is_manual, is_late, course_id)
+                            VALUES (?, ?, ?, ?, ?, (SELECT course_id FROM students WHERE id = ?))
+                        ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'),
+                              False, late, student_id))
+
                         attendance_system.conn.commit()
                         status = "marked"
                         message = f"Attendance marked for {student_name}"
+                        if late:
+                            message += " (late)"
                     
                     # Define face_location from face_data['location'] before using it
                     face_location = face_data['location']
@@ -2268,6 +2711,8 @@ async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)
         # Reload face encodings (will be empty)
         attendance_system.load_student_faces()
         
+        audit(session, "clear_all_data", target="ALL student data",
+              details="students, attendance, face encodings wiped")
         return {"success": True, "message": "All student data cleared successfully"}
     except Exception as e:
         attendance_system.conn.rollback()
@@ -2298,12 +2743,14 @@ class CourseUpdate(BaseModel):
 class TeacherCreate(BaseModel):
     username: str
     name: Optional[str] = None
+    email: Optional[str] = None
     password: str
     batch_ids: Optional[List[int]] = None
 
 
 class TeacherUpdate(BaseModel):
     name: Optional[str] = None
+    email: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
     batch_ids: Optional[List[int]] = None
@@ -2481,7 +2928,7 @@ async def list_teachers(session: Dict[str, Any] = Depends(require_admin_access))
         cur = attendance_system.conn.cursor()
         teachers = []
         for r in cur.execute(
-            "SELECT id, username, name, is_active FROM users WHERE role = 'teacher' ORDER BY username"
+            "SELECT id, username, name, is_active, email FROM users WHERE role = 'teacher' ORDER BY username"
         ).fetchall():
             batches = cur.execute(
                 "SELECT c.id, c.name FROM teacher_batches tb "
@@ -2490,6 +2937,7 @@ async def list_teachers(session: Dict[str, Any] = Depends(require_admin_access))
             ).fetchall()
             teachers.append({
                 "id": r[0], "username": r[1], "name": r[2], "is_active": bool(r[3]),
+                "email": r[4] or "",
                 "batches": [{"id": b[0], "name": b[1]} for b in batches],
             })
         return {"success": True, "teachers": teachers}
@@ -2508,9 +2956,10 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
         if cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
             return {"success": False, "message": f"Username '{username}' already exists"}
         cur.execute(
-            "INSERT INTO users (username, name, password_hash, role, is_active, must_change_password) "
-            "VALUES (?, ?, ?, 'teacher', 1, 1)",
-            (username, (data.name or username).strip(), hash_password(data.password)),
+            "INSERT INTO users (username, name, email, password_hash, role, is_active, must_change_password) "
+            "VALUES (?, ?, ?, ?, 'teacher', 1, 1)",
+            (username, (data.name or username).strip(), (data.email or "").strip() or None,
+             hash_password(data.password)),
         )
         user_id = cur.lastrowid
         for cid in (data.batch_ids or []):
@@ -2543,6 +2992,8 @@ async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, A
         fields, values = [], []
         if data.name is not None:
             fields.append("name = ?"); values.append(data.name.strip())
+        if data.email is not None:
+            fields.append("email = ?"); values.append(data.email.strip() or None)
         if data.is_active is not None:
             fields.append("is_active = ?"); values.append(1 if data.is_active else 0)
         if data.password:
@@ -2697,6 +3148,8 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
         # Reload face encodings after deletion
         attendance_system.load_student_faces()
         
+        audit(session, "delete_student", target=student[0],
+              details=f"student_db_id={student_id}", course_id=student[1])
         return {"success": True, "message": f"Student {student[0]} deleted successfully"}
         
     except Exception as e:
@@ -2748,8 +3201,50 @@ async def reset_teacher_password(user_id: int, data: dict = Body(default={}),
         return {"success": False, "message": str(e)}
 
 
+def send_welcome_emails(recipients):
+    """Background task: email new students their login details.
+
+    recipients: list of (email, name, roll_no, plain_password, batch_name)
+    Failures are logged to email_log by mailer; they never break onboarding.
+    """
+    try:
+        import mailer as _mailer
+        import reports as _reports
+        if not _mailer.is_configured():
+            print("[MAIL] Welcome emails skipped: SMTP not configured")
+            return
+        sent = 0
+        for email, name, roll, pw, batch in recipients:
+            if not email or "@" not in email:
+                continue
+            ok, msg = _mailer.send_email(
+                email,
+                "Your attendance portal account",
+                _reports.welcome_email(name, roll, pw, batch),
+                kind="welcome",
+            )
+            if ok:
+                sent += 1
+            else:
+                print(f"[MAIL] welcome -> {email} failed: {msg}")
+        print(f"[MAIL] Welcome emails sent: {sent}/{len(recipients)}")
+    except Exception as e:
+        print(f"[MAIL] Welcome email task error: {e}")
+
+
+def _batch_name_for(course_id):
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT name FROM courses WHERE id = ?", (course_id,)
+        ).fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 @app.post("/api/students/add")
-async def add_single_student(data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+async def add_single_student(background_tasks: BackgroundTasks, data: dict = Body(...),
+                             session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Add one student (pending face registration). Teachers limited to their batches."""
     try:
         student_id = (data.get("student_id") or "").strip()
@@ -2770,13 +3265,20 @@ async def add_single_student(data: dict = Body(...), session: Dict[str, Any] = D
                        (student_id, email)).fetchone():
             return {"success": False, "message": "A student with this roll number or email already exists"}
 
+        plain_pw = default_student_password(dob)
         cur.execute('''
             INSERT INTO students
             (student_id, name, email, dob, course_id, password_hash, must_change_password, status)
             VALUES (?, ?, ?, ?, ?, ?, 1, 'pending_registration')
-        ''', (student_id, name, email, dob or None, course_id,
-              hash_password(default_student_password(dob))))
+        ''', (student_id, name, email, dob or None, course_id, hash_password(plain_pw)))
         attendance_system.conn.commit()
+
+        # Email their login details (background; no-op if SMTP unconfigured)
+        if data.get("send_welcome", True):
+            background_tasks.add_task(
+                send_welcome_emails,
+                [(email, name, student_id, plain_pw, _batch_name_for(course_id))],
+            )
         return {"success": True, "message": f"Added {name} (pending face registration)"}
     except HTTPException:
         raise
@@ -2785,7 +3287,8 @@ async def add_single_student(data: dict = Body(...), session: Dict[str, Any] = D
 
 
 @app.post("/api/students/bulk-upload")
-async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+async def bulk_upload_students(background_tasks: BackgroundTasks, file: UploadFile = File(...),
+                               session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Bulk upload student details from CSV (faces are registered later).
 
     CSV columns (header row required):
@@ -2829,6 +3332,7 @@ async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, 
         added_count = 0
         skipped_count = 0
         errors = []
+        welcome_queue = []   # (email, name, roll, plain_pw, batch) for welcome emails
 
         for row_num, row in enumerate(reader, start=2):
             try:
@@ -2870,6 +3374,7 @@ async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, 
                     skipped_count += 1
                     continue
 
+                plain_pw = default_student_password(dob)
                 cursor.execute('''
                     INSERT INTO students
                     (student_id, name, email, joining_date, dob, course_id,
@@ -2877,15 +3382,21 @@ async def bulk_upload_students(file: UploadFile = File(...), session: Dict[str, 
                     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'pending_registration')
                 ''', (
                     student_id, name, email, joining_date, dob or None, course_id,
-                    hash_password(default_student_password(dob)),
+                    hash_password(plain_pw),
                 ))
                 added_count += 1
+                welcome_queue.append((email, name, student_id, plain_pw,
+                                      batch_name or _batch_name_for(course_id)))
 
             except Exception as e:
                 errors.append(f"Row {row_num}: {str(e)}")
                 skipped_count += 1
 
         attendance_system.conn.commit()
+
+        # Email login details to the new students (background task)
+        if welcome_queue:
+            background_tasks.add_task(send_welcome_emails, welcome_queue)
 
         message = f"[OK] Added {added_count} student(s) (pending face registration)"
         if skipped_count > 0:
@@ -2957,7 +3468,7 @@ async def logout(response: Response, session_token: str = Cookie(None, alias="se
         response.delete_cookie(
             key="session_token",
             httponly=True,
-            secure=False,  # Set to True in production
+            secure=COOKIE_SECURE,
             samesite="lax"
         )
         
@@ -3185,6 +3696,9 @@ async def bulk_mark_attendance_api(data: dict = Body(...),
         attendance_system.conn.commit()
         scope = f"session '{session_type}'" if session_type else "the whole day"
         verb = "marked present" if status == "present" else "cleared"
+        audit(session, "bulk_mark", target=f"{len(target_ids)} student(s)",
+              details=f"date={the_date} status={status} session={session_type or 'whole day'} affected={affected}",
+              course_id=course_id)
         return {
             "success": True,
             "message": f"{verb.title()} for {len(target_ids)} student(s) on {the_date} ({scope}).",
@@ -3356,6 +3870,8 @@ async def act_on_grievances(data: dict = Body(...),
             processed += 1
 
         attendance_system.conn.commit()
+        audit(session, "grievance_action", target=f"{processed} request(s)",
+              details=f"action={action} marked_present={marked}")
         msg = f"{new_status.title()} {processed} request(s)"
         if action == "approve":
             msg += f" — {marked} student(s) marked present"
@@ -3488,6 +4004,208 @@ async def teacher_batch_analytics(course_id: int, at_risk_threshold: float = 75.
     except HTTPException:
         raise
     except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ==================================================================
+# Student self-registration of their own face (teacher-approved)
+# ==================================================================
+
+@app.post("/api/student/register-face/start")
+async def student_register_face_start(session: Dict[str, Any] = Depends(require_student)):
+    """Start a capture session for the logged-in student's own face."""
+    try:
+        info = session.get("user_info", {})
+        sid = info.get("id")
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT student_id, name, email, face_encoding IS NOT NULL FROM students WHERE id = ?",
+            (sid,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+        if row[3]:
+            return {"success": False, "message": "Your face is already registered. "
+                                                 "Ask your teacher if it needs changing."}
+
+        pending = cur.execute(
+            "SELECT id FROM face_registration_requests WHERE student_id = ? AND status = 'pending'",
+            (sid,),
+        ).fetchone()
+        if pending:
+            return {"success": False,
+                    "message": "You already have a registration awaiting teacher approval."}
+
+        session_id = str(uuid.uuid4())
+        expires_at = datetime.now() + timedelta(minutes=30)
+        cur.execute(
+            "INSERT INTO registration_sessions (session_id, student_data, expires_at) VALUES (?, ?, ?)",
+            (session_id, json.dumps({"name": row[1], "email": row[2], "student_id": row[0]}),
+             expires_at.isoformat()),
+        )
+        attendance_system.conn.commit()
+        return {"success": True, "session_id": session_id, "name": row[1], "student_id": row[0]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/student/register-face/complete")
+async def student_register_face_complete(data: dict = Body(...),
+                                         session: Dict[str, Any] = Depends(require_student)):
+    """Submit the captured face for teacher approval (does NOT activate it)."""
+    try:
+        info = session.get("user_info", {})
+        sid = info.get("id")
+        session_id = (data.get("session_id") or "").strip()
+        if not session_id:
+            return {"success": False, "message": "Missing session"}
+
+        encoding, photos, score = attendance_system.build_session_encoding(session_id)
+        if encoding is None:
+            return {"success": False, "message": "No usable photos were captured. Please try again."}
+        if photos < 3:
+            return {"success": False, "message": f"Please capture at least 3 photos (got {photos})."}
+
+        # Block the same face being registered to someone else
+        dup_name, dup_sim = attendance_system.find_matching_student(encoding, exclude_db_id=sid)
+        if dup_name:
+            return {"success": False,
+                    "message": f"This face is already registered to another student ({dup_name}). "
+                               f"Please contact your teacher."}
+
+        cur = attendance_system.conn.cursor()
+        crow = cur.execute("SELECT course_id FROM students WHERE id = ?", (sid,)).fetchone()
+        cur.execute(
+            "INSERT INTO face_registration_requests "
+            "(student_id, course_id, session_id, photo_count, encoding_blob, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (sid, crow[0] if crow else None, session_id, photos, encoding.tobytes()),
+        )
+        cur.execute("UPDATE registration_sessions SET status = 'completed' WHERE session_id = ?",
+                    (session_id,))
+        attendance_system.conn.commit()
+
+        temp_file = f"temp_encodings_{session_id}.npy"
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except OSError:
+                pass
+
+        return {"success": True,
+                "message": "Submitted. Your teacher will review and approve your face registration."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/register-face/status")
+async def student_register_face_status(session: Dict[str, Any] = Depends(require_student)):
+    """Whether the student has a face / a pending or rejected request."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT face_encoding IS NOT NULL FROM students WHERE id = ?", (sid,)
+        ).fetchone()
+        has_face = bool(row[0]) if row else False
+        req = cur.execute(
+            "SELECT status, review_note, created_at FROM face_registration_requests "
+            "WHERE student_id = ? ORDER BY id DESC LIMIT 1",
+            (sid,),
+        ).fetchone()
+        return {
+            "success": True,
+            "has_face": has_face,
+            "request_status": req[0] if req else None,
+            "review_note": req[1] if req else None,
+            "requested_at": str(req[2])[:19] if req else None,
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/face-requests")
+async def teacher_face_requests(status: str = "pending",
+                                session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Face-registration requests for the teacher's assigned batches."""
+    try:
+        allowed = teacher_allowed_course_ids(session)
+        rows = attendance_system.conn.execute(
+            "SELECT r.id, r.student_id, s.student_id, s.name, r.course_id, c.name, "
+            "r.photo_count, r.status, r.created_at "
+            "FROM face_registration_requests r "
+            "JOIN students s ON s.id = r.student_id "
+            "LEFT JOIN courses c ON c.id = r.course_id "
+            "WHERE r.status = ? ORDER BY r.created_at DESC",
+            (status,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            if allowed is not None and r[4] not in allowed:
+                continue
+            out.append({
+                "id": r[0], "student_db_id": r[1], "roll_no": r[2], "student_name": r[3],
+                "course_id": r[4], "batch": r[5] or "-", "photo_count": r[6],
+                "status": r[7], "created_at": str(r[8])[:19],
+            })
+        return {"success": True, "requests": out, "count": len(out)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teacher/face-requests/action")
+async def act_on_face_requests(data: dict = Body(...),
+                               session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Approve (activates the face) or reject self-registration requests."""
+    try:
+        ids = data.get("ids") or []
+        action = (data.get("action") or "").strip().lower()
+        note = (data.get("note") or "").strip() or None
+        if not ids or action not in ("approve", "reject"):
+            return {"success": False, "message": "Provide ids and action ('approve' or 'reject')"}
+
+        allowed = teacher_allowed_course_ids(session)
+        reviewer = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        processed = 0
+
+        for rid in ids:
+            row = cur.execute(
+                "SELECT student_id, course_id, photo_count, encoding_blob, status "
+                "FROM face_registration_requests WHERE id = ?", (rid,),
+            ).fetchone()
+            if not row or row[4] != "pending":
+                continue
+            student_db_id, course_id, photos, blob, _ = row
+            if allowed is not None and course_id not in allowed:
+                continue
+
+            if action == "approve" and blob:
+                cur.execute(
+                    "UPDATE students SET face_encoding = ?, photo_count = ?, status = 'active', "
+                    "registration_date = CURRENT_TIMESTAMP WHERE id = ?",
+                    (blob, photos, student_db_id),
+                )
+
+            cur.execute(
+                "UPDATE face_registration_requests SET status = ?, reviewed_by = ?, "
+                "reviewed_at = CURRENT_TIMESTAMP, review_note = ? WHERE id = ?",
+                ("approved" if action == "approve" else "rejected", reviewer, note, rid),
+            )
+            processed += 1
+
+        attendance_system.conn.commit()
+        if action == "approve" and processed:
+            attendance_system.load_student_faces()   # make the new faces recognisable now
+        audit(session, "face_request_action", target=f"{processed} request(s)",
+              details=f"action={action}")
+        return {"success": True,
+                "message": f"{'Approved' if action == 'approve' else 'Rejected'} {processed} request(s)",
+                "processed": processed}
+    except Exception as e:
+        attendance_system.conn.rollback()
         return {"success": False, "message": str(e)}
 
 

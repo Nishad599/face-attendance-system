@@ -174,6 +174,11 @@
                     <input type="text" id="teacherName" class="app-form-input" placeholder="e.g. R. Sharma">
                 </div>
                 <div class="app-form-group">
+                    <label class="app-form-label">Email</label>
+                    <input type="email" id="teacherEmail" class="app-form-input" placeholder="teacher@example.com">
+                    <span class="muted">Used for monthly batch summaries and password reset.</span>
+                </div>
+                <div class="app-form-group">
                     <label class="app-form-label" id="teacherPwLabel">Password *</label>
                     <input type="text" id="teacherPassword" class="app-form-input"
                         placeholder="Set an initial password" autocomplete="off">
@@ -403,6 +408,7 @@
             document.getElementById('teacherUsername').value = '';
             document.getElementById('teacherUsername').disabled = false;
             document.getElementById('teacherName').value = '';
+            document.getElementById('teacherEmail').value = '';
             document.getElementById('teacherPassword').value = '';
             document.getElementById('teacherPwLabel').textContent = 'Password *';
             document.getElementById('teacherPwHint').textContent = 'Teacher must change this on first login.';
@@ -418,6 +424,7 @@
             document.getElementById('teacherUsername').value = t.username;
             document.getElementById('teacherUsername').disabled = true;
             document.getElementById('teacherName').value = t.name || '';
+            document.getElementById('teacherEmail').value = t.email || '';
             document.getElementById('teacherPassword').value = '';
             document.getElementById('teacherPwLabel').textContent = 'Reset Password';
             document.getElementById('teacherPwHint').textContent = 'Leave blank to keep the current password.';
@@ -430,6 +437,7 @@
             const batch_ids = Array.from(document.querySelectorAll('#teacherBatchChecks input:checked')).map(i => parseInt(i.value));
             const username = document.getElementById('teacherUsername').value.trim();
             const name = document.getElementById('teacherName').value.trim();
+            const email = document.getElementById('teacherEmail').value.trim();
             const password = document.getElementById('teacherPassword').value;
 
             if (!id && (!username || !password)) { toast('Username and password are required', 'error'); return; }
@@ -438,7 +446,7 @@
             try {
                 let res;
                 if (id) {
-                    const payload = { name, batch_ids };
+                    const payload = { name, email, batch_ids };
                     if (password) payload.password = password;
                     res = await fetch('/api/teachers/' + id, {
                         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -446,7 +454,7 @@
                 } else {
                     res = await fetch('/api/teachers', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, name, password, batch_ids })
+                        body: JSON.stringify({ username, name, email, password, batch_ids })
                     });
                 }
                 const data = await res.json();

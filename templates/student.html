@@ -53,8 +53,48 @@
 
         <div id="faceBanner" class="banner" style="display:none;">
             <i class="fa-solid fa-triangle-exclamation"></i>
-            <div>Your face isn't registered yet, so you can't be marked automatically. Please visit the
-                attendance desk to complete face registration.</div>
+            <div style="flex:1;">
+                <div id="faceBannerText">Your face isn't registered yet, so you can't be marked automatically.</div>
+            </div>
+            <button class="app-btn app-btn-primary app-btn-sm" id="faceRegBtn" onclick="openFaceReg()">
+                <i class="fa-solid fa-camera"></i> Register my face
+            </button>
+        </div>
+
+        <!-- Face self-registration modal -->
+        <div class="app-modal-overlay" id="faceRegModal">
+            <div class="app-modal">
+                <div class="app-modal-header">
+                    <h3>Register your face</h3>
+                    <button class="app-modal-close" onclick="closeFaceReg()">&times;</button>
+                </div>
+                <div class="app-modal-body">
+                    <p class="muted" id="faceRegHint">
+                        Look straight at the camera in good light and capture 5 photos.
+                        Your teacher will review and approve them.
+                    </p>
+                    <div style="position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:4/3;">
+                        <video id="fvideo" autoplay muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>
+                        <canvas id="fcanvas" style="display:none;"></canvas>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
+                        <div style="flex:1;height:8px;background:#E4E7EB;border-radius:4px;overflow:hidden;">
+                            <div id="fbar" style="height:100%;width:0;background:var(--color-primary);transition:width .3s;"></div>
+                        </div>
+                        <span class="muted" id="fcount">0 / 5</span>
+                    </div>
+                    <div id="fmsg" style="margin-top:10px;font-size:.9rem;"></div>
+                </div>
+                <div class="app-modal-footer">
+                    <button class="app-btn app-btn-subtle" onclick="closeFaceReg()">Cancel</button>
+                    <button class="app-btn app-btn-primary" id="fcapture" onclick="captureFace()">
+                        <i class="fa-solid fa-camera"></i> Capture photo
+                    </button>
+                    <button class="app-btn app-btn-success" id="fsubmit" style="display:none;" onclick="submitFaceReg()">
+                        Submit for approval
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="grid">
@@ -141,7 +181,10 @@
             document.getElementById('workingDays').textContent = s.working_days;
             document.getElementById('sinceLbl').textContent = 'since ' + s.since;
 
-            if (!p.has_face) document.getElementById('faceBanner').style.display = 'flex';
+            if (!p.has_face) {
+                document.getElementById('faceBanner').style.display = 'flex';
+                refreshFaceStatus();
+            }
 
             // sparkline
             const spark = document.getElementById('spark');
@@ -197,6 +240,124 @@
             msg.style.color = data.success ? '#006644' : '#BF2600';
             msg.textContent = data.message || '';
             if (data.success) { document.getElementById('grReason').value = ''; loadGrievances(); }
+        }
+
+        // ---------- Face self-registration ----------
+        const FACE_PHOTOS_NEEDED = 5;
+        let fSession = null, fStream = null, fShots = 0;
+
+        async function refreshFaceStatus() {
+            try {
+                const r = await fetch('/api/student/register-face/status');
+                const d = await r.json();
+                if (!d.success) return;
+                const txt = document.getElementById('faceBannerText');
+                const btn = document.getElementById('faceRegBtn');
+                if (d.request_status === 'pending') {
+                    txt.textContent = 'Your face registration is waiting for teacher approval.';
+                    btn.style.display = 'none';
+                } else if (d.request_status === 'rejected') {
+                    txt.textContent = 'Your face registration was rejected'
+                        + (d.review_note ? ': ' + d.review_note : '.') + ' You can try again.';
+                    btn.style.display = '';
+                } else {
+                    txt.textContent = "Your face isn't registered yet, so you can't be marked automatically.";
+                    btn.style.display = '';
+                }
+            } catch (e) { /* leave default text */ }
+        }
+
+        function fmsg(text, colour) {
+            const el = document.getElementById('fmsg');
+            el.textContent = text || '';
+            el.style.color = colour || 'var(--text-secondary)';
+        }
+
+        async function openFaceReg() {
+            const res = await fetch('/api/student/register-face/start', { method: 'POST' });
+            const data = await res.json();
+            if (!data.success) { alert(data.message || 'Could not start registration'); refreshFaceStatus(); return; }
+            fSession = data.session_id; fShots = 0;
+            document.getElementById('fcount').textContent = `0 / ${FACE_PHOTOS_NEEDED}`;
+            document.getElementById('fbar').style.width = '0';
+            document.getElementById('fsubmit').style.display = 'none';
+            document.getElementById('fcapture').style.display = '';
+            fmsg('');
+            document.getElementById('faceRegModal').classList.add('active');
+            try {
+                fStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                const v = document.getElementById('fvideo');
+                v.srcObject = fStream;
+                await v.play().catch(() => { });
+            } catch (e) {
+                fmsg('Camera unavailable: ' + (e && e.name ? e.name : 'error') +
+                     '. Allow camera access and reopen.', '#BF2600');
+            }
+        }
+
+        function closeFaceReg() {
+            document.getElementById('faceRegModal').classList.remove('active');
+            if (fStream) { fStream.getTracks().forEach(t => t.stop()); fStream = null; }
+        }
+
+        async function captureFace() {
+            const v = document.getElementById('fvideo');
+            if (!v.videoWidth) { fmsg('Camera not ready yet…', '#BF2600'); return; }
+            const c = document.getElementById('fcanvas');
+            c.width = v.videoWidth; c.height = v.videoHeight;
+            c.getContext('2d').drawImage(v, 0, 0);
+            const image_data = c.toDataURL('image/jpeg', 0.85);
+
+            const btn = document.getElementById('fcapture');
+            btn.disabled = true; fmsg('Checking photo…');
+            try {
+                const r = await fetch('/api/upload_face_photo', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: fSession, image_data })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    fShots++;
+                    document.getElementById('fcount').textContent = `${fShots} / ${FACE_PHOTOS_NEEDED}`;
+                    document.getElementById('fbar').style.width = Math.min(100, fShots / FACE_PHOTOS_NEEDED * 100) + '%';
+                    fmsg(`Photo ${fShots} captured. ` +
+                         (fShots < FACE_PHOTOS_NEEDED ? 'Turn your head slightly and capture again.' : 'All done — submit now.'),
+                         '#006644');
+                    if (fShots >= FACE_PHOTOS_NEEDED) {
+                        document.getElementById('fcapture').style.display = 'none';
+                        document.getElementById('fsubmit').style.display = '';
+                    }
+                } else {
+                    fmsg(d.message || 'Photo rejected. Try again.', '#BF2600');
+                }
+            } catch (e) {
+                fmsg('Upload failed. Try again.', '#BF2600');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function submitFaceReg() {
+            const btn = document.getElementById('fsubmit');
+            btn.disabled = true; btn.innerHTML = '<span class="app-spinner"></span> Submitting...';
+            try {
+                const r = await fetch('/api/student/register-face/complete', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: fSession })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    closeFaceReg();
+                    alert(d.message || 'Submitted for approval.');
+                    refreshFaceStatus();
+                } else {
+                    fmsg(d.message || 'Could not submit', '#BF2600');
+                }
+            } catch (e) {
+                fmsg('Submit failed. Try again.', '#BF2600');
+            } finally {
+                btn.disabled = false; btn.innerHTML = 'Submit for approval';
+            }
         }
 
         async function logout() {

@@ -83,53 +83,72 @@ class AntiSpoofChecker:
             self.ready = False
 
     def _crop_face(self, image, bbox_xywh):
-        """Crop face with expanded bounding box, padding with black if necessary so phone edges are seen."""
+        """Crop the face with an expanded box, matching the reference
+        Silent-Face-Anti-Spoofing `CropImage` behaviour.
+
+        Two details matter and both were wrong before:
+          * the scale is CLAMPED so the expanded box always fits inside the
+            image, and
+          * an out-of-bounds box is SHIFTED back inside rather than padded with
+            black. Black padding puts large flat regions in the crop that never
+            occur in training data, which skews the score badly.
+        """
         src_h, src_w = image.shape[:2]
         x, y, box_w, box_h = bbox_xywh
 
-        # Use full scale so phone borders are included in the crop
-        new_w = box_w * self.scale
-        new_h = box_h * self.scale
+        # Guard against a degenerate detection box
+        box_w = max(1, int(box_w))
+        box_h = max(1, int(box_h))
 
-        center_x = x + box_w / 2
-        center_y = y + box_h / 2
+        # Clamp the expansion so the crop can never leave the frame
+        scale = min((src_h - 1) / box_h, (src_w - 1) / box_w, self.scale)
 
-        x1 = int(center_x - new_w / 2)
-        y1 = int(center_y - new_h / 2)
-        x2 = int(center_x + new_w / 2)
-        y2 = int(center_y + new_h / 2)
+        new_w = box_w * scale
+        new_h = box_h * scale
+        center_x = box_w / 2 + x
+        center_y = box_h / 2 + y
 
-        # How much we fall out of bounds
-        pad_top = max(0, -y1)
-        pad_bottom = max(0, y2 - src_h + 1)
-        pad_left = max(0, -x1)
-        pad_right = max(0, x2 - src_w + 1)
+        left_top_x = center_x - new_w / 2
+        left_top_y = center_y - new_h / 2
+        right_bottom_x = center_x + new_w / 2
+        right_bottom_y = center_y + new_h / 2
 
-        # The valid region inside the image
-        y1_clamped = max(0, y1)
-        y2_clamped = min(src_h - 1, y2)
-        x1_clamped = max(0, x1)
-        x2_clamped = min(src_w - 1, x2)
+        # Shift back inside the frame instead of padding
+        if left_top_x < 0:
+            right_bottom_x -= left_top_x
+            left_top_x = 0
+        if left_top_y < 0:
+            right_bottom_y -= left_top_y
+            left_top_y = 0
+        if right_bottom_x > src_w - 1:
+            left_top_x -= right_bottom_x - src_w + 1
+            right_bottom_x = src_w - 1
+        if right_bottom_y > src_h - 1:
+            left_top_y -= right_bottom_y - src_h + 1
+            right_bottom_y = src_h - 1
 
-        cropped_valid = image[y1_clamped:y2_clamped + 1, x1_clamped:x2_clamped + 1]
+        x1, y1 = int(max(0, left_top_x)), int(max(0, left_top_y))
+        x2, y2 = int(min(src_w - 1, right_bottom_x)), int(min(src_h - 1, right_bottom_y))
 
-        if pad_top > 0 or pad_bottom > 0 or pad_left > 0 or pad_right > 0:
-            cropped = cv2.copyMakeBorder(
-                cropped_valid, 
-                pad_top, pad_bottom, pad_left, pad_right, 
-                cv2.BORDER_CONSTANT, value=[0, 0, 0]
-            )
-        else:
-            cropped = cropped_valid
-
+        cropped = image[y1:y2 + 1, x1:x2 + 1]
+        if cropped.size == 0:                      # detection was nonsense
+            cropped = image
         return cv2.resize(cropped, (self.input_size[1], self.input_size[0]))
 
     def _preprocess(self, image, bbox_xywh):
-        """Crop, resize to 80x80, convert to NCHW float32."""
+        """Crop, resize to 80x80, convert to NCHW float32 in the RAW 0-255 range.
+
+        Do NOT scale these values. This ONNX export has the normalisation baked
+        in: measured against real faces, raw 0-255 gives varying, sensible
+        scores (0.69-0.91 "real"), while /255, (x-127.5)/128 and ImageNet
+        normalisation all collapse the output to ~0.99 on the third class
+        regardless of input — i.e. the model stops discriminating entirely.
+        Verify with: python test_antispoof.py <images...>
+        """
         face = self._crop_face(image, bbox_xywh)
         face = face.astype(np.float32)
-        face = np.transpose(face, (2, 0, 1))  # HWC -> CHW
-        face = np.expand_dims(face, axis=0)    # Add batch dim -> NCHW
+        face = np.transpose(face, (2, 0, 1))   # HWC -> CHW
+        face = np.expand_dims(face, axis=0)    # -> NCHW
         return face
 
     def _softmax(self, x):
