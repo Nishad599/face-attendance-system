@@ -9,6 +9,156 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/theme.js"></script>
+    <style id="reg-page-styles">
+        /* ---- Registration page: self-contained, professional layout.
+           Note: capture-progress, progress-dot, current-instruction,
+           capture-counter and countdown-overlay had NO definition in app.css,
+           so those elements previously rendered completely unstyled. ---- */
+        body { background: var(--bg-page); }
+
+        .registration-container { max-width: 760px; margin: 32px auto 64px; padding: 0 20px; }
+        .registration-container .header { text-align: center; margin-bottom: 28px; }
+        .registration-container .header h1 { font-size: 1.6rem; margin: 0 0 6px; color: var(--text-primary); }
+        .registration-container .header p { margin: 0; color: var(--text-secondary); font-size: .95rem; }
+        .registration-container .content {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg); padding: 32px; box-shadow: var(--shadow-md);
+        }
+
+        /* ---- Stepper ---- */
+        .step-indicator {
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 32px; max-width: 380px;
+        }
+        .step-dot {
+            width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: .95rem; position: relative;
+            background: var(--bg-page); color: var(--text-secondary);
+            border: 2px solid var(--border-color); transition: all .25s ease;
+        }
+        .step-dot + .step-dot { margin-left: 64px; }
+        .step-dot + .step-dot::before {
+            content: ""; position: absolute; right: 100%; top: 50%;
+            width: 64px; height: 2px; background: var(--border-color); transform: translateY(-50%);
+        }
+        .step-dot.active {
+            background: var(--color-primary); border-color: var(--color-primary);
+            color: #fff; box-shadow: 0 0 0 4px rgba(0, 82, 204, .15);
+        }
+        .step-dot.completed { background: #36B37E; border-color: #36B37E; color: #fff; }
+
+        /* ---- Steps ---- */
+        .step { display: none; }
+        .step.active { display: block; animation: regFade .25s ease; }
+        @keyframes regFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        .step h2 {
+            font-size: 1.15rem; margin: 0 0 20px; color: var(--text-primary);
+            padding-bottom: 12px; border-bottom: 1px solid var(--border-color);
+        }
+
+        /* ---- Forms ---- */
+        .registration-container .form-group { margin-bottom: 18px; }
+        .registration-container .form-group label {
+            display: block; margin-bottom: 6px; font-weight: 500;
+            font-size: .9rem; color: var(--text-primary);
+        }
+        .registration-container .form-group input[type="text"],
+        .registration-container .form-group input[type="email"] {
+            width: 100%; padding: 10px 14px; font-size: .95rem; font-family: inherit;
+            color: var(--text-primary); background: var(--bg-card);
+            border: 2px solid var(--border-color); border-radius: 6px;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .registration-container .form-group input:focus {
+            outline: none; border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(0, 82, 204, .12);
+        }
+
+        /* ---- Instruction panels ---- */
+        .instructions {
+            background: #DEEBFF; border-left: 3px solid var(--color-primary);
+            border-radius: 6px; padding: 16px 18px; margin-bottom: 20px;
+        }
+        .instructions h3 { margin: 0 0 10px; font-size: .95rem; color: #0747A6; }
+        .instructions ul, .instructions ol { margin: 0; padding-left: 20px; }
+        .instructions li { margin-bottom: 5px; font-size: .9rem; color: #172B4D; }
+
+        .current-instruction {
+            text-align: center; font-size: 1.05rem; font-weight: 600;
+            color: var(--text-primary); background: #FFFAE6;
+            border: 1px solid #FFC400; border-radius: 8px;
+            padding: 14px 18px; margin-bottom: 16px;
+        }
+
+        /* ---- Camera ---- */
+        .video-container, .camera-wrapper { position: relative; max-width: 480px; margin: 0 auto 16px; }
+        .video-stream {
+            width: 100%; display: block; background: #000; border-radius: 10px;
+            aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--border-color);
+        }
+        .countdown-overlay {
+            position: absolute; inset: 0; display: none;
+            align-items: center; justify-content: center;
+            font-size: 5rem; font-weight: 700; color: #fff;
+            background: rgba(0, 0, 0, .45); border-radius: 10px;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, .6);
+        }
+        .countdown-overlay.active { display: flex; }
+
+        /* ---- Capture progress ---- */
+        .capture-counter {
+            text-align: center; font-size: .95rem; font-weight: 600;
+            color: var(--text-primary); margin-bottom: 10px;
+        }
+        .capture-progress { display: flex; justify-content: center; gap: 10px; margin-bottom: 18px; }
+        .progress-dot {
+            width: 13px; height: 13px; border-radius: 50%;
+            background: var(--bg-page); border: 2px solid var(--border-color);
+            transition: all .25s ease;
+        }
+        .progress-dot.completed { background: #36B37E; border-color: #36B37E; transform: scale(1.15); }
+        .progress-dot.active { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(0, 82, 204, .15); }
+
+        /* ---- Status messages ---- */
+        .status-message { padding: 11px 15px; border-radius: 6px; font-size: .9rem; margin-bottom: 16px; text-align: center; }
+        .status-success { background: #E3FCEF; color: #006644; }
+        .status-error   { background: #FFEBE6; color: #BF2600; }
+        .status-warning { background: #FFFAE6; color: #7A5B00; }
+        .status-info    { background: #DEEBFF; color: #0747A6; }
+
+        /* ---- Buttons ---- */
+        .registration-container .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+            padding: 10px 20px; font-size: .93rem; font-weight: 500; font-family: inherit;
+            border: none; border-radius: 6px; cursor: pointer; transition: filter .15s, opacity .15s;
+        }
+        .registration-container .btn:hover:not(:disabled) { filter: brightness(.93); }
+        .registration-container .btn:disabled { opacity: .55; cursor: not-allowed; }
+        .registration-container .btn-primary   { background: var(--color-primary); color: #fff; }
+        .registration-container .btn-success   { background: #36B37E; color: #fff; }
+        .registration-container .btn-secondary { background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .registration-container .btn-warning   { background: #FFAB00; color: #3a2a00; }
+        .registration-container .btn-danger    { background: #DE350B; color: #fff; }
+
+        .button-group, .btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 22px; }
+
+        /* ---- Radio options (capture timing) ---- */
+        .timing-options { display: flex; flex-direction: column; gap: 8px; }
+        .timing-options label, .radio-option {
+            display: flex; align-items: center; gap: 9px; padding: 9px 13px;
+            border: 1px solid var(--border-color); border-radius: 6px;
+            cursor: pointer; font-size: .92rem; transition: border-color .15s, background .15s;
+        }
+        .timing-options label:hover, .radio-option:hover { border-color: var(--color-primary); }
+
+        @media (max-width: 640px) {
+            .registration-container .content { padding: 22px 18px; }
+            .step-dot + .step-dot { margin-left: 36px; }
+            .step-dot + .step-dot::before { width: 36px; }
+            .button-group .btn, .btn-row .btn { flex: 1 1 45%; }
+        }
+    </style>
 </head>
 
 <body>

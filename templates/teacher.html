@@ -244,13 +244,14 @@
                     <div style="display:flex;gap:8px;align-items:center;">
                         <input type="text" id="stuSearch" class="app-form-input" placeholder="Search roll or name…"
                             style="max-width:220px;" oninput="renderStudents()">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="sendWelcomeAll()" title="Email login details to everyone shown"><i class="fa-solid fa-paper-plane"></i> Send login details to all</button>
                         <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadBatchStudents()"><i class="fa-solid fa-rotate"></i> Refresh</button>
                     </div>
                 </div>
                 <div class="app-table-wrapper">
                     <table class="app-table">
-                        <thead><tr><th>Roll No</th><th>Name</th><th>Face</th><th>Actions</th></tr></thead>
-                        <tbody id="studentRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                        <thead><tr><th>Roll No</th><th>Name</th><th>Email</th><th>DOB</th><th>Status</th><th>Face</th><th>Actions</th></tr></thead>
+                        <tbody id="studentRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
                     </table>
                 </div>
                 <div class="toolbar" style="margin-top:12px;">
@@ -609,8 +610,8 @@
         async function loadBatchStudents() {
             const cid = currentBatch();
             const tbody = document.getElementById('studentRows');
-            if (!cid) { tbody.innerHTML = '<tr><td colspan="4" class="muted">Pick a batch.</td></tr>'; return; }
-            tbody.innerHTML = '<tr><td colspan="4" class="muted">Loading…</td></tr>';
+            if (!cid) { tbody.innerHTML = '<tr><td colspan="7" class="muted">Pick a batch.</td></tr>'; return; }
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
             const res = await fetch(`/api/teacher/batch/${cid}/students`);
             const data = await res.json();
             _batchStudents = data.students || [];
@@ -632,20 +633,27 @@
             const slice = filtered.slice(_stuPage * STU_PER_PAGE, (_stuPage + 1) * STU_PER_PAGE);
 
             if (!filtered.length) {
-                tbody.innerHTML = `<tr><td colspan="4" class="muted">${_batchStudents.length ? 'No matches.' : 'No students in this batch yet.'}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="muted">${_batchStudents.length ? 'No matches.' : 'No students in this batch yet.'}</td></tr>`;
             } else {
                 tbody.innerHTML = slice.map(s => {
                     const url = '/register?student_id=' + encodeURIComponent(s.student_id) + '&name=' + encodeURIComponent(s.name) + '&email=' + encodeURIComponent(s.email || '');
                     const faceBadge = s.has_face ? '<span class="app-badge app-badge-success">Registered</span>' : '<span class="app-badge app-badge-warning">Pending</span>';
+                    const statusBadge = s.status === 'pending_registration'
+                        ? '<span class="app-badge app-badge-warning">Pending</span>'
+                        : '<span class="app-badge app-badge-success">Active</span>';
                     return `<tr>
                         <td><strong>${esc(s.student_id)}</strong></td>
                         <td>${esc(s.name)}</td>
+                        <td class="muted" style="font-size:.85rem;">${esc(s.email || '—')}</td>
+                        <td class="muted" style="font-size:.85rem;">${esc(s.dob || '—')}</td>
+                        <td>${statusBadge}</td>
                         <td>${faceBadge}</td>
                         <td><div class="row-actions">
-                            <a class="app-btn app-btn-primary app-btn-sm" href="${url}"><i class="fa-solid fa-camera"></i> ${s.has_face ? 'Re-register' : 'Register'}</a>
-                            <button class="app-btn app-btn-subtle app-btn-sm" onclick='editStudent(${s.id})'><i class="fa-solid fa-pen"></i></button>
-                            <button class="app-btn app-btn-subtle app-btn-sm" title="Reset password" onclick='resetStudentPw(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-key"></i></button>
-                            <button class="app-btn app-btn-danger app-btn-sm" onclick='deleteStudent(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-trash"></i></button>
+                            <a class="app-btn app-btn-primary app-btn-sm" href="${url}" title="Capture face photos"><i class="fa-solid fa-camera"></i> ${s.has_face ? 'Re-register' : 'Register'}</a>
+                            <button class="app-btn app-btn-subtle app-btn-sm" title="Edit details" onclick='editStudent(${s.id})'><i class="fa-solid fa-pen"></i> Edit</button>
+                            <button class="app-btn app-btn-subtle app-btn-sm" title="Reset password to their DOB" onclick='resetStudentPw(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-key"></i> Reset</button>
+                            <button class="app-btn app-btn-subtle app-btn-sm" title="Email login details (resets password)" onclick='sendWelcome(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-envelope"></i> Send login</button>
+                            <button class="app-btn app-btn-danger app-btn-sm" title="Delete student" onclick='deleteStudent(${s.id}, "${esc(s.name)}")'><i class="fa-solid fa-trash"></i></button>
                         </div></td></tr>`;
                 }).join('');
             }
@@ -706,6 +714,34 @@
             toast(data.message || (data.success ? 'Saved' : 'Failed'), data.success ? 'success' : 'error');
             if (data.success) { document.getElementById('editStuModal').classList.remove('active'); loadBatchStudents(); }
         }
+        async function sendWelcome(id, name) {
+            if (!confirm(`Email login details to ${name}?
+
+Their password will be RESET to their DOB and sent to them.`)) return;
+            const res = await fetch('/api/students/' + id + '/send-welcome', { method: 'POST' });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Sent' : 'Failed'), data.success ? 'success' : 'error');
+        }
+
+        async function sendWelcomeAll() {
+            const q = (document.getElementById('stuSearch').value || '').toLowerCase().trim();
+            const targets = _batchStudents.filter(s =>
+                (!q || (s.student_id + ' ' + s.name).toLowerCase().includes(q)) && s.email);
+            if (!targets.length) { toast('No students with an email address', 'error'); return; }
+            if (!confirm(`Email login details to ${targets.length} student(s)?
+
+Each password will be RESET to their DOB.`)) return;
+            let ok = 0, failed = 0;
+            for (const s of targets) {
+                try {
+                    const r = await fetch('/api/students/' + s.id + '/send-welcome', { method: 'POST' });
+                    (await r.json()).success ? ok++ : failed++;
+                } catch (e) { failed++; }
+            }
+            toast(`Login details sent to ${ok} student(s)` + (failed ? `, ${failed} failed` : ''),
+                  failed ? 'error' : 'success');
+        }
+
         async function resetStudentPw(id, name) {
             if (!confirm(`Reset ${name}'s password to their DOB? They'll be asked to change it on next login.`)) return;
             const res = await fetch('/api/students/' + id + '/reset-password', { method: 'POST' });

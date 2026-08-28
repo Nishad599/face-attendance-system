@@ -60,3 +60,6 @@ fix_*.py
 # Student photos
 student_photos/
 
+
+# Environment file — contains SMTP/DB credentials, never commit
+.env

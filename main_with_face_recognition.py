@@ -3242,6 +3242,54 @@ def _batch_name_for(course_id):
         return None
 
 
+@app.post("/api/students/{student_id}/send-welcome")
+async def send_welcome_to_student(student_id: int, background_tasks: BackgroundTasks,
+                                  session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Email a student their login details.
+
+    Passwords are stored hashed and cannot be read back, so this RESETS the
+    password to their DOB default and emails that. The student is then asked to
+    change it at next login.
+    """
+    try:
+        import mailer as _m
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT s.student_id, s.name, s.email, s.dob, s.course_id, c.name "
+            "FROM students s LEFT JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
+            (student_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is not None and row[4] not in allowed:
+            raise HTTPException(status_code=403, detail="Not assigned to this student's batch")
+
+        roll, name, email, dob, _cid, batch = row
+        if not email or "@" not in str(email):
+            return {"success": False, "message": f"{name} has no email address on file"}
+        if not _m.is_configured():
+            return {"success": False,
+                    "message": "Email is not configured. Set SMTP_USER / SMTP_PASSWORD in .env."}
+
+        new_pw = default_student_password(dob)
+        cur.execute(
+            "UPDATE students SET password_hash = ?, must_change_password = 1 WHERE id = ?",
+            (hash_password(new_pw), student_id),
+        )
+        attendance_system.conn.commit()
+
+        background_tasks.add_task(send_welcome_emails, [(email, name, roll, new_pw, batch)])
+        audit(session, "send_welcome", target=roll, details="password reset + login details emailed")
+        return {"success": True,
+                "message": f"Login details sent to {email} (password reset to their DOB)."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @app.post("/api/students/add")
 async def add_single_student(background_tasks: BackgroundTasks, data: dict = Body(...),
                              session: Dict[str, Any] = Depends(require_teacher_or_admin)):
