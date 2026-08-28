@@ -2533,6 +2533,118 @@ async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depe
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/student/calendar")
+async def student_calendar(year: Optional[int] = None, month: Optional[int] = None,
+                           session: Dict[str, Any] = Depends(require_student)):
+    """Per-day attendance for one month, for the logged-in student only.
+
+    Each day is one of: present | absent | holiday | sunday | future |
+    before_joining (days before the student enrolled are not counted absent).
+    """
+    from datetime import date as _date
+    from calendar import monthrange
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT course_id, joining_date FROM students WHERE id = ?", (sid,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+        course_id, joining = row[0], row[1]
+
+        today = _date.today()
+        year = int(year or today.year)
+        month = int(month or today.month)
+        if not 1 <= month <= 12:
+            return {"success": False, "message": "Invalid month"}
+
+        first = _date(year, month, 1)
+        last = _date(year, month, monthrange(year, month)[1])
+
+        # holidays that apply to this student's batch
+        holidays = {}
+        for r in cur.execute(
+            "SELECT date, name FROM holidays WHERE course_id IS NULL OR course_id = ?",
+            (course_id,),
+        ).fetchall():
+            try:
+                holidays[datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date()] = r[1]
+            except (ValueError, TypeError):
+                continue
+
+        # attendance rows for this month
+        marks = {}
+        for r in cur.execute(
+            "SELECT date, time_in, session_type, is_manual, is_late FROM attendance "
+            "WHERE student_id = ? AND date >= ? AND date <= ? ORDER BY time_in",
+            (sid, first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d")),
+        ).fetchall():
+            try:
+                d = datetime.strptime(str(r[0])[:10], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                continue
+            entry = marks.setdefault(d, {"time_in": r[1], "sessions": [],
+                                         "is_manual": bool(r[3]), "is_late": bool(r[4])})
+            if r[2]:
+                entry["sessions"].append(r[2])
+
+        join_date = None
+        if joining:
+            try:
+                join_date = datetime.strptime(str(joining)[:10], "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                join_date = None
+
+        days, present_count, absent_count = [], 0, 0
+        d = first
+        while d <= last:
+            info = {"date": d.strftime("%Y-%m-%d"), "day": d.day,
+                    "weekday": d.weekday(), "status": "absent",
+                    "time_in": None, "sessions": [], "note": None}
+            if d > today:
+                info["status"] = "future"
+            elif join_date and d < join_date:
+                info["status"] = "before_joining"
+            elif d.weekday() == 6:
+                info["status"] = "sunday"
+            elif d in holidays:
+                info["status"] = "holiday"
+                info["note"] = holidays[d]
+            elif d in marks:
+                info["status"] = "present"
+                info["time_in"] = marks[d]["time_in"]
+                info["sessions"] = marks[d]["sessions"]
+                if marks[d]["is_late"]:
+                    info["note"] = "Late"
+                elif marks[d]["is_manual"]:
+                    info["note"] = "Marked manually"
+                present_count += 1
+            else:
+                absent_count += 1
+            days.append(info)
+            d += timedelta(days=1)
+
+        working = present_count + absent_count
+        return {
+            "success": True,
+            "year": year, "month": month,
+            "month_label": first.strftime("%B %Y"),
+            "first_weekday": first.weekday(),          # 0=Mon .. 6=Sun
+            "days": days,
+            "summary": {
+                "present": present_count, "absent": absent_count,
+                "working_days": working,
+                "rate": round(present_count / working * 100, 1) if working else 0.0,
+            },
+            "can_go_next": (year, month) < (today.year, today.month),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/api/student/me")
 async def student_me(session: Dict[str, Any] = Depends(require_student)):
     """Self-scoped stats for the logged-in student (own data only)."""

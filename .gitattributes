@@ -1,0 +1,11 @@
+# Shell scripts must keep LF endings or they fail on Linux with
+#   bad interpreter: /bin/bash^M
+*.sh    text eol=lf
+*.py    text eol=lf
+
+# Binary — never touch
+*.onnx  binary
+*.db    binary
+*.jpg   binary
+*.png   binary
+*.pem   binary
