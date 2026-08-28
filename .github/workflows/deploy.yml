@@ -4,32 +4,69 @@ on:
   push:
     branches: [ "main" ]
 
+env:
+  # Where the app lives on the runner host. Change this ONE line if the
+  # deployment directory ever moves. $HOME resolves to the runner's user.
+  APP_DIR: student
+
 jobs:
   deploy:
     runs-on: self-hosted
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Sync Code to Live Directory
+    - name: Sync code to the live directory
       run: |
-        # Sync the latest code to the application directory
-        # We use rsync because it won't delete existing untracked files like attendance.db or student_photos in the destination.
-        rsync -a --exclude='.git' --exclude='venv' ./ /home/user1/face-attendance-system/
+        set -e
+        TARGET="$HOME/${APP_DIR}"
+        mkdir -p "$TARGET"
+        # No --delete: runtime data (attendance.db, student_photos/, .env,
+        # certs, venv) lives only on the server and must survive a deploy.
+        rsync -a \
+          --exclude='.git' \
+          --exclude='venv' \
+          --exclude='.env' \
+          --exclude='attendance.db' \
+          --exclude='student_photos' \
+          --exclude='backups' \
+          ./ "$TARGET/"
+        echo "Synced to $TARGET"
 
-    - name: Setup Virtual Environment & Install Dependencies
+    - name: Install dependencies
       run: |
-        cd /home/user1/face-attendance-system
+        set -e
+        cd "$HOME/${APP_DIR}"
         if [ ! -d "venv" ]; then
           python3 -m venv venv
         fi
-        source venv/bin/activate
-        pip install -r requirements.txt
+        ./venv/bin/pip install --quiet --upgrade pip
+        ./venv/bin/pip install --quiet -r requirements.txt
 
-    - name: Restart Application Service
-      # Uses the existing restart script in the project
+    - name: Make shell scripts executable
+      # git does not always preserve the exec bit; without this ./restart.sh
+      # fails with "Permission denied" and the app is never restarted.
+      run: chmod +x "$HOME/${APP_DIR}"/*.sh
+
+    - name: Apply database migrations
+      # Deploying code does not change the schema. Every migration is
+      # idempotent, so running them on each deploy is safe.
       run: |
-        cd /home/user1/face-attendance-system
-        chmod +x restart.sh
+        set -e
+        cd "$HOME/${APP_DIR}"
+        for m in migrate_phase1.py migrate_phase2.py migrate_phase3.py migrate_phase4.py; do
+          [ -f "$m" ] && ./venv/bin/python "$m" || true
+        done
+
+    - name: Restart the application
+      run: |
+        set -e
+        cd "$HOME/${APP_DIR}"
         ./restart.sh
+
+    - name: Verify schema
+      # Non-fatal: report problems without failing an otherwise good deploy.
+      run: |
+        cd "$HOME/${APP_DIR}"
+        ./venv/bin/python check_db.py || echo "::warning::check_db.py reported schema problems"
