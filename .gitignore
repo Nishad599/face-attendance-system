@@ -37,6 +37,10 @@ session_management_report.txt
 # Backup files
 *.backup_*
 *backup*
+# ...but these are SCRIPTS, not backup data — keep them tracked
+!backup.sh
+!backup_cron.sh
+!BACKUP_GUIDE.md
 
 # Temporary files
 temp_encodings/

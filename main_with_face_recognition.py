@@ -276,6 +276,29 @@ def require_student(session: Optional[Dict[str, Any]] = Depends(get_current_sess
     return session
 
 
+def require_staff_or_terminal(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Allow staff AND batch terminals.
+
+    Used by the live-attendance surface, which the kiosk reuses: a terminal
+    session must still be able to detect faces and read the live count.
+    """
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if session.get("user_type") not in ["admin", "user", "teacher", "terminal"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return session
+
+
+def require_any_authenticated(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Any signed-in principal (staff, student or terminal).
+
+    For endpoints students legitimately use during their own self-registration.
+    """
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return session
+
+
 def require_terminal(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
     """Require an attendance-terminal session (kiosk for one batch)."""
     if not session:
@@ -2183,7 +2206,7 @@ async def email_test(data: dict = Body(...), session: Dict[str, Any] = Depends(r
 
 
 @app.get("/api/attendance/student/{student_id}/slots")
-async def get_student_slot_attendance(student_id: int):
+async def get_student_slot_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed slot-based attendance data for a specific student"""
     try:
         data = attendance_system.get_student_slot_attendance_data(student_id)
@@ -2210,7 +2233,7 @@ async def advanced_attendance_page(request: Request, session: Dict[str, Any] = D
 
 # API endpoints
 @app.post("/api/detect_attendance")
-async def detect_attendance(image_data: DetectionImage):
+async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] = Depends(require_staff_or_terminal)):
     """Detect faces in image and mark attendance"""
     if not FACE_RECOGNITION_AVAILABLE:
         return {"success": False, "message": "Face recognition not available"}
@@ -2354,7 +2377,7 @@ async def detect_attendance(image_data: DetectionImage):
         }
 
 @app.post("/api/start_registration")
-async def start_registration(student_info: StudentInfo):
+async def start_registration(student_info: StudentInfo, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Start registration session"""
     session_id, message = attendance_system.start_registration_session(
         student_info.name, student_info.email, student_info.student_id
@@ -2366,7 +2389,7 @@ async def start_registration(student_info: StudentInfo):
         raise HTTPException(status_code=400, detail=message)
 
 @app.post("/api/upload_face_photo")
-async def upload_face_photo(photo_data: FacePhotoData):
+async def upload_face_photo(photo_data: FacePhotoData, session: Dict[str, Any] = Depends(require_any_authenticated)):
     """Upload and process face photo"""
     result, message = attendance_system.process_face_photo(
         photo_data.image_data, photo_data.session_id
@@ -2385,7 +2408,7 @@ async def upload_face_photo(photo_data: FacePhotoData):
         raise HTTPException(status_code=400, detail=message)
 
 @app.post("/api/complete_registration")
-async def complete_registration(reg_data: RegistrationComplete):
+async def complete_registration(reg_data: RegistrationComplete, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Complete registration"""
     success, message = attendance_system.complete_registration(reg_data.session_id)
     
@@ -2395,12 +2418,12 @@ async def complete_registration(reg_data: RegistrationComplete):
         raise HTTPException(status_code=400, detail=message)
 
 @app.get("/api/attendance/today")
-async def get_today_attendance():
+async def get_today_attendance(session: Dict[str, Any] = Depends(require_staff_or_terminal)):
     """Get today's attendance"""
     return attendance_system.get_today_attendance()
 
 @app.get("/api/students/count")
-async def get_student_count():
+async def get_student_count(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get total number of students"""
     count = attendance_system.get_student_count()
     return {"total_students": count}
@@ -2416,7 +2439,7 @@ async def get_system_status():
     }
 
 @app.get("/api/students/list")
-async def list_students():
+async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     try:
         cursor = attendance_system.conn.cursor()
         cursor.execute('''
@@ -2457,7 +2480,7 @@ async def list_students():
         return {"success": False, "message": str(e)}
 
 @app.get("/api/dashboard/stats")
-async def get_dashboard_stats():
+async def get_dashboard_stats(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get dashboard statistics"""
     try:
         today = datetime.now().date().strftime('%Y-%m-%d')
@@ -2501,7 +2524,7 @@ async def get_dashboard_stats():
         }
 
 @app.get("/api/attendance/student/{student_id}")
-async def get_student_attendance(student_id: int):
+async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed attendance data for a specific student"""
     try:
         data = attendance_system.get_student_attendance_data(student_id)
@@ -3593,7 +3616,7 @@ async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_
     
 
 @app.post("/api/attendance/manual/session")
-async def mark_manual_session_attendance_api(data: dict = Body(...)):
+async def mark_manual_session_attendance_api(data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Mark session attendance manually"""
     try:
         success, message = attendance_system.mark_manual_session_attendance(
@@ -4345,7 +4368,8 @@ async def bulk_export_attendance(
     end_date: str,
     format: str,
     include_weekends: bool = False,
-    include_holidays: bool = False
+    include_holidays: bool = False,
+    session: Dict[str, Any] = Depends(require_teacher_or_admin)
 ):
     """Export bulk slot-based attendance data as CSV"""
     try:
@@ -4543,7 +4567,7 @@ async def bulk_export_attendance(
     
     
 @app.get("/api/students/{student_id}")
-async def get_student_details(student_id: int):
+async def get_student_details(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get individual student details including joining date"""
     try:
         cursor = attendance_system.conn.cursor()
@@ -4577,7 +4601,7 @@ async def get_student_details(student_id: int):
 
 
 @app.get("/api/attendance/export/{student_id}")
-async def export_student_attendance(student_id: int):
+async def export_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Export individual student slot attendance as CSV"""
     try:
         from fastapi.responses import StreamingResponse
@@ -4682,7 +4706,7 @@ add_phase1_api_endpoints(app, attendance_system)
 
 
 @app.get("/api/attendance/student/{student_id}/sessions")
-async def get_student_session_attendance(student_id: int):
+async def get_student_session_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed session-based attendance data for a specific student"""
     try:
         data = attendance_system.get_student_attendance_data(student_id)
@@ -4693,7 +4717,7 @@ async def get_student_session_attendance(student_id: int):
 
 
 @app.get("/api/attendance/today/slots")
-async def get_today_slot_attendance():
+async def get_today_slot_attendance(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get today's slot-based attendance (the working system)"""
     try:
         today = datetime.now().date()
@@ -4730,7 +4754,7 @@ async def get_today_slot_attendance():
         return []
 
 @app.get("/api/attendance/analytics/class")
-async def get_class_analytics_data(days: int = 14, course_id: Optional[int] = None):
+async def get_class_analytics_data(days: int = 14, course_id: Optional[int] = None, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Endpoint for comprehensive class analytics (optionally scoped to a batch)."""
     try:
         return analytics_manager.get_class_analytics(days=days, course_id=course_id)
@@ -4739,7 +4763,7 @@ async def get_class_analytics_data(days: int = 14, course_id: Optional[int] = No
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/heatmap")
-async def get_heatmap_data(days: int = 90, course_id: Optional[int] = None):
+async def get_heatmap_data(days: int = 90, course_id: Optional[int] = None, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Per-day attendance % for calendar heatmap"""
     try:
         return analytics_manager.get_heatmap_data(days=days, course_id=course_id)
@@ -4747,7 +4771,7 @@ async def get_heatmap_data(days: int = 90, course_id: Optional[int] = None):
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/day-of-week")
-async def get_day_of_week_data(days: int = 60, course_id: Optional[int] = None):
+async def get_day_of_week_data(days: int = 60, course_id: Optional[int] = None, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Average attendance % per weekday"""
     try:
         return analytics_manager.get_day_of_week_stats(days=days, course_id=course_id)
@@ -4755,7 +4779,7 @@ async def get_day_of_week_data(days: int = 60, course_id: Optional[int] = None):
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/at-risk")
-async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None):
+async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """All students below attendance threshold with streak info"""
     try:
         return analytics_manager.get_at_risk_students(threshold=threshold, course_id=course_id)
@@ -4763,7 +4787,7 @@ async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None)
         return {"success": False, "message": str(e)}
 
 @app.get("/api/analytics/student/{student_id}/sparkline")
-async def get_student_sparkline(student_id: int, days: int = 14):
+async def get_student_sparkline(student_id: int, days: int = 14, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """14-day per-day attendance sparkline for a single student"""
     try:
         return analytics_manager.get_student_sparkline(student_id=student_id, days=days)
@@ -4771,7 +4795,7 @@ async def get_student_sparkline(student_id: int, days: int = 14):
         return {"success": False, "message": str(e)}
 
 @app.get("/api/attendance/live-count")
-async def get_live_attendance_count():
+async def get_live_attendance_count(session: Dict[str, Any] = Depends(require_staff_or_terminal)):
     """Get live student count with slot information"""
     try:
         manager = create_slot_manager_instance()

@@ -66,12 +66,19 @@ scrub "4_SLOT_SYSTEM_CHANGES.md" "BULK_UPLOAD_GUIDE.md" \
 scrub "_legacy_archive" "scratch" "__pycache__"
 # stray editor/OS files
 scrub "*.pyc" "*.pyo" ".DS_Store"
+# Windows-only dev helper — useless on the Linux server
+scrub "push.bat"
+# Superseded one-off shell scripts (start/stop/restart/status/backup are kept)
+scrub "checkbd.sh" "clean.sh" "setup.sh" "app_config.sh"
 
 # 3) Deep: stale DB / photo backups (only with --deep)
 if [ "$DEEP" -eq 1 ]; then
   echo "[*] --deep: removing stale backups…"
   scrub "attendance.db.backup.safe" "attendance.db.before_restore_"*
   scrub "student_photos.backup_"*
+  # Ad-hoc manual DB copies (backup_cron.sh keeps proper rotated archives)
+  scrub "attendance_backup_"*".db"
+  scrub "attendance.db."*".bak"
 else
   echo "[i] skipping stale backups (run with --deep to remove them)"
 fi
