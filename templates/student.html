@@ -128,6 +128,49 @@
         </div>
 
         <div class="card">
+            <h2>My details</h2>
+            <p class="muted" style="margin-top:-8px;">Edit anything below and submit — the change
+                is applied once your teacher approves it.</p>
+
+            <div id="pcBanner" class="banner" style="display:none;margin-bottom:16px;"></div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Roll number</label>
+                    <input type="text" id="pcRoll" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Full name</label>
+                    <input type="text" id="pcName" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Email</label>
+                    <input type="email" id="pcEmail" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Date of birth</label>
+                    <input type="date" id="pcDob" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;flex:1;min-width:200px;">
+                    <label class="app-form-label">Reason (optional)</label>
+                    <input type="text" id="pcReason" class="app-form-input" placeholder="e.g. surname spelt wrong">
+                </div>
+                <button class="app-btn app-btn-primary" id="pcSubmit" onclick="submitProfileChange()">
+                    Request change
+                </button>
+                <button class="app-btn app-btn-subtle" onclick="loadProfile()">Reset</button>
+            </div>
+            <div id="pcMsg" class="muted" style="margin-top:10px;"></div>
+
+            <div class="app-table-wrapper" style="margin-top:16px;">
+                <table class="app-table">
+                    <thead><tr><th>Requested</th><th>Changes</th><th>Status</th></tr></thead>
+                    <tbody id="pcRows"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
             <h2>Attendance dispute</h2>
             <p class="muted" style="margin-top:-8px;">Were you present but not marked? Raise a request (last 30 days). Your teacher will review it.</p>
             <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
@@ -360,6 +403,118 @@
             }
         }
 
+        // ---------- My details (change requests) ----------
+        let _profile = null;
+
+        async function loadProfile() {
+            try {
+                const res = await fetch('/api/student/profile');
+                const d = await res.json();
+                if (!d.success) return;
+                _profile = d.profile;
+                document.getElementById('pcRoll').value = d.profile.student_id || '';
+                document.getElementById('pcName').value = d.profile.name || '';
+                document.getElementById('pcEmail').value = d.profile.email || '';
+                document.getElementById('pcDob').value = d.profile.dob || '';
+                document.getElementById('pcReason').value = '';
+                document.getElementById('pcMsg').textContent = '';
+
+                const banner = document.getElementById('pcBanner');
+                const btn = document.getElementById('pcSubmit');
+                if (d.pending_request) {
+                    const list = Object.entries(d.pending_request.changes)
+                        .map(([k, v]) => esc(k) + ' &rarr; ' + esc(v)).join(', ');
+                    banner.innerHTML = '<i class="fa-solid fa-clock"></i>' +
+                        '<div>A change request is awaiting teacher approval: <b>' + list + '</b></div>';
+                    banner.style.display = 'flex';
+                    btn.disabled = true;
+                } else {
+                    banner.style.display = 'none';
+                    btn.disabled = false;
+                }
+            } catch (e) { /* leave the form as-is */ }
+            loadProfileRequests();
+        }
+
+        async function submitProfileChange() {
+            if (!_profile) return;
+            const changes = {};
+            const fields = {
+                student_id: document.getElementById('pcRoll').value.trim(),
+                name: document.getElementById('pcName').value.trim(),
+                email: document.getElementById('pcEmail').value.trim(),
+                dob: document.getElementById('pcDob').value,
+            };
+            Object.entries(fields).forEach(function (e) {
+                const k = e[0], v = e[1];
+                if (v && v !== (_profile[k] || '')) changes[k] = v;
+            });
+
+            const msg = document.getElementById('pcMsg');
+            if (!Object.keys(changes).length) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Nothing changed - edit a field first.';
+                return;
+            }
+            const summary = Object.entries(changes).map(function (e) {
+                return e[0] + ' -> ' + e[1];
+            }).join('\n');
+            if (!confirm('Request these changes?\n\n' + summary +
+                '\n\nYour teacher must approve before they take effect.')) return;
+
+            const btn = document.getElementById('pcSubmit');
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/student/profile-request', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        changes: changes,
+                        reason: document.getElementById('pcReason').value.trim()
+                    })
+                });
+                const d = await res.json();
+                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.textContent = d.message || '';
+                if (d.success) loadProfile();
+            } catch (e) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Connection failed. Try again.';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadProfileRequests() {
+            const tbody = document.getElementById('pcRows');
+            const badge = {
+                pending: 'app-badge-warning',
+                approved: 'app-badge-success',
+                rejected: 'app-badge-danger'
+            };
+            try {
+                const res = await fetch('/api/student/profile-requests');
+                const d = await res.json();
+                const reqs = d.requests || [];
+                if (!reqs.length) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="muted">No change requests yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = reqs.map(function (r) {
+                    const list = Object.entries(r.changes).map(function (e) {
+                        return esc(e[0]) + ' &rarr; <b>' + esc(e[1]) + '</b>';
+                    }).join('<br>');
+                    const note = r.review_note
+                        ? '<br><span class="muted">Note: ' + esc(r.review_note) + '</span>' : '';
+                    return '<tr><td class="muted">' + esc(r.created_at) + '</td>' +
+                        '<td>' + list + note + '</td>' +
+                        '<td><span class="app-badge ' + (badge[r.status] || 'app-badge-neutral') +
+                        '">' + esc(r.status) + '</span></td></tr>';
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="3" class="muted">Could not load requests.</td></tr>';
+            }
+        }
+
         async function logout() {
             if (!confirm('Log out?')) return;
             try { await fetch('/api/logout', { method: 'POST', credentials: 'include' }); } catch (e) { }
@@ -375,6 +530,7 @@
 
         load();
         loadGrievances();
+        loadProfile();
     </script>
 </body>
 

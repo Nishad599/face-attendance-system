@@ -59,6 +59,7 @@
             <button class="app-tab active" data-tab="mark" onclick="switchTab('mark')">Mark Attendance</button>
             <button class="app-tab" data-tab="analytics" onclick="switchTab('analytics')">Analytics</button>
             <button class="app-tab" data-tab="facereq" onclick="switchTab('facereq')">Face Requests</button>
+            <button class="app-tab" data-tab="profilereq" onclick="switchTab('profilereq')">Detail Requests</button>
             <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
             <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
             <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
@@ -154,6 +155,41 @@
                         <th>Roll No</th><th>Name</th><th>Batch</th><th>Photos</th><th>Submitted</th><th>Action</th>
                     </tr></thead>
                     <tbody id="faceReqRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ===== PROFILE CHANGE REQUESTS ===== -->
+        <div id="tab-profilereq" style="display:none;">
+            <div class="toolbar">
+                <div style="display:flex;gap:10px;align-items:center;">
+                    <span class="muted">Students requesting changes to their own details.</span>
+                    <select id="prStatus" class="app-form-input" style="max-width:150px;" onchange="loadProfileReqs()">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadProfileReqs()">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                </button>
+            </div>
+            <div class="bulkbar" id="prBulkbar" style="display:none;">
+                <button class="app-btn app-btn-success app-btn-sm" onclick="actProfileReqs('approve', true)">
+                    <i class="fa-solid fa-check"></i> Approve selected
+                </button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="actProfileReqs('reject', true)">
+                    <i class="fa-solid fa-xmark"></i> Reject selected
+                </button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr>
+                        <th style="width:36px;"><input type="checkbox" id="prSelAll" onchange="prToggleAll(this)"></th>
+                        <th>Roll No</th><th>Name</th><th>Requested changes</th>
+                        <th>Reason</th><th>Submitted</th><th>Action</th>
+                    </tr></thead>
+                    <tbody id="profileReqRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -302,12 +338,13 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['mark', 'analytics', 'facereq', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
             if (tab === 'holidays') loadHolidays();
             if (tab === 'students') loadPending();
             if (tab === 'grievances') loadGrievances();
             if (tab === 'analytics') loadAnalytics();
             if (tab === 'facereq') loadFaceRequests();
+            if (tab === 'profilereq') loadProfileReqs();
         }
 
         // ---------- Analytics ----------
@@ -430,6 +467,74 @@
             if (data.success) { loadFaceRequests(); loadBatchStudents(); }
         }
 
+        // ---------- Profile change requests ----------
+        async function loadProfileReqs() {
+            const status = document.getElementById('prStatus').value;
+            const tbody = document.getElementById('profileReqRows');
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+            const res = await fetch('/api/teacher/profile-requests?status=' + status);
+            const data = await res.json();
+            const reqs = data.requests || [];
+            const isPending = status === 'pending';
+            document.getElementById('prBulkbar').style.display = isPending && reqs.length ? 'flex' : 'none';
+            if (!reqs.length) {
+                tbody.innerHTML = '<tr><td colspan="7" class="muted">No ' + status + ' requests.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = reqs.map(function (r) {
+                const diff = r.diff.map(function (d) {
+                    return '<div style="margin-bottom:4px;"><span class="muted">' + esc(d.label) + ':</span> ' +
+                        '<span style="text-decoration:line-through;opacity:.6;">' + esc(d.from) + '</span> ' +
+                        '&rarr; <b>' + esc(d.to) + '</b></div>';
+                }).join('');
+                const actions = isPending
+                    ? '<div class="row-actions">' +
+                      '<button class="app-btn app-btn-success app-btn-sm" onclick="actProfileReqs(\'approve\', false, ' + r.id + ')">Approve</button>' +
+                      '<button class="app-btn app-btn-danger app-btn-sm" onclick="actProfileReqs(\'reject\', false, ' + r.id + ')">Reject</button>' +
+                      '</div>'
+                    : '<span class="app-badge ' + (r.status === 'approved' ? 'app-badge-success' : 'app-badge-danger') +
+                      '">' + esc(r.status) + '</span>';
+                return '<tr>' +
+                    '<td>' + (isPending ? '<input type="checkbox" class="prchk" value="' + r.id + '">' : '') + '</td>' +
+                    '<td><strong>' + esc(r.roll_no) + '</strong></td>' +
+                    '<td>' + esc(r.student_name) + '</td>' +
+                    '<td>' + diff + '</td>' +
+                    '<td class="muted">' + esc(r.reason || '-') + '</td>' +
+                    '<td class="muted">' + esc(r.created_at) + '</td>' +
+                    '<td>' + actions + '</td></tr>';
+            }).join('');
+            document.getElementById('prSelAll').checked = false;
+        }
+
+        function prToggleAll(cb) {
+            document.querySelectorAll('.prchk').forEach(function (c) { c.checked = cb.checked; });
+        }
+
+        async function actProfileReqs(action, selectedOnly, singleId) {
+            let ids;
+            if (singleId) {
+                ids = [singleId];
+            } else {
+                ids = Array.from(document.querySelectorAll('.prchk:checked')).map(function (c) {
+                    return parseInt(c.value);
+                });
+                if (!ids.length) { toast('No requests selected', 'error'); return; }
+            }
+            let note = null;
+            if (action === 'reject') {
+                note = prompt('Reason for rejecting (shown to the student, optional):') || null;
+            } else if (!confirm('Approve ' + ids.length + ' request(s)? The changes will be applied to their records.')) {
+                return;
+            }
+            const res = await fetch('/api/teacher/profile-requests/action', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids, action: action, note: note })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) { loadProfileReqs(); loadBatchStudents(); }
+        }
+
         // ---------- Grievances ----------
         async function loadGrievances() {
             const status = document.getElementById('grStatus').value;
@@ -492,6 +597,7 @@
             if (document.getElementById('tab-students').style.display !== 'none') loadPending();
             if (document.getElementById('tab-analytics').style.display !== 'none') loadAnalytics();
             if (document.getElementById('tab-grievances').style.display !== 'none') loadGrievances();
+            if (document.getElementById('tab-profilereq').style.display !== 'none') loadProfileReqs();
         }
 
         // ---------- Mark attendance ----------

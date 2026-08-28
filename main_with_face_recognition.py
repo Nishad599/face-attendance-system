@@ -2533,6 +2533,247 @@ async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depe
         return {"success": False, "message": str(e)}
 
 
+# ==================================================================
+# Student profile-change requests (teacher-approved)
+# ==================================================================
+
+# Fields a student may propose changing. Roll number is included because it is
+# their login username and does sometimes need correcting, but it is re-checked
+# for uniqueness on approval. Anything not listed here is silently ignored.
+EDITABLE_PROFILE_FIELDS = {
+    "name": "Full name",
+    "email": "Email address",
+    "dob": "Date of birth",
+    "student_id": "Roll number",
+}
+
+
+@app.get("/api/student/profile")
+async def student_profile(session: Dict[str, Any] = Depends(require_student)):
+    """The logged-in student's current editable details + any pending request."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT s.student_id, s.name, s.email, s.dob, c.name "
+            "FROM students s LEFT JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
+            (sid,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        pending = cur.execute(
+            "SELECT id, changes, created_at FROM profile_change_requests "
+            "WHERE student_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            (sid,),
+        ).fetchone()
+
+        return {
+            "success": True,
+            "profile": {"student_id": row[0], "name": row[1], "email": row[2],
+                        "dob": row[3], "batch": row[4] or "-"},
+            "editable_fields": EDITABLE_PROFILE_FIELDS,
+            "pending_request": ({
+                "id": pending[0],
+                "changes": json.loads(pending[1]) if pending[1] else {},
+                "created_at": str(pending[2])[:19],
+            } if pending else None),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/student/profile-request")
+async def request_profile_change(data: dict = Body(...),
+                                 session: Dict[str, Any] = Depends(require_student)):
+    """Propose changes to your own details. Applied only once a teacher approves."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+
+        row = cur.execute(
+            "SELECT student_id, name, email, dob, course_id FROM students WHERE id = ?", (sid,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+        current = {"student_id": row[0], "name": row[1], "email": row[2], "dob": row[3]}
+        course_id = row[4]
+
+        if cur.execute(
+            "SELECT 1 FROM profile_change_requests WHERE student_id = ? AND status = 'pending'",
+            (sid,),
+        ).fetchone():
+            return {"success": False,
+                    "message": "You already have a change request awaiting approval."}
+
+        # Keep only fields that are editable AND actually different
+        incoming = data.get("changes") or {}
+        proposed = {}
+        for field in EDITABLE_PROFILE_FIELDS:
+            if field not in incoming:
+                continue
+            new_val = str(incoming[field] or "").strip()
+            if not new_val or new_val == (current.get(field) or ""):
+                continue
+            proposed[field] = new_val
+
+        if not proposed:
+            return {"success": False, "message": "Nothing changed."}
+
+        # Validate up front so the student gets immediate feedback
+        if "email" in proposed and "@" not in proposed["email"]:
+            return {"success": False, "message": "That email address does not look valid."}
+        for field in ("email", "student_id"):
+            if field in proposed and cur.execute(
+                "SELECT 1 FROM students WHERE " + field + " = ? AND id != ?",
+                (proposed[field], sid),
+            ).fetchone():
+                label = EDITABLE_PROFILE_FIELDS[field].lower()
+                return {"success": False, "message": "That " + label + " is already in use."}
+
+        cur.execute(
+            "INSERT INTO profile_change_requests "
+            "(student_id, course_id, changes, old_values, reason, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (sid, course_id, json.dumps(proposed),
+             json.dumps({k: current.get(k) for k in proposed}),
+             (data.get("reason") or "").strip() or None),
+        )
+        attendance_system.conn.commit()
+        return {"success": True,
+                "message": "Submitted. Your teacher will review the change.",
+                "changes": proposed}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/profile-requests")
+async def my_profile_requests(session: Dict[str, Any] = Depends(require_student)):
+    """The student's own change-request history."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        rows = attendance_system.conn.execute(
+            "SELECT id, changes, status, created_at, review_note "
+            "FROM profile_change_requests WHERE student_id = ? ORDER BY id DESC LIMIT 20",
+            (sid,),
+        ).fetchall()
+        return {"success": True, "requests": [{
+            "id": r[0],
+            "changes": json.loads(r[1]) if r[1] else {},
+            "status": r[2], "created_at": str(r[3])[:19], "review_note": r[4],
+        } for r in rows]}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/profile-requests")
+async def teacher_profile_requests(status: str = "pending",
+                                   session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Profile-change requests for the teacher's assigned batches."""
+    try:
+        allowed = teacher_allowed_course_ids(session)
+        rows = attendance_system.conn.execute(
+            "SELECT r.id, s.student_id, s.name, r.course_id, c.name, "
+            "r.changes, r.old_values, r.reason, r.status, r.created_at "
+            "FROM profile_change_requests r "
+            "JOIN students s ON s.id = r.student_id "
+            "LEFT JOIN courses c ON c.id = r.course_id "
+            "WHERE r.status = ? ORDER BY r.created_at DESC",
+            (status,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            if allowed is not None and r[3] not in allowed:
+                continue
+            changes = json.loads(r[5]) if r[5] else {}
+            old = json.loads(r[6]) if r[6] else {}
+            out.append({
+                "id": r[0], "roll_no": r[1], "student_name": r[2],
+                "batch": r[4] or "-", "status": r[8], "created_at": str(r[9])[:19],
+                "reason": r[7],
+                "diff": [{"field": f, "label": EDITABLE_PROFILE_FIELDS.get(f, f),
+                          "from": old.get(f) or "(blank)", "to": v}
+                         for f, v in changes.items()],
+            })
+        return {"success": True, "requests": out, "count": len(out)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teacher/profile-requests/action")
+async def act_on_profile_requests(data: dict = Body(...),
+                                  session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Approve (applies the change) or reject profile-change requests."""
+    try:
+        ids = data.get("ids") or []
+        action = (data.get("action") or "").strip().lower()
+        note = (data.get("note") or "").strip() or None
+        if not ids or action not in ("approve", "reject"):
+            return {"success": False, "message": "Provide ids and action ('approve' or 'reject')"}
+
+        allowed = teacher_allowed_course_ids(session)
+        reviewer = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        processed, skipped = 0, []
+
+        for rid in ids:
+            row = cur.execute(
+                "SELECT student_id, course_id, changes, status "
+                "FROM profile_change_requests WHERE id = ?", (rid,),
+            ).fetchone()
+            if not row or row[3] != "pending":
+                continue
+            student_db_id, course_id, changes_json, _ = row
+            if allowed is not None and course_id not in allowed:
+                continue
+
+            if action == "approve":
+                changes = json.loads(changes_json) if changes_json else {}
+                changes = {k: v for k, v in changes.items() if k in EDITABLE_PROFILE_FIELDS}
+                if not changes:
+                    continue
+                # Re-check uniqueness at approval time — the data may have moved
+                # since the student submitted the request.
+                clash = None
+                for field in ("email", "student_id"):
+                    if field in changes and cur.execute(
+                        "SELECT 1 FROM students WHERE " + field + " = ? AND id != ?",
+                        (changes[field], student_db_id),
+                    ).fetchone():
+                        clash = EDITABLE_PROFILE_FIELDS[field]
+                        break
+                if clash:
+                    skipped.append(clash + " already taken")
+                    continue
+                assignments = ", ".join(k + " = ?" for k in changes)
+                cur.execute(
+                    "UPDATE students SET " + assignments + " WHERE id = ?",
+                    [*changes.values(), student_db_id],
+                )
+
+            cur.execute(
+                "UPDATE profile_change_requests SET status = ?, reviewed_by = ?, "
+                "reviewed_at = CURRENT_TIMESTAMP, review_note = ? WHERE id = ?",
+                ("approved" if action == "approve" else "rejected", reviewer, note, rid),
+            )
+            processed += 1
+
+        attendance_system.conn.commit()
+        audit(session, "profile_request_action", target=str(processed) + " request(s)",
+              details="action=" + action)
+        msg = ("Approved " if action == "approve" else "Rejected ") + str(processed) + " request(s)"
+        if skipped:
+            msg += " - " + str(len(skipped)) + " skipped (" + "; ".join(skipped[:3]) + ")"
+        return {"success": True, "message": msg, "processed": processed}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/api/student/calendar")
 async def student_calendar(year: Optional[int] = None, month: Optional[int] = None,
                            session: Dict[str, Any] = Depends(require_student)):
