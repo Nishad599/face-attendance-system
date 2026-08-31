@@ -237,7 +237,7 @@
         <!-- Sunday Notice -->
         <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
             <i class="fa-solid fa-calendar-xmark"></i>
-            Today is Sunday — Non-working day. Attendance can be marked but won't count toward statistics.
+            Today is Sunday — a non-working day. Attendance cannot be marked today.
         </div>
 
         <!-- Slot Status -->
@@ -283,6 +283,19 @@
                         <i class="fa-solid fa-camera"></i> Capture
                     </button>
                 </div>
+
+                <!-- Group mode. Detection already handles every face in the
+                     frame; this just frames it as a deliberate action and
+                     summarises the result for a whole row at once. -->
+                <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;">
+                        <input type="checkbox" id="groupMode" onchange="onGroupModeChange()">
+                        <span><i class="fa-solid fa-users"></i> Group photo mode</span>
+                    </label>
+                    <span class="sub" id="groupHint" style="margin:0;font-size:.84rem;"></span>
+                </div>
+                <div id="groupSummary" style="display:none;margin-top:10px;padding:12px;
+                     border-radius:6px;background:var(--bg-page);font-size:.9rem;"></div>
 
                 <!-- Terminal-only fallback. Shown for kiosk sessions so a
                      student whose face will not match is not simply stuck.
@@ -362,7 +375,7 @@
             <div class="app-alert app-alert-info mt-16">
                 <i class="fa-solid fa-calendar-days"></i>
                 <div>
-                    <strong>Working Schedule:</strong> Monday — Saturday. Sunday attendance is visible but not counted
+                    <strong>Working Schedule:</strong> Monday — Saturday. Attendance cannot be marked on Sundays or holidays
                     in statistics.
                 </div>
             </div>
@@ -431,7 +444,7 @@
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('captureBtn').disabled = false;
                 const isSunday = checkSundayStatus();
-                showMessage(isSunday ? 'Camera started! (Sunday — not counted)' : 'Camera started!', isSunday ? 'warning' : 'success');
+                showMessage(isSunday ? 'Camera started — but today is Sunday, attendance cannot be marked' : 'Camera started!', isSunday ? 'warning' : 'success');
                 detectionInterval = setInterval(captureFrame, 3000);
                 if (!liveCountInterval) {
                     updateLiveCount();
@@ -529,9 +542,56 @@
                 });
                 const result = await r.json();
                 displayDetectionResults(result);
+                if (document.getElementById('groupMode').checked) {
+                    showGroupSummary(result);
+                }
             } catch (error) {
                 showMessage('Detection failed: ' + error.message, 'error');
             }
+        }
+
+        // ---------- Group photo mode ----------
+        function onGroupModeChange() {
+            const on = document.getElementById('groupMode').checked;
+            document.getElementById('groupHint').textContent = on
+                ? 'Point the camera at the whole row, then press Capture — everyone recognised is marked at once.'
+                : '';
+            if (!on) document.getElementById('groupSummary').style.display = 'none';
+        }
+
+        function showGroupSummary(result) {
+            const students = (result && result.students) || result.recognized_students || [];
+            const box = document.getElementById('groupSummary');
+
+            const marked = students.filter(s => s.status === 'marked');
+            const already = students.filter(s => s.status === 'already_marked');
+            const other = students.filter(s => ['marked', 'already_marked'].indexOf(s.status) === -1);
+            const faces = result.faces_detected != null ? result.faces_detected : students.length;
+
+            const names = list => list.map(s => esc(s.student_name || s.name || '?')).join(', ');
+            let html = `<div><strong>${faces} face(s) detected</strong></div>`;
+            if (marked.length) {
+                html += `<div style="margin-top:6px;color:#006644;">✅ Marked (${marked.length}): ${names(marked)}</div>`;
+            }
+            if (already.length) {
+                html += `<div style="margin-top:6px;color:#6B778C;">Already marked (${already.length}): ${names(already)}</div>`;
+            }
+            if (other.length) {
+                // Unrecognised, wrong batch, or liveness failures — the ones a
+                // teacher has to follow up on individually.
+                html += `<div style="margin-top:6px;color:#BF2600;">⚠️ Needs attention (${other.length}): ` +
+                    other.map(s => esc(s.student_name || 'Unknown') + ' — ' + esc(s.status || '')).join('; ') + '</div>';
+            }
+            if (!students.length) {
+                html += '<div style="margin-top:6px;color:#BF2600;">Nobody was recognised. Move closer, or check the lighting.</div>';
+            }
+            box.innerHTML = html;
+            box.style.display = '';
+        }
+
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         }
 
         function showMessage(message, type) {
@@ -557,7 +617,7 @@
         document.addEventListener('DOMContentLoaded', function () {
             checkSundayStatus();
             const isSunday = new Date().getDay() === 0;
-            showMessage(isSunday ? 'Sunday — attendance visible but not counted' : 'Click "Start" to begin', isSunday ? 'warning' : 'info');
+            showMessage(isSunday ? 'Sunday — attendance cannot be marked today' : 'Click "Start" to begin', isSunday ? 'warning' : 'info');
             updateLiveCount();
             liveCountInterval = setInterval(updateLiveCount, 10000);
 

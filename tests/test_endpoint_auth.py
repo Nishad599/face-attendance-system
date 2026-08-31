@@ -28,6 +28,9 @@ PUBLIC_BY_DESIGN = {
     # PWA plumbing. The browser fetches both outside any page session, and
     # neither exposes data: sw.js is static JS, the manifest is static JSON.
     "/sw.js", "/manifest.webmanifest",
+    # The privacy notice must be readable BEFORE consenting (and before
+    # logging in at all). Static text, no data.
+    "/privacy",
 }
 
 

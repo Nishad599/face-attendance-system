@@ -93,6 +93,7 @@
             <button class="app-tab" data-tab="profilereq" onclick="switchTab('profilereq')">Detail Requests</button>
             <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
             <button class="app-tab" data-tab="leaves" onclick="switchTab('leaves')">Leave</button>
+            <button class="app-tab" data-tab="modules" onclick="switchTab('modules')">Modules</button>
             <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
             <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
         </div>
@@ -289,6 +290,49 @@
             </div>
         </div>
 
+        <!-- ===== MODULES + TIMETABLE ===== -->
+        <div id="tab-modules" style="display:none;">
+            <div class="card">
+                <h2>Modules</h2>
+                <p class="muted" style="margin-top:-8px;">Each module carries its own minimum
+                    attendance. Assign them to slots in the timetable below — attendance is then
+                    attributed to whichever module was scheduled.</p>
+                <div class="inline-form">
+                    <div class="app-form-group"><label class="app-form-label">Name</label>
+                        <input type="text" id="subjName" class="app-form-input" placeholder="e.g. Machine Learning"></div>
+                    <div class="app-form-group"><label class="app-form-label">Code</label>
+                        <input type="text" id="subjCode" class="app-form-input" placeholder="e.g. ML-101"></div>
+                    <div class="app-form-group"><label class="app-form-label">Min %</label>
+                        <input type="number" id="subjMin" class="app-form-input" value="75" min="0" max="100"></div>
+                    <button class="app-btn app-btn-primary" onclick="addSubject()"><i class="fa-solid fa-plus"></i> Add</button>
+                </div>
+                <div class="app-table-wrapper" style="margin-top:12px;">
+                    <table class="app-table">
+                        <thead><tr><th>Module</th><th>Code</th><th>Min %</th><th>Attended</th><th>Rate</th><th></th></tr></thead>
+                        <tbody id="subjectRows"><tr><td colspan="6" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Weekly timetable</h2>
+                <p class="muted" style="margin-top:-8px;">Which module runs in which slot.
+                    Students see this in their portal, and new attendance is tagged with it.</p>
+                <div class="app-table-wrapper">
+                    <table class="app-table" id="ttEditTable">
+                        <thead><tr><th>Day</th></tr></thead>
+                        <tbody id="ttEditRows"><tr><td class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+                <div style="margin-top:12px;">
+                    <button class="app-btn app-btn-primary" onclick="saveTimetable()">
+                        <i class="fa-solid fa-floppy-disk"></i> Save timetable
+                    </button>
+                    <span id="ttMsg" class="muted" style="margin-left:10px;"></span>
+                </div>
+            </div>
+        </div>
+
         <!-- ===== HOLIDAYS ===== -->
         <div id="tab-holidays" style="display:none;">
             <div class="card">
@@ -403,7 +447,8 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'leaves', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'leaves', 'modules', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            if (tab === 'modules') loadModules();
             if (tab === 'holidays') loadHolidays();
             if (tab === 'students') loadPending();
             if (tab === 'grievances') loadGrievances();
@@ -618,11 +663,14 @@
                     <td>${isPending ? `<input type="checkbox" class="grchk" value="${x.id}">` : ''}</td>
                     <td><strong>${esc(x.roll_no)}</strong></td>
                     <td>${esc(x.student_name)}</td>
-                    <td>${esc(x.date)}</td>
+                    <td>${esc(x.date)}<br><span class="muted" style="font-size:.8rem;">${esc(x.day_name || '')}</span>
+                        ${x.is_working_day === false ? '<br><span class="app-badge app-badge-danger" title="' + esc(x.non_working_reason || '') + '">non-working day</span>' : ''}</td>
                     <td>${esc(x.session_type)}</td>
                     <td>${esc(x.reason)}</td>
                     <td>${isPending ? `<div class="row-actions">
-                        <button class="app-btn app-btn-success app-btn-sm" onclick="actGrievances('approve', false, ${x.id})">Approve</button>
+                        <button class="app-btn app-btn-success app-btn-sm"
+                            ${x.is_working_day === false ? 'disabled title="Attendance cannot be marked on a Sunday or holiday"' : ''}
+                            onclick="actGrievances('approve', false, ${x.id})">Approve</button>
                         <button class="app-btn app-btn-danger app-btn-sm" onclick="actGrievances('reject', false, ${x.id})">Reject</button>
                     </div>` : `<span class="app-badge ${x.status === 'approved' ? 'app-badge-success' : 'app-badge-danger'}">${esc(x.status)}</span>`}</td>
                 </tr>`).join('');
@@ -647,6 +695,122 @@
             if (data.success) loadGrievances();
         }
 
+        // ---------- Modules + timetable ----------
+        let _ttSlots = [], _ttSubjects = [];
+
+        async function loadModules() {
+            const cid = currentBatch();
+            if (!cid) { toast('Pick a batch first', 'error'); return; }
+
+            // Subject list, merged with per-module attendance figures.
+            const [subjRes, statsRes] = await Promise.all([
+                fetch(`/api/courses/${cid}/subjects`).then(r => r.json()),
+                fetch(`/api/teacher/batch/${cid}/subject-analytics`).then(r => r.json())
+            ]);
+            const subjects = subjRes.subjects || [];
+            const stats = {};
+            (statsRes.subjects || []).forEach(s => { stats[s.subject_id] = s; });
+
+            const tbody = document.getElementById('subjectRows');
+            tbody.innerHTML = subjects.length ? subjects.map(s => {
+                const st = stats[s.id] || {};
+                const rate = st.rate == null ? '—' : st.rate + '%';
+                const colour = st.at_risk ? '#DE350B' : '#00875A';
+                return `<tr${s.is_active ? '' : ' style="opacity:.5;"'}>
+                    <td><strong>${esc(s.name)}</strong>${s.is_active ? '' : ' <span class="app-badge app-badge-neutral">inactive</span>'}</td>
+                    <td>${esc(s.code || '—')}</td>
+                    <td>${s.min_attendance}</td>
+                    <td>${st.attended == null ? '—' : st.attended + ' / ' + st.expected}</td>
+                    <td style="color:${colour};font-weight:600;">${rate}</td>
+                    <td>${s.is_active ? `<button class="app-btn app-btn-danger app-btn-sm"
+                        onclick="removeSubject(${s.id}, '${esc(s.name).replace(/'/g, "\\'")}')">Remove</button>` : ''}</td>
+                </tr>`;
+            }).join('') : '<tr><td colspan="6" class="muted">No modules yet — add one above.</td></tr>';
+
+            await loadTimetableEditor(cid);
+        }
+
+        async function addSubject() {
+            const cid = currentBatch();
+            if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const name = document.getElementById('subjName').value.trim();
+            if (!name) { toast('Module name is required', 'error'); return; }
+            const res = await fetch(`/api/courses/${cid}/subjects`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    code: document.getElementById('subjCode').value.trim(),
+                    min_attendance: document.getElementById('subjMin').value
+                })
+            });
+            const d = await res.json();
+            toast(d.message || (d.success ? 'Added' : 'Failed'), d.success ? 'success' : 'error');
+            if (d.success) {
+                document.getElementById('subjName').value = '';
+                document.getElementById('subjCode').value = '';
+                loadModules();
+            }
+        }
+
+        async function removeSubject(id, name) {
+            // Deactivates rather than deletes — attendance rows point at it.
+            if (!confirm(`Remove "${name}"?\n\nIt will be deactivated and cleared from the ` +
+                `timetable. Past attendance for it is kept.`)) return;
+            const d = await (await fetch(`/api/subjects/${id}`, { method: 'DELETE' })).json();
+            toast(d.message || (d.success ? 'Removed' : 'Failed'), d.success ? 'success' : 'error');
+            if (d.success) loadModules();
+        }
+
+        async function loadTimetableEditor(cid) {
+            const d = await (await fetch(`/api/courses/${cid}/timetable`)).json();
+            if (!d.success) return;
+            _ttSlots = d.slots || [];
+            _ttSubjects = d.subjects || [];
+
+            document.querySelector('#ttEditTable thead').innerHTML =
+                '<tr><th>Day</th>' + _ttSlots.map(s => `<th>${esc(s.label)}</th>`).join('') + '</tr>';
+
+            const options = sel => '<option value="">—</option>' + _ttSubjects.map(s =>
+                `<option value="${s.id}"${String(sel) === String(s.id) ? ' selected' : ''}>${esc(s.name)}</option>`
+            ).join('');
+
+            // Sunday is not a working day, so it is not offered.
+            document.getElementById('ttEditRows').innerHTML = (d.grid || [])
+                .filter(row => row.weekday !== 6)
+                .map(row => `<tr><td><strong>${esc(row.day)}</strong></td>` +
+                    row.slots.map(c => `<td>
+                        <select class="app-form-input tt-cell" data-weekday="${row.weekday}"
+                                data-slot="${c.session_type}" style="min-width:130px;">
+                            ${options(c.subject_id)}
+                        </select>
+                        <input type="text" class="app-form-input tt-room" placeholder="Room"
+                               data-weekday="${row.weekday}" data-slot="${c.session_type}"
+                               value="${esc(c.room || '')}" style="margin-top:4px;min-width:130px;">
+                    </td>`).join('') + '</tr>').join('');
+        }
+
+        async function saveTimetable() {
+            const cid = currentBatch();
+            if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const rooms = {};
+            document.querySelectorAll('.tt-room').forEach(i => {
+                rooms[i.dataset.weekday + '|' + i.dataset.slot] = i.value.trim();
+            });
+            const entries = Array.from(document.querySelectorAll('.tt-cell')).map(sel => ({
+                weekday: parseInt(sel.dataset.weekday),
+                session_type: sel.dataset.slot,
+                subject_id: sel.value ? parseInt(sel.value) : null,
+                room: rooms[sel.dataset.weekday + '|' + sel.dataset.slot] || null
+            }));
+            const res = await fetch(`/api/courses/${cid}/timetable`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entries })
+            });
+            const d = await res.json();
+            document.getElementById('ttMsg').textContent = d.message || '';
+            toast(d.message || (d.success ? 'Saved' : 'Failed'), d.success ? 'success' : 'error');
+        }
+
         // ---------- Leave (planned absences) ----------
         async function loadLeaves() {
             const status = document.getElementById('lvStatus').value;
@@ -660,9 +824,13 @@
             document.getElementById('lvSelAllCell').style.visibility = isPending ? 'visible' : 'hidden';
             if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7" class="muted">No ${status} requests.</td></tr>`; return; }
             tbody.innerHTML = rows.map(x => {
+                // Show the weekday, so "Sat → Sun" is obviously not two days off.
                 const span = x.start_date === x.end_date
-                    ? esc(x.start_date)
-                    : esc(x.start_date) + ' → ' + esc(x.end_date);
+                    ? esc(x.start_date) + '<br><span class="muted" style="font-size:.8rem;">' +
+                      esc(x.start_day || '') + '</span>'
+                    : esc(x.start_date) + ' → ' + esc(x.end_date) +
+                      '<br><span class="muted" style="font-size:.8rem;">' +
+                      esc(x.start_day || '') + ' → ' + esc(x.end_day || '') + '</span>';
                 // Flag requests whose dates have already passed: approving one
                 // still excuses those days, but the teacher should notice.
                 const late = x.upcoming ? '' :
@@ -673,7 +841,8 @@
                     <td><strong>${esc(x.roll_no)}</strong></td>
                     <td>${esc(x.student_name)}</td>
                     <td>${span}${late}</td>
-                    <td>${x.days}</td>
+                    <td>${x.days}${x.working_days != null && x.working_days !== x.days
+                        ? '<br><span class="muted" style="font-size:.8rem;">' + x.working_days + ' working</span>' : ''}</td>
                     <td>${esc(x.reason)}</td>
                     <td>${isPending ? `<div class="row-actions">
                         <button class="app-btn app-btn-success app-btn-sm" onclick="actLeaves('approve', false, ${x.id})">Approve</button>

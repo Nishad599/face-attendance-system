@@ -92,6 +92,9 @@ None of these are installed by the deploy. Add them once with `crontab -e`:
 
 # Monthly reports, 1st of the month at 07:00 (covers the month just ended)
 0 7 1 * * cd $HOME/student && ./venv/bin/python send_reports.py >> logs/reports.log 2>&1
+
+# Same-day "you weren't marked" nudge, Mon-Sat after the last slot
+30 17 * * 1-6 cd $HOME/student && ./venv/bin/python send_daily_nudge.py >> logs/nudge.log 2>&1
 ```
 
 `cron` does not expand `$HOME` in every implementation — if a job silently does

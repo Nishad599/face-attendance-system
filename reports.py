@@ -85,6 +85,67 @@ def _present_dates(cur, student_db_id, start, end):
     return out
 
 
+def day_credit(session_types, half_day=True):
+    """How much of a day a student is credited with, from the session_type
+    values recorded for them on that date.
+
+    With half-day off, any attendance on a date is a full day (the original
+    behaviour). With it on, the morning slots are worth half the day and the
+    afternoon slots the other half — so arriving after lunch, or leaving at
+    lunch, scores 0.5 instead of a full day.
+
+    Anything unrecognised (including a NULL session_type, which is what a
+    whole-day manual or bulk mark writes) credits the full day. Never
+    penalise a student for a marking style the system itself chose.
+    """
+    if not half_day:
+        return 1.0
+    halves = set()
+    for st in session_types:
+        s = str(st).strip().lower() if st else ""
+        if not s:
+            return 1.0
+        if s.startswith("morning"):
+            halves.add("morning")
+        elif s.startswith("afternoon"):
+            halves.add("afternoon")
+        else:
+            return 1.0
+    if not halves:
+        return 1.0
+    return min(1.0, 0.5 * len(halves))
+
+
+def _half_day_enabled(cur, course_id):
+    """Whether this batch counts half days. Opt-in per batch: switching it on
+    changes every percentage the batch has ever shown."""
+    if not course_id:
+        return False
+    try:
+        cur.execute("SELECT half_day_enabled FROM courses WHERE id = ?", (course_id,))
+        row = cur.fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False        # pre-migrate_phase6 database
+
+
+def _present_credits(cur, student_db_id, start, end, half_day):
+    """{date: credit} for every date the student has attendance on."""
+    cur.execute(
+        "SELECT date, session_type FROM attendance "
+        "WHERE student_id = ? AND date >= ? AND date <= ?",
+        (student_db_id, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")),
+    )
+    by_date = {}
+    for row in cur.fetchall():
+        try:
+            d = datetime.strptime(str(row[0])[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        by_date.setdefault(d, []).append(row[1])
+    return {d: day_credit(sts, half_day) for d, sts in by_date.items()}
+
+
 def _approved_leave_dates(cur, student_db_id, start, end):
     """Dates covered by an approved leave request, within [start, end].
 
@@ -117,29 +178,35 @@ def _approved_leave_dates(cur, student_db_id, start, end):
     return out
 
 
-def _student_figures(cur, student_db_id, period_start, period_end, holidays, joining_date):
-    """Present/absent/working-day counts for one student over a period.
+def _student_figures(cur, student_db_id, period_start, period_end, holidays,
+                     joining_date, half_day=False):
+    """Present/absent/working-day figures for one student over a period.
 
     Shared by the monthly, cumulative and institute reports so they cannot
     drift apart. Excludes days before the student joined and days covered by
-    an approved leave request.
+    an approved leave request. With half_day on, a day can be credited 0.5.
     """
     start = _effective_start(period_start, joining_date)
     work = _working_days(start, period_end, holidays)
     leave = _approved_leave_dates(cur, student_db_id, start, period_end)
     work = [d for d in work if d not in leave]
-    present = _present_dates(cur, student_db_id, start, period_end)
+    credits = _present_credits(cur, student_db_id, start, period_end, half_day)
 
-    present_days = [d for d in work if d in present]
-    absent_days = [d for d in work if d not in present]
+    credited = sum(credits.get(d, 0.0) for d in work)
+    # "Absent" means no credit at all; a half day is listed separately so a
+    # student can see the difference between missing a day and missing a half.
+    absent_days = [d for d in work if credits.get(d, 0.0) <= 0]
+    partial_days = [d for d in work if 0 < credits.get(d, 0.0) < 1]
+
     return {
         "start": start,
         "end": period_end,
-        "present_days": present_days,
+        "present_days": round(credited, 1),
         "absent_days": absent_days,
+        "partial_days": partial_days,
         "working": work,
         "leave_days": len(leave),
-        "rate": round(len(present_days) / len(work) * 100, 1) if work else 0.0,
+        "rate": round(credited / len(work) * 100, 1) if work else 0.0,
     }
 
 
@@ -163,10 +230,11 @@ def student_monthly_report(student_db_id: int, year: int, month: int):
 
     start, end = month_bounds(year, month)
     holidays = _holiday_dates(cur, row[4])
+    half_day = _half_day_enabled(cur, row[4])
     # _student_figures skips days before the student joined (a mid-month joiner
     # must not look absent for days they weren't enrolled) and days covered by
     # approved leave. Matches how analytics_manager computes rates.
-    fig = _student_figures(cur, student_db_id, start, end, holidays, row[6])
+    fig = _student_figures(cur, student_db_id, start, end, holidays, row[6], half_day)
 
     conn.close()
     return {
@@ -178,12 +246,15 @@ def student_monthly_report(student_db_id: int, year: int, month: int):
         "batch": row[5] or "-",
         "month_label": fig["start"].strftime("%B %Y"),
         "period": f'{fig["start"]:%d %b} - {end:%d %b %Y}',
-        "present_days": len(fig["present_days"]),
+        "present_days": fig["present_days"],
         "absent_days": len(fig["absent_days"]),
+        "partial_days": len(fig["partial_days"]),
+        "half_day": half_day,
         "working_days": len(fig["working"]),
         "leave_days": fig["leave_days"],
         "rate": fig["rate"],
         "absent_dates": [d.strftime("%d %b (%a)") for d in fig["absent_days"]],
+        "partial_dates": [d.strftime("%d %b (%a)") for d in fig["partial_days"]],
     }
 
 
@@ -206,14 +277,16 @@ def teacher_monthly_report(course_id: int, year: int, month: int, at_risk_thresh
     )
     students = cur.fetchall()
 
+    half_day = _half_day_enabled(cur, course_id)
     rows, rate_sum = [], 0.0
     for sid, roll, name, joining in students:
-        fig = _student_figures(cur, sid, start, end, holidays, joining)
+        fig = _student_figures(cur, sid, start, end, holidays, joining, half_day)
         rate_sum += fig["rate"]
         rows.append({"roll_no": roll, "name": name,
-                     "present": len(fig["present_days"]),
+                     "present": fig["present_days"],
                      "working_days": len(fig["working"]),
                      "leave_days": fig["leave_days"],
+                     "partial_days": len(fig["partial_days"]),
                      "rate": fig["rate"]})
 
     conn.close()
@@ -260,7 +333,8 @@ def student_cumulative_report(student_db_id: int, at_risk_threshold: float = 75.
         start = today.replace(month=1, day=1)
 
     holidays = _holiday_dates(cur, row[4])
-    fig = _student_figures(cur, student_db_id, start, today, holidays, row[6])
+    half_day = _half_day_enabled(cur, row[4])
+    fig = _student_figures(cur, student_db_id, start, today, holidays, row[6], half_day)
 
     # How many of the remaining days must be attended to reach the threshold?
     # This is the number that actually changes behaviour.
@@ -273,7 +347,7 @@ def student_cumulative_report(student_db_id: int, at_risk_threshold: float = 75.
     except (ValueError, TypeError):
         course_end = None
 
-    present = len(fig["present_days"])
+    present = fig["present_days"]
     total_work = len(fig["working"])
     needed = None
     if remaining:

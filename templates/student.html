@@ -142,6 +142,27 @@
             </div>
         </div>
 
+        <!-- Biometric consent (DPDP Act 2023). Shown until the student has
+             answered for the current policy version. -->
+        <div id="consentBanner" class="banner" style="display:none;background:#DEEBFF;
+             border-color:#4C9AFF;color:#0747A6;">
+            <i class="fa-solid fa-shield-halved"></i>
+            <div style="flex:1;">
+                <div><strong>Your consent is needed for face-based attendance.</strong></div>
+                <div style="font-size:.88rem;margin-top:2px;">
+                    We convert your face into a numeric code so the camera can mark you present.
+                    You can withdraw at any time. <a href="/privacy" target="_blank">Read the
+                    privacy notice</a>.
+                </div>
+            </div>
+            <button class="app-btn app-btn-primary app-btn-sm" onclick="setConsent(true)">
+                I agree
+            </button>
+            <button class="app-btn app-btn-subtle app-btn-sm" onclick="setConsent(false)">
+                Decline
+            </button>
+        </div>
+
         <div class="grid">
             <div class="stat-card" style="text-align:center;">
                 <div class="lbl">Attendance</div>
@@ -160,6 +181,29 @@
                 <span style="color:#FF5630;">■</span> Absent &nbsp;
                 <span style="color:#C1C7D0;">■</span> Holiday / Sunday
             </p>
+        </div>
+
+        <div class="card" id="subjectsCard" style="display:none;">
+            <h2>My modules</h2>
+            <p class="muted" style="margin-top:-8px;">Attendance counted per module, against
+                each module's own minimum.</p>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr><th>Module</th><th>Attended</th><th>Classes</th><th>Rate</th></tr></thead>
+                    <tbody id="subjectRows"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card" id="timetableCard" style="display:none;">
+            <h2>My timetable</h2>
+            <p class="muted" style="margin-top:-8px;" id="ttHint"></p>
+            <div class="app-table-wrapper">
+                <table class="app-table" id="ttTable">
+                    <thead><tr><th>Day</th></tr></thead>
+                    <tbody id="ttRows"></tbody>
+                </table>
+            </div>
         </div>
 
         <div class="card">
@@ -336,7 +380,7 @@
             if (!g.length) { tbody.innerHTML = '<tr><td colspan="4" class="muted">No requests yet.</td></tr>'; return; }
             tbody.innerHTML = g.map(x => `
                 <tr>
-                    <td>${esc(x.date)}</td>
+                    <td>${esc(x.date)}<br><span class="muted" style="font-size:.8rem;">${esc(x.day_name || '')}</span></td>
                     <td>${esc(x.session_type)}</td>
                     <td>${esc(x.reason)}${x.review_note ? '<br><span class="muted">Note: ' + esc(x.review_note) + '</span>' : ''}</td>
                     <td><span class="app-badge ${statusBadge[x.status] || 'app-badge-neutral'}">${esc(x.status)}</span></td>
@@ -357,6 +401,91 @@
             msg.style.color = data.success ? '#006644' : '#BF2600';
             msg.textContent = data.message || '';
             if (data.success) { document.getElementById('grReason').value = ''; loadGrievances(); }
+        }
+
+        // ---------- Biometric consent (DPDP Act 2023) ----------
+        async function loadConsent() {
+            try {
+                const d = await (await fetch('/api/student/consent')).json();
+                if (!d.success) return;
+                // Only ask when they have not answered for THIS policy version.
+                document.getElementById('consentBanner').style.display =
+                    d.consented ? 'none' : 'flex';
+            } catch (e) { /* never block the page on this */ }
+        }
+
+        async function setConsent(granted) {
+            if (!granted && !confirm(
+                'Decline face-based attendance?\n\n' +
+                'Your stored face data will be deleted and the camera will no longer ' +
+                'recognise you — your teacher will mark you manually instead. ' +
+                'Your attendance history is not affected.')) return;
+            try {
+                const res = await fetch('/api/student/consent', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ granted: granted })
+                });
+                const d = await res.json();
+                alert(d.message || (d.success ? 'Saved' : 'Could not save'));
+                if (d.success) { loadConsent(); load(); }
+            } catch (e) {
+                alert('Connection failed. Try again.');
+            }
+        }
+
+        // ---------- Modules & timetable ----------
+        async function loadSubjects() {
+            try {
+                const d = await (await fetch('/api/student/subjects')).json();
+                const rows = (d && d.subjects) || [];
+                if (!rows.length) return;              // batch has no modules set up
+                document.getElementById('subjectsCard').style.display = '';
+                document.getElementById('subjectRows').innerHTML = rows.map(function (s) {
+                    const colour = s.at_risk ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
+                    const flag = s.at_risk
+                        ? ' <span class="app-badge app-badge-danger">below ' +
+                          s.min_attendance + '%</span>' : '';
+                    return '<tr><td>' + esc(s.name) +
+                        (s.code ? ' <span class="muted">(' + esc(s.code) + ')</span>' : '') +
+                        flag + '</td><td>' + s.attended + '</td><td>' + s.expected + '</td>' +
+                        '<td style="color:' + colour + ';font-weight:600;">' + s.rate + '%</td></tr>';
+                }).join('');
+            } catch (e) { /* card stays hidden */ }
+        }
+
+        async function loadTimetable() {
+            try {
+                const d = await (await fetch('/api/student/timetable')).json();
+                const grid = (d && d.grid) || [];
+                const times = (d && d.slot_times) || {};
+                // Only show days that actually have something scheduled.
+                const days = grid.filter(function (row) {
+                    return row.slots.some(function (c) { return c.subject_name || c.room; });
+                });
+                if (!days.length) return;
+
+                document.getElementById('timetableCard').style.display = '';
+                const slots = grid[0].slots;
+                document.querySelector('#ttTable thead').innerHTML =
+                    '<tr><th>Day</th>' + slots.map(function (s) {
+                        const t = times[s.session_type];
+                        return '<th>' + esc(s.slot_label) +
+                            (t ? '<br><span class="muted" style="font-weight:400;font-size:.78rem;">' +
+                                 esc(t.start) + '–' + esc(t.end) + '</span>' : '') + '</th>';
+                    }).join('') + '</tr>';
+
+                document.getElementById('ttRows').innerHTML = days.map(function (row) {
+                    return '<tr><td><strong>' + esc(row.day) + '</strong></td>' +
+                        row.slots.map(function (c) {
+                            if (!c.subject_name && !c.room) return '<td class="muted">—</td>';
+                            return '<td>' + esc(c.subject_name || '') +
+                                (c.room ? '<br><span class="muted" style="font-size:.8rem;">' +
+                                          esc(c.room) + '</span>' : '') + '</td>';
+                        }).join('') + '</tr>';
+                }).join('');
+                document.getElementById('ttHint').textContent =
+                    'Times are when each slot is open for marking attendance.';
+            } catch (e) { /* card stays hidden */ }
         }
 
         // ---------- Planned leave ----------
@@ -385,8 +514,11 @@
                 }
                 tbody.innerHTML = rows.map(function (r) {
                     const span = r.start_date === r.end_date
-                        ? esc(r.start_date)
-                        : esc(r.start_date) + ' → ' + esc(r.end_date);
+                        ? esc(r.start_date) + '<br><span class="muted" style="font-size:.8rem;">' +
+                          esc(r.start_day || '') + '</span>'
+                        : esc(r.start_date) + ' → ' + esc(r.end_date) +
+                          '<br><span class="muted" style="font-size:.8rem;">' +
+                          esc(r.start_day || '') + ' → ' + esc(r.end_day || '') + '</span>';
                     const note = r.review_note
                         ? '<br><span class="muted">Note: ' + esc(r.review_note) + '</span>' : '';
                     const cancel = r.cancellable
@@ -695,6 +827,9 @@
         loadGrievances();
         loadProfile();
         loadLeaves();
+        loadConsent();
+        loadSubjects();
+        loadTimetable();
     </script>
 </body>
 

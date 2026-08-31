@@ -44,7 +44,8 @@ CREATE TABLE courses (
     description TEXT,
     is_active BOOLEAN DEFAULT 1,
     created_at TIMESTAMP,
-    terminal_pin_hash TEXT
+    terminal_pin_hash TEXT,
+    half_day_enabled INTEGER DEFAULT 0
 );
 CREATE TABLE attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +58,8 @@ CREATE TABLE attendance (
     is_manual BOOLEAN DEFAULT 0,
     session_type TEXT,
     is_late BOOLEAN DEFAULT 0,
-    course_id INTEGER
+    course_id INTEGER,
+    subject_id INTEGER
 );
 CREATE TABLE holidays (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,6 +138,24 @@ CREATE TABLE alert_log (
     rate REAL, sent_at TIMESTAMP
 );
 CREATE UNIQUE INDEX idx_alert_log_unique ON alert_log (student_id, kind, period);
+CREATE TABLE subjects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT,
+    min_attendance REAL DEFAULT 75, start_date DATE, end_date DATE,
+    is_active INTEGER DEFAULT 1, created_at TIMESTAMP
+);
+CREATE TABLE timetable (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL, weekday INTEGER NOT NULL,
+    session_type TEXT NOT NULL, subject_id INTEGER, room TEXT, created_at TIMESTAMP
+);
+CREATE UNIQUE INDEX idx_timetable_slot ON timetable (course_id, weekday, session_type);
+CREATE TABLE consent_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL, purpose TEXT NOT NULL DEFAULT 'biometric_attendance',
+    policy_version TEXT NOT NULL, granted INTEGER NOT NULL,
+    granted_at TIMESTAMP, withdrawn_at TIMESTAMP, ip_address TEXT, user_agent TEXT
+);
 """
 
 

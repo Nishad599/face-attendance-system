@@ -134,6 +134,16 @@
                     <input type="text" id="batchPin" class="app-form-input" placeholder="e.g. 4-6 digits" autocomplete="off">
                     <span class="muted" id="batchPinHint">Used to open the face-recognition terminal for this batch.</span>
                 </div>
+                <div class="app-form-group">
+                    <label class="app-form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                        <input type="checkbox" id="batchHalfDay">
+                        Count half days
+                    </label>
+                    <span class="muted">Morning slots count as half a day, afternoon slots the
+                        other half — so leaving at lunch scores 0.5 instead of a full day.
+                        <strong>Changes every percentage this batch has ever shown</strong>, so
+                        turn it on at the start of a course, not mid-way.</span>
+                </div>
             </div>
             <div class="app-modal-footer">
                 <button class="app-btn app-btn-subtle" onclick="closeModal('batchModal')">Cancel</button>
@@ -286,6 +296,7 @@
             document.getElementById('batchDesc').value = '';
             document.getElementById('batchPin').value = '';
             document.getElementById('batchPinHint').textContent = 'Used to open the face-recognition terminal for this batch.';
+            document.getElementById('batchHalfDay').checked = false;
             renderBatchTeacherChecks([]);
             document.getElementById('batchModal').classList.add('active');
         }
@@ -303,6 +314,7 @@
             document.getElementById('batchPinHint').textContent = c.has_pin
                 ? 'A PIN is already set. Leave blank to keep it, or type a new one to change it.'
                 : 'No PIN set yet. Enter one to enable the terminal for this batch.';
+            document.getElementById('batchHalfDay').checked = !!c.half_day_enabled;
             renderBatchTeacherChecks((c.teachers || []).map(t => t.id));
             document.getElementById('batchModal').classList.add('active');
         }
@@ -317,6 +329,7 @@
                 end_date: document.getElementById('batchEnd').value || null,
                 description: document.getElementById('batchDesc').value.trim() || null,
                 teacher_ids: teacher_ids,
+                half_day_enabled: document.getElementById('batchHalfDay').checked ? 1 : 0,
             };
             // On create, always send teacher_ids; send PIN only if typed.
             // On edit, send teacher_ids (replaces) and PIN only if typed (blank keeps existing).

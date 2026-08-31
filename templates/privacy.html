@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Notice — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        body { background: var(--bg-page); }
+        .doc { max-width: 760px; margin: 0 auto; }
+        .doc .card { background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg); padding: 32px; box-shadow: var(--shadow-sm); }
+        .doc h2 { font-size: 1.05rem; margin: 28px 0 8px; }
+        .doc h2:first-of-type { margin-top: 0; }
+        .doc p, .doc li { color: var(--text-secondary); line-height: 1.6; font-size: 0.95rem; }
+        .doc ul { padding-left: 20px; margin: 8px 0 0; }
+        .doc li { margin-bottom: 6px; }
+        .meta { font-size: 0.82rem; color: var(--text-secondary);
+            border-top: 1px solid var(--border-color); margin-top: 28px; padding-top: 14px; }
+        .key { background: var(--bg-page); border-left: 3px solid var(--color-primary);
+            padding: 12px 16px; border-radius: 4px; margin: 12px 0; }
+        @media (max-width: 640px) { .doc .card { padding: 20px; } }
+    </style>
+</head>
+
+<body>
+    <div class="app-page doc">
+        <div class="app-page-header">
+            <h1><i class="fa-solid fa-shield-halved"></i> Privacy Notice</h1>
+            <p>How this attendance system uses your face data.</p>
+        </div>
+
+        <div class="card">
+            <div class="key">
+                <strong>In short:</strong> we convert your face into a numeric code so a camera
+                can mark you present. We never share it, you can withdraw at any time, and
+                withdrawing deletes it.
+            </div>
+
+            <h2>What we collect</h2>
+            <ul>
+                <li><strong>Face data</strong> — photographs taken during registration, and a
+                    mathematical representation (an "encoding") derived from them. The encoding
+                    cannot be turned back into a photograph of you.</li>
+                <li><strong>Your details</strong> — name, roll number, email, date of birth, batch.</li>
+                <li><strong>Attendance records</strong> — the date, time and session you were marked for.</li>
+            </ul>
+
+            <h2>Why we collect it</h2>
+            <p>Solely to record attendance for your course, and to produce the attendance
+               reports your institute requires. It is not used for any other purpose, and it is
+               not used to track your location or behaviour outside marking attendance.</p>
+
+            <h2>Who can see it</h2>
+            <p>Your teachers and the institute administrators. Your face data is never sold,
+               never shared with third parties, and never leaves the institute's own server —
+               this system does not send your data to any external or cloud service.</p>
+
+            <h2>How long we keep it</h2>
+            <p>Your face data is deleted within <strong>{{ retention_days }} days</strong> of your
+               course ending. Attendance records are kept for longer, because they form part of
+               your academic record — but those contain no biometric information.</p>
+
+            <h2>Your rights</h2>
+            <ul>
+                <li><strong>Withdraw consent at any time</strong>, from your student portal.
+                    Your face data is deleted immediately and the camera will stop recognising
+                    you. Your teacher will mark you manually instead — you will not be
+                    disadvantaged, and your attendance history is unaffected.</li>
+                <li><strong>Ask what we hold</strong> about you, and have mistakes corrected —
+                    use "My details" in your portal, or ask your teacher.</li>
+                <li><strong>Decline entirely.</strong> Face registration is not compulsory. If you
+                    prefer not to give consent, tell your teacher and you will be marked manually.</li>
+            </ul>
+
+            <h2>Keeping it safe</h2>
+            <p>The system runs on the institute's own server over an encrypted connection.
+               Access requires a login, every account is role-restricted, and changes to
+               attendance records are logged.</p>
+
+            <h2>Questions</h2>
+            <p>Speak to your teacher or the institute administrator. If you believe your data has
+               been mishandled, you may raise it with them or with the Data Protection Board of
+               India.</p>
+
+            <div class="meta">
+                Policy version {{ policy_version }} ·
+                Issued under the Digital Personal Data Protection Act, 2023 ·
+                <a href="/student">Back to your portal</a>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

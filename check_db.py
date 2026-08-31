@@ -9,8 +9,8 @@ from db import get_connection, is_postgres
 REQUIRED_COLUMNS = {
     "students": ["course_id", "password_hash", "must_change_password", "dob",
                  "joining_date"],
-    "courses": ["terminal_pin_hash"],
-    "attendance": ["course_id", "is_late"],
+    "courses": ["terminal_pin_hash", "half_day_enabled"],
+    "attendance": ["course_id", "is_late", "subject_id"],
     "slot_attendance": ["course_id"],
     "holidays": ["course_id"],
     "users": ["email"],
@@ -19,7 +19,9 @@ REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",
                    "audit_log", "profile_change_requests",
                    # phase 5
-                   "login_attempts", "leave_requests", "alert_log"]
+                   "login_attempts", "leave_requests", "alert_log",
+                   # phase 6
+                   "subjects", "timetable", "consent_records"]
 
 
 def table_exists(cur, table_name):

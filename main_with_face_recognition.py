@@ -30,6 +30,8 @@ import csv
 from io import StringIO
 from analytics_manager import AnalyticsManager
 from anti_spoofing import anti_spoof_checker
+import timetable
+import working_days
 
 # Initialize managers.
 # NOTE: the slot manager reads base tables (courses, session_configs) that are
@@ -87,6 +89,7 @@ class CourseCreate(BaseModel):
     description: Optional[str] = None
     teacher_ids: Optional[List[int]] = None
     terminal_pin: Optional[str] = None
+    half_day_enabled: Optional[int] = None
 
 class SessionConfig(BaseModel):
     session_type: str
@@ -1161,12 +1164,18 @@ class AttendanceSystem:
     def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
         """Mark session attendance manually - FIXED to use slot_attendance and handle full day"""
         cursor = self.conn.cursor()
-        
-        # Check if holiday
-        cursor.execute('SELECT id FROM holidays WHERE date = ?', (date_str,))
-        if cursor.fetchone():
-            return False, "Cannot mark attendance on a holiday"
-        
+
+        # Reject Sundays and holidays. The previous check here looked only at
+        # holidays, ignored Sundays entirely, and matched any batch's holiday
+        # rather than this student's — see working_days.check.
+        row = cursor.execute(
+            "SELECT course_id FROM students WHERE id = ?", (student_id,)
+        ).fetchone()
+        ok_day, why = working_days.check(self.conn, row[0] if row else None, date_str)
+        if not ok_day:
+            return False, why
+
+
         timezone = pytz.timezone('Asia/Kolkata')
         now = datetime.now(timezone)
         current_time = now.strftime('%H:%M:%S')
@@ -2382,11 +2391,36 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                     else:
                         # Mark attendance (carry the student's batch + late flag)
                         late = compute_is_late()
+                        s_course = cursor.execute(
+                            "SELECT course_id FROM students WHERE id = ?", (student_id,)
+                        ).fetchone()
+                        s_course_id = s_course[0] if s_course else None
+
+                        # No attendance on a Sunday or a holiday, by any route.
+                        ok_day, why = working_days.check(
+                            attendance_system.conn, s_course_id, today)
+                        if not ok_day:
+                            recognized_students.append({
+                                "student_id": student_id,
+                                "student_name": student_name,
+                                "status": "non_working_day",
+                                "message": why,
+                                "location": face_data['location'],
+                            })
+                            continue
+
+                        slot = attendance_manager.get_current_slot() if attendance_manager else None
+                        slot_key = (slot or {}).get("slot_key")
+                        # Record which module this class was, at mark time — a
+                        # later timetable change must not rewrite history.
+                        subject_id = timetable.subject_for_slot(
+                            attendance_system.conn, s_course_id, today, slot_key)
                         cursor.execute('''
-                            INSERT INTO attendance (student_id, date, time_in, is_manual, is_late, course_id)
-                            VALUES (?, ?, ?, ?, ?, (SELECT course_id FROM students WHERE id = ?))
+                            INSERT INTO attendance (student_id, date, time_in, is_manual, is_late,
+                                                    course_id, session_type, subject_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'),
-                              False, late, student_id))
+                              False, late, s_course_id, slot_key, subject_id))
 
                         attendance_system.conn.commit()
                         status = "marked"
@@ -3186,6 +3220,7 @@ class CourseUpdate(BaseModel):
     is_active: Optional[bool] = None
     teacher_ids: Optional[List[int]] = None
     terminal_pin: Optional[str] = None  # "" clears the PIN; None leaves unchanged
+    half_day_enabled: Optional[int] = None
 
 
 class TeacherCreate(BaseModel):
@@ -3211,8 +3246,8 @@ async def list_courses(session: Dict[str, Any] = Depends(require_teacher_or_admi
         allowed = teacher_allowed_course_ids(session)  # None = all (admin)
         cur = attendance_system.conn.cursor()
         rows = cur.execute(
-            "SELECT id, name, start_date, end_date, description, is_active, terminal_pin_hash "
-            "FROM courses ORDER BY is_active DESC, id"
+            "SELECT id, name, start_date, end_date, description, is_active, terminal_pin_hash, "
+            "COALESCE(half_day_enabled, 0) FROM courses ORDER BY is_active DESC, id"
         ).fetchall()
         courses = []
         for r in rows:
@@ -3230,6 +3265,7 @@ async def list_courses(session: Dict[str, Any] = Depends(require_teacher_or_admi
                 "id": r[0], "name": r[1], "start_date": r[2], "end_date": r[3],
                 "description": r[4], "is_active": bool(r[5]), "student_count": count,
                 "has_pin": bool(r[6]),
+                "half_day_enabled": bool(r[7]),
                 "teachers": [{"id": t[0], "name": t[1] or t[2], "username": t[2]} for t in teachers],
             })
         return {"success": True, "courses": courses}
@@ -3256,9 +3292,10 @@ async def create_course(data: CourseCreate, session: Dict[str, Any] = Depends(re
         end_date = data.end_date or (date.today() + timedelta(days=365)).strftime("%Y-%m-%d")
 
         cur.execute(
-            "INSERT INTO courses (name, start_date, end_date, description, is_active, created_at) "
-            "VALUES (?, ?, ?, ?, 1, ?)",
-            (name, start_date, end_date, data.description, datetime.now().isoformat()),
+            "INSERT INTO courses (name, start_date, end_date, description, is_active, created_at, "
+            "half_day_enabled) VALUES (?, ?, ?, ?, 1, ?, ?)",
+            (name, start_date, end_date, data.description, datetime.now().isoformat(),
+             1 if data.half_day_enabled else 0),
         )
         course_id = cur.lastrowid
         cur.executemany(
@@ -3307,6 +3344,9 @@ async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, A
         if data.is_active is not None:
             fields.append("is_active = ?")
             values.append(1 if data.is_active else 0)
+        if data.half_day_enabled is not None:
+            fields.append("half_day_enabled = ?")
+            values.append(1 if data.half_day_enabled else 0)
         if data.terminal_pin is not None:
             # empty string clears the PIN; otherwise store a hash
             fields.append("terminal_pin_hash = ?")
@@ -4133,6 +4173,15 @@ async def bulk_mark_attendance_api(data: dict = Body(...),
             return {"success": False, "message": f"Unknown session '{session_type}'"}
 
         assert_course_allowed(session, course_id)
+
+        # A teacher must not be able to mark a Sunday or a holiday present.
+        # Clearing records ('absent') stays allowed — that is how you undo a
+        # mistake, including one made before this rule existed.
+        if status == "present":
+            ok_day, why = working_days.check(attendance_system.conn, course_id, the_date)
+            if not ok_day:
+                return {"success": False, "message": why}
+
         cur = attendance_system.conn.cursor()
 
         # Resolve target students (validate they belong to this batch)
@@ -4170,10 +4219,13 @@ async def bulk_mark_attendance_api(data: dict = Body(...),
                     ).fetchone()
                 if exists:
                     continue
+                subject_id = timetable.subject_for_slot(
+                    attendance_system.conn, course_id, the_date, session_type)
                 cur.execute(
                     "INSERT INTO attendance (student_id, date, time_in, status, is_manual, "
-                    "manual_reason, session_type, course_id) VALUES (?, ?, ?, 'present', 1, ?, ?, ?)",
-                    (sid, the_date, now_time, reason, session_type, course_id),
+                    "manual_reason, session_type, course_id, subject_id) "
+                    "VALUES (?, ?, ?, 'present', 1, ?, ?, ?, ?)",
+                    (sid, the_date, now_time, reason, session_type, course_id, subject_id),
                 )
                 affected += 1
             else:  # absent -> remove present records
@@ -4240,6 +4292,13 @@ async def raise_grievance(data: dict = Body(...), session: Dict[str, Any] = Depe
         if (today - d).days > GRIEVANCE_WINDOW_DAYS:
             return {"success": False, "message": f"You can only dispute the last {GRIEVANCE_WINDOW_DAYS} days"}
 
+        # Nothing to dispute on a day nobody could have attended.
+        ok_day, why = working_days.check(
+            attendance_system.conn, info.get("course_id"), d)
+        if not ok_day:
+            return {"success": False,
+                    "message": f"{why.split('—')[0].strip()}, so there is no attendance to dispute."}
+
         cur = attendance_system.conn.cursor()
         # Block a duplicate pending grievance for the same date/session
         dup = cur.execute(
@@ -4272,7 +4331,8 @@ async def my_grievances(session: Dict[str, Any] = Depends(require_student)):
             (sid,),
         ).fetchall()
         return {"success": True, "grievances": [{
-            "id": r[0], "date": r[1], "session_type": r[2] or "Whole day", "reason": r[3],
+            "id": r[0], "date": r[1], "day_name": working_days.day_name(r[1]),
+            "session_type": r[2] or "Whole day", "reason": r[3],
             "status": r[4], "created_at": r[5], "review_note": r[6],
         } for r in rows]}
     except Exception as e:
@@ -4297,9 +4357,14 @@ async def teacher_grievances(status: str = "pending",
         for r in rows:
             if allowed is not None and r[4] not in allowed:
                 continue
+            # Day name is computed here rather than in the browser so the
+            # teacher sees the same weekday the server will act on.
+            _ok, _why = working_days.check(attendance_system.conn, r[4], r[6])
             out.append({
                 "id": r[0], "student_db_id": r[1], "roll_no": r[2], "student_name": r[3],
                 "course_id": r[4], "batch": r[5] or "—", "date": r[6],
+                "day_name": working_days.day_name(r[6]),
+                "is_working_day": _ok, "non_working_reason": _why,
                 "session_type": r[7] or "Whole day", "reason": r[8], "status": r[9], "created_at": r[10],
             })
         return {"success": True, "grievances": out, "count": len(out)}
@@ -4324,6 +4389,7 @@ async def act_on_grievances(data: dict = Body(...),
         cur = attendance_system.conn.cursor()
         processed = 0
         marked = 0
+        blocked = []        # requests naming a Sunday/holiday, left pending
 
         for gid in ids:
             row = cur.execute(
@@ -4338,6 +4404,14 @@ async def act_on_grievances(data: dict = Body(...),
 
             # On approve, mark the student present (idempotent) for that date/session
             if action == "approve":
+                # Approving is a marking action, so the same rule applies. A
+                # grievance raised before this rule existed could still name a
+                # Sunday; approving it would create attendance nothing counts.
+                ok_day, why = working_days.check(
+                    attendance_system.conn, course_id, the_date)
+                if not ok_day:
+                    blocked.append({"id": gid, "reason": why})
+                    continue
                 if session_type:
                     exists = cur.execute(
                         "SELECT 1 FROM attendance WHERE student_id = ? AND date = ? AND session_type = ?",
@@ -4349,12 +4423,15 @@ async def act_on_grievances(data: dict = Body(...),
                         (student_db_id, the_date),
                     ).fetchone()
                 if not exists:
+                    subject_id = timetable.subject_for_slot(
+                        attendance_system.conn, course_id, the_date, session_type)
                     cur.execute(
                         "INSERT INTO attendance (student_id, date, time_in, status, is_manual, "
-                        "manual_reason, session_type, course_id) VALUES (?, ?, ?, 'present', 1, ?, ?, ?)",
+                        "manual_reason, session_type, course_id, subject_id) "
+                        "VALUES (?, ?, ?, 'present', 1, ?, ?, ?, ?)",
                         (student_db_id, the_date,
                          datetime.now(timezone).strftime("%H:%M:%S"),
-                         "Grievance approved", session_type, course_id),
+                         "Grievance approved", session_type, course_id, subject_id),
                     )
                     marked += 1
 
@@ -4371,7 +4448,12 @@ async def act_on_grievances(data: dict = Body(...),
         msg = f"{new_status.title()} {processed} request(s)"
         if action == "approve":
             msg += f" — {marked} student(s) marked present"
-        return {"success": True, "message": msg, "processed": processed, "marked": marked}
+        if blocked:
+            msg += (f". {len(blocked)} skipped: "
+                    + "; ".join(b["reason"] for b in blocked[:3])
+                    + ("…" if len(blocked) > 3 else ""))
+        return {"success": True, "message": msg, "processed": processed,
+                "marked": marked, "blocked": blocked}
     except Exception as e:
         attendance_system.conn.rollback()
         return {"success": False, "message": str(e)}
@@ -4409,6 +4491,10 @@ async def terminal_manual_request(data: dict = Body(...),
         student_db_id, student_name = row[0], row[1]
 
         today = date.today().strftime("%Y-%m-%d")
+        ok_day, why = working_days.check(attendance_system.conn, course_id, today)
+        if not ok_day:
+            return {"success": False, "message": why}
+
         already = cur.execute(
             "SELECT 1 FROM attendance WHERE student_id = ? AND date = ?",
             (student_db_id, today),
@@ -4435,6 +4521,359 @@ async def terminal_manual_request(data: dict = Body(...),
               details=f"course_id={course_id}")
         return {"success": True,
                 "message": f"Thanks {student_name.split()[0]} — sent to your teacher for approval."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Biometric consent (India DPDP Act 2023)
+#
+# Face encodings are biometric personal data. The Act requires consent that is
+# free, informed and specific, a record of it, and a way to withdraw. Bump
+# CONSENT_POLICY_VERSION whenever the privacy notice changes materially —
+# students are then asked again rather than silently carried over.
+# ---------------------------------------------------------------------------
+CONSENT_POLICY_VERSION = os.getenv("CONSENT_POLICY_VERSION", "1.0")
+CONSENT_PURPOSE = "biometric_attendance"
+
+
+def consent_state(student_db_id: int):
+    """(has_valid_consent, latest_record_or_None) for the current policy version."""
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT id, policy_version, granted, granted_at, withdrawn_at "
+            "FROM consent_records WHERE student_id = ? AND purpose = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (student_db_id, CONSENT_PURPOSE),
+        ).fetchone()
+    except Exception:
+        return True, None       # pre-migration database: don't lock anyone out
+    if not row:
+        return False, None
+    record = {"id": row[0], "policy_version": row[1], "granted": bool(row[2]),
+              "granted_at": row[3], "withdrawn_at": row[4]}
+    valid = record["granted"] and record["policy_version"] == CONSENT_POLICY_VERSION
+    return valid, record
+
+
+@app.get("/api/student/consent")
+async def get_consent(session: Dict[str, Any] = Depends(require_student)):
+    """Whether this student has consented to biometric processing."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        valid, record = consent_state(sid)
+        return {"success": True, "consented": valid,
+                "policy_version": CONSENT_POLICY_VERSION, "record": record}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/student/consent")
+async def set_consent(request: Request, data: dict = Body(...),
+                      session: Dict[str, Any] = Depends(require_student)):
+    """Grant or withdraw consent for face-based attendance.
+
+    Withdrawal is not merely a flag: it deletes the stored face encoding, which
+    is what actually stops the processing. Attendance history is retained — it
+    is an academic record, not biometric data.
+    """
+    try:
+        info = session.get("user_info", {})
+        sid = info.get("id")
+        granted = bool(data.get("granted"))
+
+        cur = attendance_system.conn.cursor()
+        cur.execute(
+            "INSERT INTO consent_records (student_id, purpose, policy_version, granted, "
+            "granted_at, withdrawn_at, ip_address, user_agent) "
+            "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)",
+            (sid, CONSENT_PURPOSE, CONSENT_POLICY_VERSION, 1 if granted else 0,
+             None if granted else datetime.now().isoformat(),
+             (request.client.host if request.client else None),
+             request.headers.get("user-agent", "")[:300]),
+        )
+
+        message = "Consent recorded. Thank you."
+        if not granted:
+            cur.execute(
+                "UPDATE students SET face_encoding = NULL, photo_count = 0 WHERE id = ?", (sid,))
+            try:
+                cur.execute("DELETE FROM face_encodings WHERE student_id = ?", (sid,))
+            except Exception:
+                pass
+            message = ("Consent withdrawn. Your face data has been deleted and you will "
+                       "no longer be recognised by the camera — your teacher will mark you "
+                       "manually. Your attendance history is unchanged.")
+        attendance_system.conn.commit()
+
+        if not granted:
+            # Drop the encoding from the in-memory match set too, otherwise the
+            # camera keeps recognising them until the next restart.
+            try:
+                attendance_system.load_student_faces()
+            except Exception:
+                pass    # the encoding is already gone from the database
+
+        audit(session, "consent_change", target=f"student:{sid}",
+              details=f"granted={granted} version={CONSENT_POLICY_VERSION}")
+        return {"success": True, "consented": granted, "message": message}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/admin/consent-status")
+async def consent_status_report(course_id: Optional[int] = None,
+                                session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Who has and has not consented — the record you need if anyone asks."""
+    try:
+        allowed = teacher_allowed_course_ids(session)
+        sql = ("SELECT s.id, s.student_id, s.name, s.course_id, c.name, "
+               "       (SELECT granted FROM consent_records r WHERE r.student_id = s.id "
+               "        AND r.purpose = ? AND r.policy_version = ? ORDER BY r.id DESC LIMIT 1), "
+               "       (SELECT granted_at FROM consent_records r WHERE r.student_id = s.id "
+               "        AND r.purpose = ? AND r.policy_version = ? ORDER BY r.id DESC LIMIT 1), "
+               "       (s.face_encoding IS NOT NULL) "
+               "FROM students s LEFT JOIN courses c ON c.id = s.course_id "
+               "WHERE s.status IN ('active','pending_registration')")
+        params = [CONSENT_PURPOSE, CONSENT_POLICY_VERSION,
+                  CONSENT_PURPOSE, CONSENT_POLICY_VERSION]
+        if course_id:
+            sql += " AND s.course_id = ?"
+            params.append(course_id)
+        sql += " ORDER BY s.name"
+
+        rows = attendance_system.conn.execute(sql, params).fetchall()
+        out, granted_n = [], 0
+        for r in rows:
+            if allowed is not None and r[3] not in allowed:
+                continue
+            ok = bool(r[5])
+            granted_n += 1 if ok else 0
+            out.append({"student_db_id": r[0], "roll_no": r[1], "name": r[2],
+                        "batch": r[4] or "—", "consented": ok,
+                        "granted_at": r[6], "has_face_data": bool(r[7])})
+        return {"success": True, "policy_version": CONSENT_POLICY_VERSION,
+                "students": out, "total": len(out), "consented": granted_n,
+                "pending": len(out) - granted_n}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_notice(request: Request):
+    """The privacy notice students consent to. Public by necessity — it has to
+    be readable before signing in."""
+    return templates.TemplateResponse("privacy.html", {
+        "request": request, "policy_version": CONSENT_POLICY_VERSION,
+        "retention_days": int(os.getenv("BIOMETRIC_RETENTION_DAYS", "90") or 90),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Subjects / modules and the weekly timetable
+# ---------------------------------------------------------------------------
+
+@app.get("/api/courses/{course_id}/subjects")
+async def list_subjects_api(course_id: int,
+                            session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Modules within a batch."""
+    try:
+        assert_course_allowed(session, course_id)
+        return {"success": True,
+                "subjects": timetable.list_subjects(attendance_system.conn, course_id,
+                                                    active_only=False)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/courses/{course_id}/subjects")
+async def create_subject(course_id: int, data: dict = Body(...),
+                         session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Add a module to a batch."""
+    try:
+        assert_course_allowed(session, course_id)
+        name = (data.get("name") or "").strip()
+        if not name:
+            return {"success": False, "message": "Subject name is required"}
+        try:
+            min_att = float(data.get("min_attendance") or 75)
+        except (TypeError, ValueError):
+            min_att = 75.0
+        cur = attendance_system.conn.cursor()
+        cur.execute(
+            "INSERT INTO subjects (course_id, name, code, min_attendance, start_date, end_date) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (course_id, name, (data.get("code") or "").strip() or None, min_att,
+             (data.get("start_date") or None), (data.get("end_date") or None)),
+        )
+        attendance_system.conn.commit()
+        audit(session, "subject_create", target=name, course_id=course_id)
+        return {"success": True, "message": f"Subject '{name}' added", "id": cur.lastrowid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.put("/api/subjects/{subject_id}")
+async def update_subject(subject_id: int, data: dict = Body(...),
+                         session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Rename a module, change its code, minimum, dates or active flag."""
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT course_id FROM subjects WHERE id = ?", (subject_id,)
+        ).fetchone()
+        if not row:
+            return {"success": False, "message": "Subject not found"}
+        assert_course_allowed(session, row[0])
+
+        fields, params = [], []
+        for key, col in (("name", "name"), ("code", "code"),
+                         ("start_date", "start_date"), ("end_date", "end_date")):
+            if key in data:
+                fields.append(f"{col} = ?")
+                params.append((data.get(key) or None))
+        if "min_attendance" in data:
+            try:
+                fields.append("min_attendance = ?")
+                params.append(float(data.get("min_attendance") or 75))
+            except (TypeError, ValueError):
+                fields.pop()
+        if "is_active" in data:
+            fields.append("is_active = ?")
+            params.append(1 if data.get("is_active") else 0)
+        if not fields:
+            return {"success": False, "message": "Nothing to update"}
+
+        params.append(subject_id)
+        attendance_system.conn.execute(
+            f"UPDATE subjects SET {', '.join(fields)} WHERE id = ?", params)
+        attendance_system.conn.commit()
+        audit(session, "subject_update", target=f"subject:{subject_id}", course_id=row[0])
+        return {"success": True, "message": "Subject updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/subjects/{subject_id}")
+async def delete_subject(subject_id: int,
+                         session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Deactivate a module.
+
+    Never a hard delete: attendance rows point at subject_id, and removing the
+    row would orphan that history.
+    """
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT course_id, name FROM subjects WHERE id = ?", (subject_id,)
+        ).fetchone()
+        if not row:
+            return {"success": False, "message": "Subject not found"}
+        assert_course_allowed(session, row[0])
+        attendance_system.conn.execute(
+            "UPDATE subjects SET is_active = 0 WHERE id = ?", (subject_id,))
+        attendance_system.conn.execute(
+            "UPDATE timetable SET subject_id = NULL WHERE subject_id = ?", (subject_id,))
+        attendance_system.conn.commit()
+        audit(session, "subject_delete", target=row[1], course_id=row[0])
+        return {"success": True, "message": f"'{row[1]}' deactivated and removed from the timetable"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/courses/{course_id}/timetable")
+async def get_timetable_api(course_id: int,
+                            session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """The weekly grid for a batch."""
+    try:
+        assert_course_allowed(session, course_id)
+        return {"success": True,
+                "grid": timetable.get_grid(attendance_system.conn, course_id),
+                "slots": [{"session_type": s, "label": timetable.SLOT_LABELS[s]}
+                          for s in timetable.SLOTS],
+                "subjects": timetable.list_subjects(attendance_system.conn, course_id)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.put("/api/courses/{course_id}/timetable")
+async def set_timetable_api(course_id: int, data: dict = Body(...),
+                            session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Replace the weekly grid for a batch."""
+    try:
+        assert_course_allowed(session, course_id)
+        n = timetable.set_grid(attendance_system.conn, course_id, data.get("entries") or [])
+        audit(session, "timetable_update", target=f"course:{course_id}",
+              details=f"{n} slot(s) set", course_id=course_id)
+        return {"success": True, "message": f"Timetable saved ({n} slots assigned)"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/timetable")
+async def student_timetable(session: Dict[str, Any] = Depends(require_student)):
+    """A student's own weekly schedule — they previously had no way to see
+    their slot times at all."""
+    try:
+        info = session.get("user_info", {})
+        course_id = info.get("course_id")
+        if not course_id:
+            return {"success": True, "grid": [], "slot_times": {},
+                    "message": "You are not assigned to a batch yet"}
+
+        # slot start/end times come from the batch's session_configs
+        slot_times = {}
+        try:
+            for cfg in attendance_manager.get_session_configs(course_id) or []:
+                slot_times[cfg.get("session_type")] = {
+                    "start": str(cfg.get("start_time"))[:5],
+                    "end": str(cfg.get("end_time"))[:5],
+                    "is_active": bool(cfg.get("is_active", True)),
+                }
+        except Exception:
+            slot_times = {}
+
+        return {"success": True,
+                "grid": timetable.get_grid(attendance_system.conn, course_id),
+                "slot_times": slot_times,
+                "subjects": timetable.list_subjects(attendance_system.conn, course_id)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/subjects")
+async def student_subject_attendance(session: Dict[str, Any] = Depends(require_student)):
+    """Per-module attendance for the logged-in student."""
+    try:
+        info = session.get("user_info", {})
+        return {"success": True,
+                "subjects": timetable.subject_attendance(
+                    attendance_system.conn, info.get("course_id"), info.get("id"))}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/batch/{course_id}/subject-analytics")
+async def batch_subject_analytics(course_id: int,
+                                  session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Batch-wide per-module attendance."""
+    try:
+        assert_course_allowed(session, course_id)
+        return {"success": True,
+                "subjects": timetable.subject_attendance(attendance_system.conn, course_id)}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4522,6 +4961,8 @@ async def my_leaves(session: Dict[str, Any] = Depends(require_student)):
             s, e = _parse_date(str(r[1])[:10]), _parse_date(str(r[2])[:10])
             out.append({
                 "id": r[0], "start_date": str(r[1])[:10], "end_date": str(r[2])[:10],
+                "start_day": working_days.day_name(r[1]),
+                "end_day": working_days.day_name(r[2]),
                 "days": ((e - s).days + 1) if (s and e) else 1,
                 "reason": r[3], "status": r[4], "created_at": r[5], "review_note": r[6],
                 "cancellable": r[4] == "pending",
@@ -4572,11 +5013,23 @@ async def teacher_leaves(status: str = "pending",
             if allowed is not None and r[4] not in allowed:
                 continue
             s, e = _parse_date(str(r[6])[:10]), _parse_date(str(r[7])[:10])
+            # Working days in the range, so a teacher can see that a
+            # Sat-Sun request is really only one day off.
+            working = 0
+            if s and e:
+                d = s
+                while d <= e:
+                    if working_days.is_working_day(attendance_system.conn, r[4], d):
+                        working += 1
+                    d += timedelta(days=1)
             out.append({
                 "id": r[0], "student_db_id": r[1], "roll_no": r[2], "student_name": r[3],
                 "course_id": r[4], "batch": r[5] or "—",
                 "start_date": str(r[6])[:10], "end_date": str(r[7])[:10],
+                "start_day": working_days.day_name(r[6]),
+                "end_day": working_days.day_name(r[7]),
                 "days": ((e - s).days + 1) if (s and e) else 1,
+                "working_days": working,
                 "reason": r[8], "status": r[9], "created_at": r[10],
                 "upcoming": bool(s and s >= date.today()),
             })

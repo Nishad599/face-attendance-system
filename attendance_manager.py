@@ -427,9 +427,30 @@ class AttendanceSlotManager:
             
             slot_id = current_slot['slot_key']
             slot_name = current_slot['slot_info']['name']
-            
+
             # Get student info
             cursor = self.conn.cursor()
+
+            # No attendance on a Sunday or a holiday. This is the terminal /
+            # kiosk path, so without this the camera would happily mark a whole
+            # batch present on a day that no report will ever count.
+            try:
+                import working_days as _wd
+                _row = cursor.execute(
+                    "SELECT course_id FROM students WHERE id = ?", (student_id,)
+                ).fetchone()
+                _ok, _why = _wd.check(self.conn, _row[0] if _row else None,
+                                      datetime.now().strftime('%Y-%m-%d'))
+                if not _ok:
+                    return {
+                        'success': False,
+                        'message': _why,
+                        'slot_active': False,
+                        'face_detected': True,
+                        'non_working_day': True,
+                    }
+            except ImportError:
+                pass
             cursor.execute('SELECT name, student_id FROM students WHERE id = ? AND status = "active"', 
                           (student_id,))
             student_info = cursor.fetchone()
@@ -467,23 +488,42 @@ class AttendanceSlotManager:
             ''', (student_id, today_str, slot_id, current_timestamp, detection_confidence, 
                   force_slot is not None, current_timestamp))
             
-            # Also mark in main attendance table for compatibility
+            # Also mark in main attendance table — this is the table every
+            # report and analytic reads, so it must carry the slot and batch.
+            # These were previously left NULL, which made half-day counting and
+            # subject attribution impossible for face-marked attendance.
+            course_row = cursor.execute(
+                "SELECT course_id FROM students WHERE id = ?", (student_id,)
+            ).fetchone()
+            course_id = course_row[0] if course_row else None
+
+            subject_id = None
+            try:
+                import timetable as _tt
+                subject_id = _tt.subject_for_slot(self.conn, course_id, today_str, slot_id)
+            except Exception:
+                pass    # no timetable configured; attendance still marks
+
             if is_postgres():
                 # On PG, UNIQUE index conflict checking is done if constraint exists, but since no UNIQUE constraint
                 # exists on attendance(student_id, date), a standard INSERT behaves the same as INSERT OR IGNORE.
                 cursor.execute('''
-                    INSERT INTO attendance 
-                    (student_id, date, time_in, is_manual, manual_reason)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (student_id, today_str, current_time_only, 
-                      force_slot is not None, f'{slot_name} slot attendance'))
+                    INSERT INTO attendance
+                    (student_id, date, time_in, is_manual, manual_reason,
+                     session_type, course_id, subject_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (student_id, today_str, current_time_only,
+                      force_slot is not None, f'{slot_name} slot attendance',
+                      slot_id, course_id, subject_id))
             else:
                 cursor.execute('''
-                    INSERT OR IGNORE INTO attendance 
-                    (student_id, date, time_in, is_manual, manual_reason)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (student_id, today_str, current_time_only, 
-                      force_slot is not None, f'{slot_name} slot attendance'))
+                    INSERT OR IGNORE INTO attendance
+                    (student_id, date, time_in, is_manual, manual_reason,
+                     session_type, course_id, subject_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (student_id, today_str, current_time_only,
+                      force_slot is not None, f'{slot_name} slot attendance',
+                      slot_id, course_id, subject_id))
             
             self.conn.commit()
             
