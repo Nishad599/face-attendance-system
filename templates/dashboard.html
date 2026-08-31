@@ -13,26 +13,7 @@
 
 <body>
     <!-- Navbar -->
-    <nav class="app-navbar">
-        <a href="/dashboard" class="app-navbar-brand">
-            <i class="fa-solid fa-users-viewfinder"></i>
-            CDAC Attendance
-        </a>
-        <div class="app-navbar-links">
-            <a href="/dashboard" id="nav-dashboard" class="active"><i class="fa-solid fa-house"></i> Dashboard</a>
-            <a href="/attendance" id="nav-attendance"><i class="fa-solid fa-camera"></i> Attendance</a>
-            <a href="/students" id="nav-students"><i class="fa-solid fa-users"></i> Students</a>
-            <a href="/admin/batches" id="nav-batches"><i class="fa-solid fa-layer-group"></i> Batches</a>
-            <a href="/attendance-management" id="nav-reports"><i class="fa-solid fa-table-list"></i> Reports</a>
-            <a href="/admin" id="nav-admin"><i class="fa-solid fa-gear"></i> Admin</a>
-            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
-        </div>
-        <div class="app-navbar-actions">
-            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
-                <i class="fa-solid fa-right-from-bracket"></i> Logout
-            </button>
-        </div>
-    </nav>
+    {% include "_navbar.html" %}
 
     <!-- Page Content -->
     <div class="app-page">
@@ -103,6 +84,34 @@
 
         <!-- Slot Configuration (admin only) -->
         <div id="adminZone" style="display:none;">
+            <!-- Institute-wide roll-up. Teachers can export their own batch;
+                 this is the only place every batch is visible side by side. -->
+            <div class="app-card mb-24">
+                <div class="app-card-header">
+                    <h3><i class="fa-solid fa-building-columns"></i> All Batches</h3>
+                    <div class="d-flex gap-8">
+                        <input type="month" id="instMonth" class="app-form-input" style="max-width:170px;"
+                               onchange="loadInstitute()">
+                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadInstitute()">
+                            <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                        </button>
+                        <button class="app-btn app-btn-primary app-btn-sm" onclick="exportInstitute()">
+                            <i class="fa-solid fa-file-csv"></i> Export CSV
+                        </button>
+                    </div>
+                </div>
+                <div id="instSummary" class="muted" style="margin:12px 0;">Loading…</div>
+                <div class="app-table-wrapper">
+                    <table class="app-table">
+                        <thead>
+                            <tr><th>Batch</th><th>Students</th><th>Working Days</th>
+                                <th>Average</th><th>Below 75%</th></tr>
+                        </thead>
+                        <tbody id="instRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="app-card">
                 <div class="app-card-header">
                     <h3><i class="fa-solid fa-gear"></i> Attendance Slot Config</h3>
@@ -320,13 +329,9 @@
                 if (d.user_type === 'admin') {
                     document.getElementById('adminZone').style.display = 'block';
                     loadSessionConfig();
+                    loadInstitute();
                 } else if (d.authenticated) {
-                    // Hide admin-only links for non-admins
-                    const toHide = ['nav-dashboard', 'nav-students', 'nav-reports'];
-                    toHide.forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) el.style.display = 'none';
-                    });
+                    // Nav link visibility is handled centrally by static/js/navbar.js.
                 }
             });
 
@@ -338,6 +343,70 @@
         document.addEventListener('visibilitychange', function () {
             if (!document.hidden) { checkSession(); checkSundayStatus(); }
         });
+
+        // ---------- Institute-wide report (admin only) ----------
+        function instEsc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function instMonthValue() {
+            const el = document.getElementById('instMonth');
+            if (!el.value) el.value = new Date().toISOString().slice(0, 7);
+            return el.value;
+        }
+
+        function rateColour(rate) {
+            return rate < 75 ? '#DE350B' : (rate < 85 ? '#FF8B00' : '#00875A');
+        }
+
+        async function loadInstitute() {
+            const rows = document.getElementById('instRows');
+            const summary = document.getElementById('instSummary');
+            rows.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+            try {
+                const res = await fetch('/api/admin/institute-report?month=' + instMonthValue());
+                const d = await res.json();
+                if (!d.success) {
+                    summary.textContent = d.message || 'Could not load the report.';
+                    rows.innerHTML = '<tr><td colspan="5" class="muted">No data.</td></tr>';
+                    return;
+                }
+                const r = d.report;
+                summary.innerHTML =
+                    '<strong>' + instEsc(r.month_label) + '</strong> · ' +
+                    r.batch_count + ' batches · ' + r.total_students + ' students · ' +
+                    'average <span style="color:' + rateColour(r.avg_rate) + ';font-weight:600;">' +
+                    r.avg_rate + '%</span> · ' +
+                    '<span style="color:#DE350B;font-weight:600;">' + r.at_risk_total +
+                    '</span> below 75%';
+
+                if (!r.batches.length) {
+                    rows.innerHTML = '<tr><td colspan="5" class="muted">No active batches.</td></tr>';
+                    return;
+                }
+                rows.innerHTML = r.batches.map(function (b) {
+                    return '<tr>' +
+                        '<td><strong>' + instEsc(b.batch) + '</strong></td>' +
+                        '<td>' + b.students + '</td>' +
+                        '<td>' + b.working_days + '</td>' +
+                        '<td style="color:' + rateColour(b.avg_rate) + ';font-weight:600;">' +
+                            b.avg_rate + '%</td>' +
+                        '<td>' + (b.at_risk_count
+                            ? '<span class="app-badge app-badge-danger">' + b.at_risk_count + '</span>'
+                            : '<span class="muted">0</span>') + '</td>' +
+                        '</tr>';
+                }).join('');
+            } catch (e) {
+                summary.textContent = 'Could not load the report.';
+                rows.innerHTML = '<tr><td colspan="5" class="muted">Connection failed.</td></tr>';
+            }
+        }
+
+        function exportInstitute() {
+            window.location.href = '/api/admin/institute-export?month=' + instMonthValue();
+        }
     </script>
 </body>
 

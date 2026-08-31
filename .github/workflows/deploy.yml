@@ -47,7 +47,10 @@ jobs:
     - name: Make shell scripts executable
       # git does not always preserve the exec bit; without this ./restart.sh
       # fails with "Permission denied" and the app is never restarted.
-      run: chmod +x "$HOME/${APP_DIR}"/*.sh
+      # deploy/ holds install_service.sh, which is run by hand but still needs it.
+      run: |
+        chmod +x "$HOME/${APP_DIR}"/*.sh
+        chmod +x "$HOME/${APP_DIR}"/deploy/*.sh 2>/dev/null || true
 
     - name: Apply database migrations
       # Deploying code does not change the schema. Every migration is
@@ -55,15 +58,35 @@ jobs:
       run: |
         set -e
         cd "$HOME/${APP_DIR}"
-        for m in migrate_phase1.py migrate_phase2.py migrate_phase3.py migrate_phase4.py; do
+        for m in migrate_phase1.py migrate_phase2.py migrate_phase3.py migrate_phase4.py migrate_phase5.py; do
           [ -f "$m" ] && ./venv/bin/python "$m" || true
         done
 
     - name: Restart the application
+      # restart.sh hands over to systemctl when the unit is installed
+      # (deploy/install_service.sh) and falls back to nohup otherwise.
       run: |
         set -e
         cd "$HOME/${APP_DIR}"
         ./restart.sh
+
+    - name: Verify the app is serving
+      # A restart that "succeeded" but left the app crash-looping should fail
+      # the deploy, not pass it quietly. Give it time to load the face model.
+      run: |
+        cd "$HOME/${APP_DIR}"
+        for i in $(seq 1 12); do
+          code=$(curl -sk -o /dev/null -w '%{http_code}' -m 5 \
+                 "https://127.0.0.1:${PORT:-8000}/api/system/status" || true)
+          if [ "$code" = "200" ]; then
+            echo "App is serving (HTTP 200) after $((i * 5))s"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "::error::App did not return HTTP 200 within 60s"
+        journalctl -u attendance -n 40 --no-pager 2>/dev/null || tail -n 40 app.log
+        exit 1
 
     - name: Verify schema
       # Non-fatal: report problems without failing an otherwise good deploy.

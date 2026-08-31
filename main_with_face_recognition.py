@@ -137,6 +137,24 @@ _session_conn.execute(
             last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )"""
 )
+# Login throttling lives in the same store. Created here as well as in
+# migrate_phase5.py so a fresh database is never briefly un-throttled.
+_session_conn.execute(
+    """CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identifier TEXT NOT NULL,
+            attempted_at TIMESTAMP NOT NULL
+    )""" if not is_postgres() else
+    """CREATE TABLE IF NOT EXISTS login_attempts (
+            id SERIAL PRIMARY KEY,
+            identifier TEXT NOT NULL,
+            attempted_at TIMESTAMP NOT NULL
+    )"""
+)
+_session_conn.execute(
+    "CREATE INDEX IF NOT EXISTS idx_login_attempts_identifier "
+    "ON login_attempts (identifier, attempted_at)"
+)
 _session_conn.commit()
 
 
@@ -1405,34 +1423,27 @@ class StudentLogin(BaseModel):
     password: str
 
 
-# --- Login rate limiting (in-memory, per identifier) ----------------------
-LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "8") or 8)
-LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "10") or 10)
-_login_attempts: Dict[str, List[datetime]] = {}
+# --- Login rate limiting --------------------------------------------------
+# The implementation lives in login_throttle.py (DB-backed, so lockouts now
+# survive a restart). These thin wrappers keep the existing call sites and
+# bind the module to the session connection.
+import login_throttle
+
+LOGIN_MAX_ATTEMPTS = login_throttle.MAX_ATTEMPTS
+LOGIN_LOCKOUT_MINUTES = login_throttle.LOCKOUT_MINUTES
 
 
 def login_blocked(identifier: str):
     """(blocked, seconds_remaining) for this identifier."""
-    key = (identifier or "").strip().lower()
-    if not key:
-        return False, 0
-    window_start = datetime.now() - timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
-    tries = [t for t in _login_attempts.get(key, []) if t > window_start]
-    _login_attempts[key] = tries
-    if len(tries) >= LOGIN_MAX_ATTEMPTS:
-        remaining = int((tries[0] + timedelta(minutes=LOGIN_LOCKOUT_MINUTES) - datetime.now()).total_seconds())
-        return True, max(remaining, 1)
-    return False, 0
+    return login_throttle.is_blocked(_session_conn, identifier)
 
 
 def record_login_failure(identifier: str):
-    key = (identifier or "").strip().lower()
-    if key:
-        _login_attempts.setdefault(key, []).append(datetime.now())
+    login_throttle.record_failure(_session_conn, identifier)
 
 
 def clear_login_failures(identifier: str):
-    _login_attempts.pop((identifier or "").strip().lower(), None)
+    login_throttle.clear(_session_conn, identifier)
 
 
 def authenticate_user(username: str, password: str, roles: List[str]) -> Optional[dict]:
@@ -1802,6 +1813,14 @@ async def terminal_batches():
 async def terminal_login(data: TerminalLogin, response: Response):
     """Open the attendance terminal for a batch after verifying its PIN."""
     try:
+        # A 4-6 digit PIN is brute-forceable in seconds without a throttle.
+        # Keyed per batch so one kiosk being attacked cannot lock out another.
+        throttle_key = login_throttle.terminal_key(data.course_id)
+        blocked, wait = login_blocked(throttle_key)
+        if blocked:
+            return {"success": False,
+                    "message": f"Too many incorrect PINs. Try again in {wait} seconds."}
+
         row = attendance_system.conn.execute(
             "SELECT name, terminal_pin_hash FROM courses WHERE id = ? AND is_active = 1",
             (data.course_id,),
@@ -1809,7 +1828,9 @@ async def terminal_login(data: TerminalLogin, response: Response):
         if not row or not row[1]:
             return {"success": False, "message": "No terminal is set up for that batch"}
         if not verify_password((data.pin or "").strip(), row[1]):
+            record_login_failure(throttle_key)
             return {"success": False, "message": "Incorrect PIN"}
+        clear_login_failures(throttle_key)
 
         user_info = {"role": "terminal", "course_id": data.course_id,
                      "name": f"Terminal · {row[0]}", "batch_name": row[0]}
@@ -1844,6 +1865,39 @@ async def admin_dashboard(request: Request, session: Dict[str, Any] = Depends(re
 # Add these routes to your Flask app file
 
 # Add these routes to your FastAPI app (replace the incomplete Flask ones)
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve the service worker from the root.
+
+    A worker's scope cannot be broader than the path it is served from, so
+    /static/js/sw.js would only control /static/js/ — useless. Public by
+    necessity: the browser fetches it outside any page session.
+    """
+    path = os.path.join("static", "js", "sw.js")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Not found")
+    with open(path, "r", encoding="utf-8") as f:
+        body = f.read()
+    return Response(
+        content=body,
+        media_type="application/javascript",
+        # Never let a stale worker pin itself: browsers honour this for sw.js.
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/manifest.webmanifest")
+async def web_manifest():
+    """PWA manifest, served from the root so its scope covers the whole app."""
+    path = os.path.join("static", "manifest.webmanifest")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Not found")
+    with open(path, "r", encoding="utf-8") as f:
+        body = f.read()
+    return Response(content=body, media_type="application/manifest+json",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
 
 @app.get("/about", response_class=HTMLResponse)
 async def about_page():
@@ -2429,14 +2483,32 @@ async def get_student_count(session: Dict[str, Any] = Depends(require_teacher_or
     return {"total_students": count}
 
 @app.get("/api/system/status")
-async def get_system_status():
-    """Get system status"""
-    return {
+async def get_system_status(response: Response):
+    """Public health probe. Used by healthcheck.sh from cron, so it must
+    actually exercise the database rather than assert it is fine."""
+    db_ok = True
+    db_error = None
+    try:
+        attendance_system.conn.execute("SELECT 1 FROM students LIMIT 1").fetchone()
+    except Exception as e:
+        db_ok = False
+        db_error = str(e)
+
+    healthy = db_ok
+    # A non-200 is what makes this usable as a cron/monitoring target.
+    if not healthy:
+        response.status_code = 503
+
+    payload = {
+        "status": "ok" if healthy else "degraded",
         "face_recognition_available": FACE_RECOGNITION_AVAILABLE,
         "opencv_available": OPENCV_AVAILABLE,
-        "database_connected": True,
+        "database_connected": db_ok,
         "students_loaded": len(attendance_system.known_face_encodings)
     }
+    if db_error:
+        payload["error"] = db_error
+    return payload
 
 @app.get("/api/students/list")
 async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -4305,6 +4377,256 @@ async def act_on_grievances(data: dict = Body(...),
         return {"success": False, "message": str(e)}
 
 
+@app.post("/api/terminal/manual-request")
+async def terminal_manual_request(data: dict = Body(...),
+                                  session: Dict[str, Any] = Depends(require_terminal)):
+    """Fallback for a student the terminal camera cannot recognise.
+
+    Deliberately does NOT mark anyone present: it files a pending grievance
+    that a teacher must approve. Anyone standing at the kiosk can type any
+    roll number, so a human has to be in the loop — but the student is no
+    longer stuck when the camera fails.
+    """
+    try:
+        info = session.get("user_info", {})
+        course_id = info.get("course_id")
+        roll = (data.get("roll_no") or "").strip()
+        reason = (data.get("reason") or "").strip() or "Camera could not recognise me at the terminal"
+        if not roll:
+            return {"success": False, "message": "Enter your roll number"}
+
+        cur = attendance_system.conn.cursor()
+        row = cur.execute(
+            "SELECT id, name FROM students WHERE student_id = ? AND course_id = ? "
+            "AND status IN ('active','pending_registration')",
+            (roll, course_id),
+        ).fetchone()
+        if not row:
+            # Same message either way — the kiosk is a public surface, so it
+            # must not confirm which roll numbers exist.
+            return {"success": False,
+                    "message": "No student with that roll number in this batch"}
+        student_db_id, student_name = row[0], row[1]
+
+        today = date.today().strftime("%Y-%m-%d")
+        already = cur.execute(
+            "SELECT 1 FROM attendance WHERE student_id = ? AND date = ?",
+            (student_db_id, today),
+        ).fetchone()
+        if already:
+            return {"success": True, "already": True,
+                    "message": f"{student_name}, you are already marked present today."}
+
+        dup = cur.execute(
+            "SELECT 1 FROM grievances WHERE student_id = ? AND date = ? AND status = 'pending'",
+            (student_db_id, today),
+        ).fetchone()
+        if dup:
+            return {"success": True, "already": True,
+                    "message": f"{student_name}, your request for today is already awaiting approval."}
+
+        cur.execute(
+            "INSERT INTO grievances (student_id, course_id, date, session_type, reason, status) "
+            "VALUES (?, ?, ?, NULL, ?, 'pending')",
+            (student_db_id, course_id, today, reason),
+        )
+        attendance_system.conn.commit()
+        audit(session, "terminal_manual_request", target=f"student:{roll}",
+              details=f"course_id={course_id}")
+        return {"success": True,
+                "message": f"Thanks {student_name.split()[0]} — sent to your teacher for approval."}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Planned absences (leave requests)
+#
+# Grievances dispute days already past. These cover days not yet reached, so
+# an approved absence is excused rather than counted against the student —
+# see reports._approved_leave_dates, which drops approved days from the
+# denominator instead of marking anyone present.
+# ---------------------------------------------------------------------------
+LEAVE_MAX_DAYS = int(os.getenv("LEAVE_MAX_DAYS", "30") or 30)
+
+
+def _parse_date(value):
+    try:
+        return datetime.strptime((value or "").strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+@app.post("/api/student/leave")
+async def request_leave(data: dict = Body(...), session: Dict[str, Any] = Depends(require_student)):
+    """A student applies for a planned absence over a date range."""
+    try:
+        info = session.get("user_info", {})
+        sid = info.get("id")
+        start = _parse_date(data.get("start_date"))
+        end = _parse_date(data.get("end_date")) or start
+        reason = (data.get("reason") or "").strip()
+
+        if not start or not end:
+            return {"success": False, "message": "Valid start and end dates are required"}
+        if not reason:
+            return {"success": False, "message": "Please give a reason for the leave"}
+        if end < start:
+            return {"success": False, "message": "End date cannot be before the start date"}
+
+        today = date.today()
+        if start < today:
+            return {"success": False,
+                    "message": "Leave must be applied for in advance. To correct a past "
+                               "date, raise a dispute instead."}
+        span = (end - start).days + 1
+        if span > LEAVE_MAX_DAYS:
+            return {"success": False, "message": f"Leave cannot exceed {LEAVE_MAX_DAYS} days"}
+
+        cur = attendance_system.conn.cursor()
+        # Block overlapping requests so one absence cannot be counted twice.
+        dup = cur.execute(
+            "SELECT 1 FROM leave_requests WHERE student_id = ? "
+            "AND status IN ('pending','approved') AND start_date <= ? AND end_date >= ?",
+            (sid, end.strftime("%Y-%m-%d"), start.strftime("%Y-%m-%d")),
+        ).fetchone()
+        if dup:
+            return {"success": False,
+                    "message": "You already have a leave request covering some of those dates"}
+
+        cur.execute(
+            "INSERT INTO leave_requests (student_id, course_id, start_date, end_date, reason, status) "
+            "VALUES (?, ?, ?, ?, ?, 'pending')",
+            (sid, info.get("course_id"), start.strftime("%Y-%m-%d"),
+             end.strftime("%Y-%m-%d"), reason),
+        )
+        attendance_system.conn.commit()
+        return {"success": True,
+                "message": f"Leave request for {span} day(s) submitted for approval"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/student/leaves")
+async def my_leaves(session: Dict[str, Any] = Depends(require_student)):
+    """A student's own leave history."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        rows = attendance_system.conn.execute(
+            "SELECT id, start_date, end_date, reason, status, created_at, review_note "
+            "FROM leave_requests WHERE student_id = ? ORDER BY start_date DESC",
+            (sid,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            s, e = _parse_date(str(r[1])[:10]), _parse_date(str(r[2])[:10])
+            out.append({
+                "id": r[0], "start_date": str(r[1])[:10], "end_date": str(r[2])[:10],
+                "days": ((e - s).days + 1) if (s and e) else 1,
+                "reason": r[3], "status": r[4], "created_at": r[5], "review_note": r[6],
+                "cancellable": r[4] == "pending",
+            })
+        return {"success": True, "leaves": out}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/student/leave/{leave_id}/cancel")
+async def cancel_leave(leave_id: int, session: Dict[str, Any] = Depends(require_student)):
+    """Withdraw one's own leave request while it is still pending."""
+    try:
+        sid = session.get("user_info", {}).get("id")
+        cur = attendance_system.conn.cursor()
+        # Scoped by student_id so one student cannot cancel another's request.
+        row = cur.execute(
+            "SELECT status FROM leave_requests WHERE id = ? AND student_id = ?",
+            (leave_id, sid),
+        ).fetchone()
+        if not row:
+            return {"success": False, "message": "Request not found"}
+        if row[0] != "pending":
+            return {"success": False, "message": f"This request has already been {row[0]}"}
+        cur.execute("UPDATE leave_requests SET status = 'cancelled' WHERE id = ?", (leave_id,))
+        attendance_system.conn.commit()
+        return {"success": True, "message": "Leave request withdrawn"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/teacher/leaves")
+async def teacher_leaves(status: str = "pending",
+                         session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Leave requests for the teacher's assigned batches (default: pending)."""
+    try:
+        allowed = teacher_allowed_course_ids(session)  # None = admin (all)
+        rows = attendance_system.conn.execute(
+            "SELECT l.id, l.student_id, s.student_id, s.name, l.course_id, c.name, "
+            "l.start_date, l.end_date, l.reason, l.status, l.created_at "
+            "FROM leave_requests l JOIN students s ON s.id = l.student_id "
+            "LEFT JOIN courses c ON c.id = l.course_id "
+            "WHERE l.status = ? ORDER BY l.start_date ASC",
+            (status,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            if allowed is not None and r[4] not in allowed:
+                continue
+            s, e = _parse_date(str(r[6])[:10]), _parse_date(str(r[7])[:10])
+            out.append({
+                "id": r[0], "student_db_id": r[1], "roll_no": r[2], "student_name": r[3],
+                "course_id": r[4], "batch": r[5] or "—",
+                "start_date": str(r[6])[:10], "end_date": str(r[7])[:10],
+                "days": ((e - s).days + 1) if (s and e) else 1,
+                "reason": r[8], "status": r[9], "created_at": r[10],
+                "upcoming": bool(s and s >= date.today()),
+            })
+        return {"success": True, "leaves": out, "count": len(out)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/teacher/leaves/action")
+async def act_on_leaves(data: dict = Body(...),
+                        session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Approve or reject leave requests — single or in bulk."""
+    try:
+        ids = data.get("ids") or []
+        action = (data.get("action") or "").strip().lower()
+        note = (data.get("note") or "").strip() or None
+        if not ids or action not in ("approve", "reject"):
+            return {"success": False, "message": "Provide ids and action ('approve' or 'reject')"}
+
+        allowed = teacher_allowed_course_ids(session)
+        reviewer = session.get("user_info", {}).get("id")
+        new_status = "approved" if action == "approve" else "rejected"
+        cur = attendance_system.conn.cursor()
+        processed = 0
+
+        for lid in ids:
+            row = cur.execute(
+                "SELECT course_id, status FROM leave_requests WHERE id = ?", (lid,)
+            ).fetchone()
+            if not row or row[1] != "pending":
+                continue
+            if allowed is not None and row[0] not in allowed:
+                continue  # not this teacher's batch
+            cur.execute(
+                "UPDATE leave_requests SET status = ?, reviewed_by = ?, "
+                "reviewed_at = CURRENT_TIMESTAMP, review_note = ? WHERE id = ?",
+                (new_status, reviewer, note, lid),
+            )
+            processed += 1
+
+        attendance_system.conn.commit()
+        audit(session, "leave_action", target=f"{processed} request(s)",
+              details=f"action={action}")
+        return {"success": True, "message": f"{new_status.title()} {processed} request(s)",
+                "processed": processed}
+    except Exception as e:
+        attendance_system.conn.rollback()
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/api/teacher/batch/{course_id}/analytics")
 async def teacher_batch_analytics(course_id: int, at_risk_threshold: float = 75.0,
                                   session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -4711,6 +5033,79 @@ async def export_batch_attendance(course_id: int, start: Optional[str] = None, e
                         headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except HTTPException:
         raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/admin/institute-report")
+async def institute_report_api(month: Optional[str] = None,
+                               threshold: float = 75.0,
+                               session: Dict[str, Any] = Depends(require_admin_access)):
+    """Every active batch in one view. Teachers get per-batch exports; this is
+    the institute-wide roll-up that had no equivalent."""
+    try:
+        import reports as _reports
+        today = date.today()
+        year, mon = today.year, today.month
+        if month:
+            try:
+                y, m = str(month).split("-")
+                year, mon = int(y), int(m)
+                if not 1 <= mon <= 12:
+                    raise ValueError
+            except (ValueError, AttributeError):
+                return {"success": False, "message": "month must look like 2026-08"}
+
+        rep = _reports.institute_report(year, mon, threshold)
+        return {"success": True, "report": rep}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/admin/institute-export")
+async def institute_export(month: Optional[str] = None,
+                           threshold: float = 75.0,
+                           session: Dict[str, Any] = Depends(require_admin_access)):
+    """CSV of the institute-wide summary: one row per batch, plus every
+    at-risk student underneath."""
+    try:
+        import reports as _reports
+        today = date.today()
+        year, mon = today.year, today.month
+        if month:
+            try:
+                y, m = str(month).split("-")
+                year, mon = int(y), int(m)
+                if not 1 <= mon <= 12:
+                    raise ValueError
+            except (ValueError, AttributeError):
+                return {"success": False, "message": "month must look like 2026-08"}
+
+        rep = _reports.institute_report(year, mon, threshold)
+
+        out = StringIO()
+        w = csv.writer(out)
+        w.writerow([f"Institute attendance - {rep['month_label']}"])
+        w.writerow([f"Period: {rep['period']}"])
+        w.writerow([])
+        w.writerow(["Batch", "Students", "Working Days", "Average %", f"Below {threshold:g}%"])
+        for b in rep["batches"]:
+            w.writerow([b["batch"], b["students"], b["working_days"],
+                        b["avg_rate"], b["at_risk_count"]])
+        w.writerow([])
+        w.writerow(["TOTAL", rep["total_students"], "", rep["avg_rate"], rep["at_risk_total"]])
+
+        w.writerow([])
+        w.writerow([f"Students below {threshold:g}%"])
+        w.writerow(["Batch", "Roll No", "Name", "Present", "Working Days", "Rate %"])
+        for b in rep["batches"]:
+            for s in b["at_risk"]:
+                w.writerow([b["batch"], s["roll_no"], s["name"], s["present"],
+                            s["working_days"], s["rate"]])
+
+        filename = f"institute_attendance_{year}-{mon:02d}.csv"
+        return Response(content=out.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     except Exception as e:
         return {"success": False, "message": str(e)}
 

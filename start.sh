@@ -1,12 +1,28 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
+# NOTE: when the systemd unit is installed (deploy/install_service.sh) it owns
+# the process and logs to the journal; this script is the fallback path for
+# dev machines and servers without systemd.
+
 # Stop any previously running instance
 pkill -f main_with_face_recognition.py 2>/dev/null
 sleep 2
 
-# Use unbuffered Python output (-u flag)
-nohup ./venv/bin/python3 -u main_with_face_recognition.py > app.log 2>&1 &
+mkdir -p logs
+
+# Roll the log instead of truncating it. The old `> app.log` threw away the
+# history on every restart - i.e. exactly the output you need after a crash.
+if [ -f app.log ] && [ -s app.log ]; then
+    mv app.log "logs/app_$(date +%Y%m%d-%H%M%S).log"
+fi
+
+# Keep the 20 most recent rolled logs; drop the rest so logs/ cannot grow
+# without bound on a server that restarts often.
+ls -1t logs/app_*.log 2>/dev/null | tail -n +21 | xargs -r rm -f
+
+# Use unbuffered Python output (-u flag). Append, never truncate.
+nohup ./venv/bin/python3 -u main_with_face_recognition.py >> app.log 2>&1 &
 
 # Save Process ID
 echo $! > app.pid

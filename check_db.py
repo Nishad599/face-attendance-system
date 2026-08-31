@@ -17,7 +17,9 @@ REQUIRED_COLUMNS = {
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",
-                   "audit_log", "profile_change_requests"]
+                   "audit_log", "profile_change_requests",
+                   # phase 5
+                   "login_attempts", "leave_requests", "alert_log"]
 
 
 def table_exists(cur, table_name):

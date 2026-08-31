@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline — CDAC Attendance</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #F4F5F7; color: #172B4D; padding: 24px;
+        }
+        .box {
+            max-width: 380px; text-align: center; background: #fff;
+            border: 1px solid #DFE1E6; border-radius: 12px; padding: 32px 24px;
+            box-shadow: 0 1px 3px rgba(9, 30, 66, .12);
+        }
+        .icon { font-size: 44px; line-height: 1; margin-bottom: 12px; }
+        h1 { font-size: 1.15rem; margin: 0 0 8px; }
+        p { margin: 0 0 20px; color: #6B778C; font-size: .92rem; line-height: 1.5; }
+        button {
+            background: #0052CC; color: #fff; border: 0; border-radius: 6px;
+            padding: 11px 20px; font-size: .95rem; font-weight: 600;
+            cursor: pointer; min-height: 44px;
+        }
+        @media (prefers-color-scheme: dark) {
+            body { background: #1D2125; color: #E6EDF3; }
+            .box { background: #22272B; border-color: #2E3439; }
+            p { color: #9FADBC; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="box">
+        <div class="icon">📶</div>
+        <h1>You're offline</h1>
+        <!-- Attendance figures are never served from cache, so there is
+             genuinely nothing to show until the connection is back. -->
+        <p>Attendance figures are always fetched live, so there's nothing to
+           show while you're disconnected. Reconnect and try again.</p>
+        <button type="button" onclick="location.reload()">Retry</button>
+    </div>
+    <script>
+        // Reload automatically the moment connectivity returns.
+        window.addEventListener('online', function () { location.reload(); });
+    </script>
+</body>
+
+</html>

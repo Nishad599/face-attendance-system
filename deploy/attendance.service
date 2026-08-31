@@ -1,0 +1,56 @@
+# systemd unit for the Face Recognition Attendance System.
+#
+# Replaces the nohup + app.pid approach in start.sh, which does not survive a
+# reboot and never restarts the app after a crash or an OOM kill.
+#
+# Install with:  sudo ./deploy/install_service.sh
+#
+# The User/WorkingDirectory lines are rewritten by that script to match the
+# account the app actually runs as, so this file needs no manual editing.
+
+[Unit]
+Description=Face Recognition Attendance System
+Documentation=https://github.com/Nishad599/face-attendance-system
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+WorkingDirectory=__APPDIR__
+
+# python -u keeps output unbuffered so journalctl shows logs as they happen.
+ExecStart=__APPDIR__/venv/bin/python -u main_with_face_recognition.py
+
+# Restart on any unclean exit, including OOM kills. StartLimit* stops a
+# genuinely broken build from restart-looping forever: 5 failures inside
+# 120s and systemd gives up instead of hammering the CPU.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Logs go to the journal (journalctl -u attendance), which rotates on its own.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=attendance
+
+# Give in-flight requests a moment to finish before SIGKILL.
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+# --- Hardening -------------------------------------------------------------
+# The app only ever writes inside its own directory (attendance.db,
+# student_photos/, backups/, logs/), so the rest of the filesystem can be
+# read-only to it.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

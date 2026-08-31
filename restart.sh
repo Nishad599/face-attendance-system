@@ -20,6 +20,36 @@ WAIT_TIME=3
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
 
+# If the systemd unit is installed, it owns the process lifecycle. Restarting
+# via start.sh here would leave systemd's copy running and fight for port 8000,
+# so hand over instead. Keeps ./restart.sh working either way, including from
+# the deploy workflow.
+if systemctl list-unit-files attendance.service >/dev/null 2>&1 && \
+   systemctl is-enabled --quiet attendance 2>/dev/null; then
+    echo -e "${CYAN}systemd unit detected - restarting via systemctl${NC}"
+    if sudo -n systemctl restart attendance 2>/dev/null || systemctl restart attendance 2>/dev/null; then
+        sleep 3
+        if systemctl is-active --quiet attendance; then
+            echo -e "${GREEN}✅ attendance.service restarted${NC}"
+            systemctl status attendance --no-pager -n 8 || true
+            exit 0
+        fi
+        echo -e "${RED}❌ attendance.service failed to come back${NC}"
+        journalctl -u attendance -n 30 --no-pager || true
+        exit 1
+    fi
+    # Do NOT fall back to start.sh here. The unit is enabled, so systemd owns
+    # the process: stop.sh would pkill it, systemd would immediately restart it
+    # (Restart=always), and start.sh's nohup copy would race it for port 8000.
+    # Failing loudly is the safe outcome — the app keeps running under systemd.
+    echo -e "${RED}❌ attendance.service is enabled but could not be restarted.${NC}"
+    echo -e "${YELLOW}   The deploy user needs passwordless sudo for this one command:${NC}"
+    echo -e "${YELLOW}     echo '$(whoami) ALL=(root) NOPASSWD: /bin/systemctl restart attendance' \\${NC}"
+    echo -e "${YELLOW}       | sudo tee /etc/sudoers.d/attendance && sudo chmod 440 /etc/sudoers.d/attendance${NC}"
+    echo -e "${YELLOW}   See deploy/DEPLOYMENT.md. The old code is still running.${NC}"
+    exit 1
+fi
+
 echo -e "${BLUE}============================================${NC}"
 echo -e "${BLUE}   Restarting ${PROJECT_NAME}${NC}"
 echo -e "${BLUE}============================================${NC}"

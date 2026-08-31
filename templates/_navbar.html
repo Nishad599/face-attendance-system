@@ -1,0 +1,42 @@
+{# Shared top navigation for all staff pages.
+
+   Previously each template carried its own copy, and they had drifted: most
+   were missing Batches and Admin, batches.html was missing Attendance,
+   Reports and About. Include this instead of hand-writing a <nav>:
+
+       {% include "_navbar.html" %}
+
+   Links are role-gated by data-roles and start hidden, so a teacher never
+   sees an admin-only link that would 403 them. static/js/navbar.js reveals
+   the right ones and marks the active page. #}
+<nav class="app-navbar">
+    <a href="/dashboard" class="app-navbar-brand" id="nav-brand">
+        <i class="fa-solid fa-users-viewfinder"></i>
+        CDAC Attendance
+    </a>
+    <div class="app-navbar-links">
+        <a href="/dashboard" id="nav-dashboard" data-roles="admin">
+            <i class="fa-solid fa-house"></i> Dashboard</a>
+        <a href="/teacher" id="nav-portal" data-roles="teacher">
+            <i class="fa-solid fa-chalkboard-user"></i> My Batches</a>
+        <a href="/attendance" id="nav-attendance" data-roles="admin,teacher,user,terminal">
+            <i class="fa-solid fa-camera"></i> Attendance</a>
+        <a href="/students" id="nav-students" data-roles="admin">
+            <i class="fa-solid fa-users"></i> Students</a>
+        <a href="/admin/batches" id="nav-batches" data-roles="admin">
+            <i class="fa-solid fa-layer-group"></i> Batches</a>
+        <a href="/attendance-management" id="nav-reports" data-roles="admin">
+            <i class="fa-solid fa-table-list"></i> Reports</a>
+        <a href="/admin" id="nav-admin" data-roles="admin">
+            <i class="fa-solid fa-gear"></i> Admin</a>
+        <a href="/about" id="nav-about" data-roles="*">
+            <i class="fa-solid fa-circle-info"></i> About</a>
+    </div>
+    <div class="app-navbar-actions">
+        {# theme.js injects the dark-mode toggle into this container #}
+        <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
+            <i class="fa-solid fa-right-from-bracket"></i> Logout
+        </button>
+    </div>
+</nav>
+<script src="/static/js/navbar.js" defer></script>

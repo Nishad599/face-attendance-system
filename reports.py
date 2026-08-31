@@ -85,6 +85,64 @@ def _present_dates(cur, student_db_id, start, end):
     return out
 
 
+def _approved_leave_dates(cur, student_db_id, start, end):
+    """Dates covered by an approved leave request, within [start, end].
+
+    An approved absence is excused: the day is dropped from the denominator
+    rather than counted against the student. Returns an empty set if the
+    leave_requests table does not exist yet (pre-migrate_phase5 databases).
+    """
+    try:
+        cur.execute(
+            "SELECT start_date, end_date FROM leave_requests "
+            "WHERE student_id = ? AND status = 'approved' "
+            "AND start_date <= ? AND end_date >= ?",
+            (student_db_id, end.strftime("%Y-%m-%d"), start.strftime("%Y-%m-%d")),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        return set()
+
+    out = set()
+    for s, e in [(r[0], r[1]) for r in rows]:
+        try:
+            d = datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+            last = datetime.strptime(str(e)[:10], "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        while d <= last:
+            if start <= d <= end:
+                out.add(d)
+            d += timedelta(days=1)
+    return out
+
+
+def _student_figures(cur, student_db_id, period_start, period_end, holidays, joining_date):
+    """Present/absent/working-day counts for one student over a period.
+
+    Shared by the monthly, cumulative and institute reports so they cannot
+    drift apart. Excludes days before the student joined and days covered by
+    an approved leave request.
+    """
+    start = _effective_start(period_start, joining_date)
+    work = _working_days(start, period_end, holidays)
+    leave = _approved_leave_dates(cur, student_db_id, start, period_end)
+    work = [d for d in work if d not in leave]
+    present = _present_dates(cur, student_db_id, start, period_end)
+
+    present_days = [d for d in work if d in present]
+    absent_days = [d for d in work if d not in present]
+    return {
+        "start": start,
+        "end": period_end,
+        "present_days": present_days,
+        "absent_days": absent_days,
+        "working": work,
+        "leave_days": len(leave),
+        "rate": round(len(present_days) / len(work) * 100, 1) if work else 0.0,
+    }
+
+
 # ---------------------------------------------------------------------------
 # report data
 # ---------------------------------------------------------------------------
@@ -104,17 +162,11 @@ def student_monthly_report(student_db_id: int, year: int, month: int):
         return None
 
     start, end = month_bounds(year, month)
-    # Don't count days before the student joined — otherwise a mid-month joiner
-    # looks absent for days they weren't enrolled (and gets wrongly flagged
-    # at-risk). Matches how analytics_manager computes rates.
-    start = _effective_start(start, row[6])
     holidays = _holiday_dates(cur, row[4])
-    work = _working_days(start, end, holidays)
-    present = _present_dates(cur, student_db_id, start, end)
-
-    present_days = [d for d in work if d in present]
-    absent_days = [d for d in work if d not in present]
-    rate = round(len(present_days) / len(work) * 100, 1) if work else 0.0
+    # _student_figures skips days before the student joined (a mid-month joiner
+    # must not look absent for days they weren't enrolled) and days covered by
+    # approved leave. Matches how analytics_manager computes rates.
+    fig = _student_figures(cur, student_db_id, start, end, holidays, row[6])
 
     conn.close()
     return {
@@ -124,13 +176,14 @@ def student_monthly_report(student_db_id: int, year: int, month: int):
         "email": row[3],
         "course_id": row[4],
         "batch": row[5] or "-",
-        "month_label": start.strftime("%B %Y"),
-        "period": f"{start:%d %b} - {end:%d %b %Y}",
-        "present_days": len(present_days),
-        "absent_days": len(absent_days),
-        "working_days": len(work),
-        "rate": rate,
-        "absent_dates": [d.strftime("%d %b (%a)") for d in absent_days],
+        "month_label": fig["start"].strftime("%B %Y"),
+        "period": f'{fig["start"]:%d %b} - {end:%d %b %Y}',
+        "present_days": len(fig["present_days"]),
+        "absent_days": len(fig["absent_days"]),
+        "working_days": len(fig["working"]),
+        "leave_days": fig["leave_days"],
+        "rate": fig["rate"],
+        "absent_dates": [d.strftime("%d %b (%a)") for d in fig["absent_days"]],
     }
 
 
@@ -155,15 +208,13 @@ def teacher_monthly_report(course_id: int, year: int, month: int, at_risk_thresh
 
     rows, rate_sum = [], 0.0
     for sid, roll, name, joining in students:
-        # Each student's window starts when they joined (see _effective_start)
-        s_start = _effective_start(start, joining)
-        s_work = work if s_start == start else _working_days(s_start, end, holidays)
-        present = _present_dates(cur, sid, s_start, end)
-        pcount = sum(1 for d in s_work if d in present)
-        rate = round(pcount / len(s_work) * 100, 1) if s_work else 0.0
-        rate_sum += rate
-        rows.append({"roll_no": roll, "name": name, "present": pcount,
-                     "working_days": len(s_work), "rate": rate})
+        fig = _student_figures(cur, sid, start, end, holidays, joining)
+        rate_sum += fig["rate"]
+        rows.append({"roll_no": roll, "name": name,
+                     "present": len(fig["present_days"]),
+                     "working_days": len(fig["working"]),
+                     "leave_days": fig["leave_days"],
+                     "rate": fig["rate"]})
 
     conn.close()
     rows.sort(key=lambda r: r["rate"])
@@ -180,6 +231,117 @@ def teacher_monthly_report(course_id: int, year: int, month: int, at_risk_thresh
         "at_risk_count": len(at_risk),
         "students": rows,
         "best": list(reversed(rows[-5:])) if rows else [],
+    }
+
+
+def student_cumulative_report(student_db_id: int, at_risk_threshold: float = 75.0):
+    """Course-to-date figures for one student (batch start -> today).
+
+    Drives the weekly low-attendance alert. Monthly reports are retrospective;
+    a student needs the running total to know whether they can still recover.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT s.id, s.student_id, s.name, s.email, s.course_id, c.name, "
+        "       s.joining_date, c.start_date, c.end_date "
+        "FROM students s LEFT JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
+        (student_db_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return None
+
+    today = date.today()
+    try:
+        start = datetime.strptime(str(row[7])[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        start = today.replace(month=1, day=1)
+
+    holidays = _holiday_dates(cur, row[4])
+    fig = _student_figures(cur, student_db_id, start, today, holidays, row[6])
+
+    # How many of the remaining days must be attended to reach the threshold?
+    # This is the number that actually changes behaviour.
+    remaining = 0
+    try:
+        course_end = datetime.strptime(str(row[8])[:10], "%Y-%m-%d").date()
+        if course_end > today:
+            future = _working_days(today + timedelta(days=1), course_end, holidays)
+            remaining = len(future)
+    except (ValueError, TypeError):
+        course_end = None
+
+    present = len(fig["present_days"])
+    total_work = len(fig["working"])
+    needed = None
+    if remaining:
+        # smallest n where (present + n) / (total_work + remaining) >= threshold
+        target = at_risk_threshold / 100.0
+        need = target * (total_work + remaining) - present
+        needed = max(0, min(remaining, int(need) + (1 if need > int(need) else 0)))
+
+    conn.close()
+    return {
+        "student_db_id": row[0],
+        "roll_no": row[1],
+        "name": row[2],
+        "email": row[3],
+        "course_id": row[4],
+        "batch": row[5] or "-",
+        "period": f"{start:%d %b %Y} - {today:%d %b %Y}",
+        "present_days": present,
+        "absent_days": len(fig["absent_days"]),
+        "working_days": total_work,
+        "leave_days": fig["leave_days"],
+        "rate": fig["rate"],
+        "remaining_days": remaining,
+        "days_needed": needed,
+        "threshold": at_risk_threshold,
+        "recent_absences": [d.strftime("%d %b (%a)") for d in fig["absent_days"][-8:]],
+    }
+
+
+def institute_report(year: int, month: int, at_risk_threshold: float = 75.0):
+    """Every active batch in one view — the admin-level report teachers'
+    per-batch exports cannot give."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name FROM courses WHERE is_active = 1 ORDER BY name")
+    batches = [(r[0], r[1]) for r in cur.fetchall()]
+    conn.close()
+
+    rows = []
+    total_students = at_risk_total = 0
+    rate_sum = 0.0
+    for cid, cname in batches:
+        rep = teacher_monthly_report(cid, year, month, at_risk_threshold)
+        rows.append({
+            "course_id": cid,
+            "batch": cname,
+            "students": rep["total_students"],
+            "working_days": rep["working_days"],
+            "avg_rate": rep["avg_rate"],
+            "at_risk_count": rep["at_risk_count"],
+            "at_risk": rep["at_risk"],
+        })
+        total_students += rep["total_students"]
+        at_risk_total += rep["at_risk_count"]
+        # Weight each batch by its student count so a 4-student batch does not
+        # swing the institute average as hard as a 60-student one.
+        rate_sum += rep["avg_rate"] * rep["total_students"]
+
+    start, end = month_bounds(year, month)
+    rows.sort(key=lambda r: r["avg_rate"])
+    return {
+        "month_label": start.strftime("%B %Y"),
+        "period": f"{start:%d %b} - {end:%d %b %Y}",
+        "batches": rows,
+        "batch_count": len(rows),
+        "total_students": total_students,
+        "at_risk_total": at_risk_total,
+        "avg_rate": round(rate_sum / total_students, 1) if total_students else 0.0,
     }
 
 
@@ -271,6 +433,104 @@ def teacher_report_email(rep):
         intro=f"Monthly attendance summary for <b>{rep['batch']}</b>.",
         body_html=body,
         footer="Full registers and CSV export are available in the teacher portal.",
+    )
+
+
+def low_attendance_alert_email(rep):
+    """HTML body for the weekly low-attendance warning.
+
+    Deliberately forward-looking: the monthly report already says what
+    happened, so this one leads with what the student still has to do.
+    """
+    colour = _pct_colour(rep["rate"])
+    big = (
+        f'<div style="text-align:center;margin:8px 0 20px;">'
+        f'<div style="font-size:40px;font-weight:bold;color:{colour};">{rep["rate"]}%</div>'
+        f'<div style="color:#6B778C;font-size:12px;">ATTENDANCE SO FAR</div></div>'
+    )
+
+    action = ""
+    needed = rep.get("days_needed")
+    remaining = rep.get("remaining_days") or 0
+    if needed is None or not remaining:
+        action = ('<p style="margin:0;padding:12px;background:#FFEBE6;color:#BF2600;border-radius:4px;">'
+                  f'<b>You are below {rep["threshold"]:.0f}%.</b> Please speak to your teacher '
+                  'about how to make this up.</p>')
+    elif needed >= remaining:
+        action = ('<p style="margin:0;padding:12px;background:#FFEBE6;color:#BF2600;border-radius:4px;">'
+                  f'<b>Attending every one of the {remaining} remaining days will still leave you '
+                  f'short of {rep["threshold"]:.0f}%.</b> Please speak to your teacher now — the '
+                  'earlier this is raised, the more options you have.</p>')
+    else:
+        action = ('<p style="margin:0;padding:12px;background:#FFFAE6;color:#7A5B00;border-radius:4px;">'
+                  f'<b>You can still recover.</b> Attend at least <b>{needed}</b> of the '
+                  f'{remaining} remaining working days to finish at {rep["threshold"]:.0f}% or above.</p>')
+
+    table = mailer.stat_table([
+        ("Batch", rep["batch"]),
+        ("Period", rep["period"]),
+        ("Days present", rep["present_days"]),
+        ("Days absent", rep["absent_days"]),
+        ("Working days so far", rep["working_days"]),
+        ("Approved leave (not counted)", rep["leave_days"]),
+        ("Working days remaining", remaining),
+    ])
+
+    recent = ""
+    if rep["recent_absences"]:
+        recent = ('<p style="margin:16px 0 6px;font-weight:bold;">Most recent absences</p>'
+                  f'<p style="margin:0 0 8px;color:#6B778C;">{", ".join(rep["recent_absences"])}</p>')
+
+    link = ""
+    if mailer.base_url():
+        link = (f'<p style="margin:16px 0 0;"><a href="{mailer.base_url()}/student" '
+                f'style="color:#0052CC;">View your full attendance</a></p>')
+
+    return mailer.render_email(
+        title="Your attendance needs attention",
+        intro=f"Hi {str(rep['name']).split()[0] if rep['name'] else 'there'}, "
+              f"this is a heads-up about your attendance in {rep['batch']}.",
+        body_html=big + action + table + recent + link,
+        footer="If a day looks wrong, raise a dispute from your student portal. "
+               "Planned absences can be submitted as a leave request in advance.",
+    )
+
+
+def institute_report_email(rep):
+    """HTML body for the admin's cross-batch monthly summary."""
+    table = mailer.stat_table([
+        ("Period", rep["period"]),
+        ("Batches", rep["batch_count"]),
+        ("Students", rep["total_students"]),
+        ("Average attendance", f'{rep["avg_rate"]}%'),
+        ("Below 75%", rep["at_risk_total"]),
+    ])
+
+    trs = "".join(
+        f'<tr><td style="padding:6px 12px;border-bottom:1px solid #DFE1E6;">{b["batch"]}'
+        f'<br><span style="color:#6B778C;font-size:12px;">{b["students"]} students</span></td>'
+        f'<td style="padding:6px 12px;border-bottom:1px solid #DFE1E6;text-align:right;'
+        f'font-weight:bold;color:{_pct_colour(b["avg_rate"])};">{b["avg_rate"]}%</td>'
+        f'<td style="padding:6px 12px;border-bottom:1px solid #DFE1E6;text-align:right;'
+        f'color:#6B778C;">{b["at_risk_count"]} at risk</td></tr>'
+        for b in rep["batches"]
+    )
+    body = table
+    if rep["batches"]:
+        body += ('<p style="margin:16px 0 6px;font-weight:bold;">By batch (lowest first)</p>'
+                 f'<table style="width:100%;border-collapse:collapse;">{trs}</table>')
+    else:
+        body += '<p style="color:#6B778C;">No active batches.</p>'
+
+    if mailer.base_url():
+        body += (f'<p style="margin:16px 0 0;"><a href="{mailer.base_url()}/dashboard" '
+                 f'style="color:#0052CC;">Open the admin dashboard</a></p>')
+
+    return mailer.render_email(
+        title=f"Institute attendance - {rep['month_label']}",
+        intro=f"Attendance across all active batches for {rep['month_label']}.",
+        body_html=body,
+        footer="Per-batch registers and CSV exports are available in the portal.",
     )
 
 

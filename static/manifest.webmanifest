@@ -1,0 +1,38 @@
+{
+  "name": "CDAC Attendance",
+  "short_name": "Attendance",
+  "description": "Check your attendance, raise disputes and apply for leave.",
+  "id": "/student",
+  "start_url": "/student",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#0052CC",
+  "icons": [
+    {
+      "src": "/static/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My attendance",
+      "url": "/student"
+    }
+  ]
+}

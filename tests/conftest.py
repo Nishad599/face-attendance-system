@@ -119,6 +119,23 @@ CREATE TABLE session_configs (
     course_id INTEGER, session_type TEXT NOT NULL,
     start_time TIME NOT NULL, end_time TIME NOT NULL, is_active BOOLEAN DEFAULT 1
 );
+CREATE TABLE login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    identifier TEXT NOT NULL, attempted_at TIMESTAMP NOT NULL
+);
+CREATE TABLE leave_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL, course_id INTEGER,
+    start_date DATE NOT NULL, end_date DATE NOT NULL,
+    reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP, reviewed_by INTEGER, reviewed_at TIMESTAMP, review_note TEXT
+);
+CREATE TABLE alert_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL, kind TEXT NOT NULL, period TEXT NOT NULL,
+    rate REAL, sent_at TIMESTAMP
+);
+CREATE UNIQUE INDEX idx_alert_log_unique ON alert_log (student_id, kind, period);
 """
 
 

@@ -224,24 +224,7 @@
 
 <body>
     <!-- Navbar -->
-    <nav class="app-navbar">
-        <a href="/dashboard" class="app-navbar-brand">
-            <i class="fa-solid fa-users-viewfinder"></i>
-            CDAC Attendance
-        </a>
-        <div class="app-navbar-links">
-            <a href="/dashboard" id="nav-dashboard"><i class="fa-solid fa-house"></i> Dashboard</a>
-            <a href="/attendance" class="active"><i class="fa-solid fa-camera"></i> Attendance</a>
-            <a href="/students" id="nav-students"><i class="fa-solid fa-users"></i> Students</a>
-            <a href="/attendance-management" id="nav-reports"><i class="fa-solid fa-table-list"></i> Reports</a>
-            <a href="/about"><i class="fa-solid fa-circle-info"></i> About</a>
-        </div>
-        <div class="app-navbar-actions">
-            <button class="app-btn app-btn-subtle app-btn-sm" onclick="performLogout()">
-                <i class="fa-solid fa-right-from-bracket"></i> Logout
-            </button>
-        </div>
-    </nav>
+    {% include "_navbar.html" %}
 
     <div class="app-page">
         <!-- Page Header -->
@@ -299,6 +282,33 @@
                     <button id="captureBtn" onclick="captureFrame()" class="app-btn app-btn-primary" disabled>
                         <i class="fa-solid fa-camera"></i> Capture
                     </button>
+                </div>
+
+                <!-- Terminal-only fallback. Shown for kiosk sessions so a
+                     student whose face will not match is not simply stuck.
+                     Files a pending request; a teacher still has to approve. -->
+                <div id="manualFallback" style="display:none;margin-top:16px;padding-top:16px;
+                     border-top:1px solid var(--border-color);">
+                    <p class="sub" style="margin:0 0 10px;">
+                        <i class="fa-solid fa-circle-info"></i>
+                        Camera not recognising you? Send your teacher a request instead.
+                    </p>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+                        <div class="app-form-group" style="margin:0;flex:1;min-width:140px;">
+                            <label class="app-form-label">Roll number</label>
+                            <input type="text" id="mfRoll" class="app-form-input"
+                                   placeholder="e.g. 2024001" autocomplete="off">
+                        </div>
+                        <div class="app-form-group" style="margin:0;flex:2;min-width:180px;">
+                            <label class="app-form-label">Reason (optional)</label>
+                            <input type="text" id="mfReason" class="app-form-input"
+                                   placeholder="e.g. Camera won't recognise me" autocomplete="off">
+                        </div>
+                        <button class="app-btn app-btn-subtle" onclick="submitManualRequest()">
+                            <i class="fa-solid fa-hand"></i> Request
+                        </button>
+                    </div>
+                    <div id="mfMsg" style="margin-top:8px;font-size:0.88rem;"></div>
                 </div>
             </div>
 
@@ -554,14 +564,47 @@
             // Role-based visibility check
             fetch('/api/session/status').then(r => r.json()).then(d => {
                 if (d.authenticated && d.user_type !== 'admin') {
-                    const toHide = ['nav-dashboard', 'nav-students', 'nav-reports'];
-                    toHide.forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) el.style.display = 'none';
-                    });
+                    // Nav link visibility is handled centrally by static/js/navbar.js.
+                }
+                // The manual fallback only makes sense at an unattended kiosk;
+                // staff already have Mark Attendance in the teacher portal.
+                if (d.authenticated && d.user_type === 'terminal') {
+                    document.getElementById('manualFallback').style.display = '';
                 }
             }).catch(e => console.error('Session check failed:', e));
         });
+
+        // ---------- Terminal manual fallback ----------
+        async function submitManualRequest() {
+            const rollEl = document.getElementById('mfRoll');
+            const reasonEl = document.getElementById('mfReason');
+            const msg = document.getElementById('mfMsg');
+            const roll = rollEl.value.trim();
+            if (!roll) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Enter your roll number.';
+                return;
+            }
+            msg.style.color = 'var(--text-secondary)';
+            msg.textContent = 'Sending…';
+            try {
+                const res = await fetch('/api/terminal/manual-request', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roll_no: roll, reason: reasonEl.value.trim() })
+                });
+                const d = await res.json();
+                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.textContent = d.message || '';
+                if (d.success) {
+                    // Clear immediately: the next student is standing right there.
+                    rollEl.value = ''; reasonEl.value = '';
+                    setTimeout(function () { msg.textContent = ''; }, 8000);
+                }
+            } catch (e) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Connection failed. Try again.';
+            }
+        }
 
         window.addEventListener('beforeunload', function () {
             stopCamera();

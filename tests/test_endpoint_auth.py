@@ -25,6 +25,9 @@ PUBLIC_BY_DESIGN = {
     "/api/terminal-login", "/api/terminal/batches",
     "/api/forgot-password", "/api/reset-password-otp",
     "/api/system/status",
+    # PWA plumbing. The browser fetches both outside any page session, and
+    # neither exposes data: sw.js is static JS, the manifest is static JSON.
+    "/sw.js", "/manifest.webmanifest",
 }
 
 

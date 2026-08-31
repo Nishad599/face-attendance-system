@@ -5,10 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Attendance — CDAC Attendance</title>
+    <meta name="theme-color" content="#0052CC">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/pwa.js" defer></script>
     <style>
         body { background: var(--bg-page); }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
@@ -33,6 +37,47 @@
         .card h2 { margin: 0 0 16px; font-size: 1.1rem; }
         .banner { background: #FFFAE6; border: 1px solid #FFC400; color: #7A5B00; padding: 14px 18px;
             border-radius: var(--border-radius); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+        /* Form rows: a flex row on desktop, full-width stacked fields on phones. */
+        .form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+        .form-row .app-form-group { margin: 0; }
+
+        /* This is the most-visited page in the app and almost all of that
+           traffic is on a phone, so the small-screen layout is not an
+           afterthought here. */
+        @media (max-width: 640px) {
+            .app-page { padding: 12px; }
+            .app-page-header h1 { font-size: 1.35rem; }
+            /* 2-up stat cards beat a single column: the four numbers stay
+               visible together without scrolling. */
+            .grid { grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+            .stat-card { padding: 14px; }
+            .stat-card .big { font-size: 1.6rem; }
+            .stat-card .lbl { font-size: 0.72rem; }
+            .card { padding: 16px; margin-bottom: 16px; }
+            .ring { width: 96px; height: 96px; }
+            .ring-inner { width: 74px; height: 74px; }
+            .ring-inner b { font-size: 1.3rem; }
+            /* Stacked, full-width inputs — 12px-wide date pickers side by side
+               are unusable with a thumb. */
+            .form-row { flex-direction: column; align-items: stretch; }
+            .form-row .app-form-group,
+            .form-row .app-btn { width: 100%; }
+            .form-row .app-form-input { width: 100%; box-sizing: border-box; }
+            /* 44px is the minimum comfortable touch target. */
+            .app-btn { min-height: 44px; }
+            .banner { flex-direction: column; align-items: flex-start; padding: 12px 14px; }
+            .banner .app-btn { width: 100%; }
+            .app-navbar-brand { font-size: 0.95rem; }
+            .spark { height: 36px; }
+            .spark .bar { min-width: 5px; }
+            /* Tables stay readable by scrolling sideways inside their own
+               wrapper rather than stretching the page. */
+            .app-table { font-size: 0.85rem; }
+            .app-table th, .app-table td { padding: 8px 10px; white-space: nowrap; }
+        }
+        @media (max-width: 380px) {
+            .grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 
@@ -134,7 +179,7 @@
 
             <div id="pcBanner" class="banner" style="display:none;margin-bottom:16px;"></div>
 
-            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+            <div class="form-row">
                 <div class="app-form-group" style="margin:0;">
                     <label class="app-form-label">Roll number</label>
                     <input type="text" id="pcRoll" class="app-form-input">
@@ -173,7 +218,7 @@
         <div class="card">
             <h2>Attendance dispute</h2>
             <p class="muted" style="margin-top:-8px;">Were you present but not marked? Raise a request (last 30 days). Your teacher will review it.</p>
-            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
+            <div class="form-row">
                 <div class="app-form-group" style="margin:0;">
                     <label class="app-form-label">Date</label>
                     <input type="date" id="grDate" class="app-form-input">
@@ -200,6 +245,35 @@
                 <table class="app-table">
                     <thead><tr><th>Date</th><th>Session</th><th>Reason</th><th>Status</th></tr></thead>
                     <tbody id="grievanceRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Planned leave</h2>
+            <p class="muted" style="margin-top:-8px;">Know you'll be away? Apply in advance.
+                Approved days are excused — they won't count against your attendance percentage.</p>
+            <div class="form-row">
+                <div class="app-form-group">
+                    <label class="app-form-label">From</label>
+                    <input type="date" id="lvStart" class="app-form-input" onchange="syncLeaveEnd()">
+                </div>
+                <div class="app-form-group">
+                    <label class="app-form-label">To</label>
+                    <input type="date" id="lvEnd" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="flex:1;min-width:220px;">
+                    <label class="app-form-label">Reason</label>
+                    <input type="text" id="lvReason" class="app-form-input" placeholder="e.g. Medical appointment">
+                </div>
+                <button class="app-btn app-btn-primary" onclick="submitLeave()">Apply</button>
+            </div>
+            <div id="lvMsg" class="muted" style="margin-top:10px;"></div>
+
+            <div class="app-table-wrapper" style="margin-top:16px;">
+                <table class="app-table">
+                    <thead><tr><th>Dates</th><th>Days</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+                    <tbody id="leaveRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -283,6 +357,87 @@
             msg.style.color = data.success ? '#006644' : '#BF2600';
             msg.textContent = data.message || '';
             if (data.success) { document.getElementById('grReason').value = ''; loadGrievances(); }
+        }
+
+        // ---------- Planned leave ----------
+        const leaveBadge = {
+            pending: 'app-badge-warning', approved: 'app-badge-success',
+            rejected: 'app-badge-danger', cancelled: 'app-badge-neutral'
+        };
+
+        function syncLeaveEnd() {
+            // Single-day leave is the common case, so mirror the start date
+            // forward and never let "to" fall before "from".
+            const s = document.getElementById('lvStart'), e = document.getElementById('lvEnd');
+            e.min = s.value;
+            if (!e.value || e.value < s.value) e.value = s.value;
+        }
+
+        async function loadLeaves() {
+            const tbody = document.getElementById('leaveRows');
+            try {
+                const res = await fetch('/api/student/leaves');
+                const d = await res.json();
+                const rows = d.leaves || [];
+                if (!rows.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="muted">No leave requests yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = rows.map(function (r) {
+                    const span = r.start_date === r.end_date
+                        ? esc(r.start_date)
+                        : esc(r.start_date) + ' → ' + esc(r.end_date);
+                    const note = r.review_note
+                        ? '<br><span class="muted">Note: ' + esc(r.review_note) + '</span>' : '';
+                    const cancel = r.cancellable
+                        ? '<button class="app-btn app-btn-subtle app-btn-sm" onclick="cancelLeave(' +
+                          r.id + ')">Withdraw</button>' : '';
+                    return '<tr><td>' + span + '</td><td>' + r.days + '</td>' +
+                        '<td>' + esc(r.reason) + note + '</td>' +
+                        '<td><span class="app-badge ' + (leaveBadge[r.status] || 'app-badge-neutral') +
+                        '">' + esc(r.status) + '</span></td>' +
+                        '<td>' + cancel + '</td></tr>';
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" class="muted">Could not load leave requests.</td></tr>';
+            }
+        }
+
+        async function submitLeave() {
+            const start_date = document.getElementById('lvStart').value;
+            const end_date = document.getElementById('lvEnd').value || start_date;
+            const reason = document.getElementById('lvReason').value.trim();
+            const msg = document.getElementById('lvMsg');
+            if (!start_date || !reason) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Pick a start date and give a reason.';
+                return;
+            }
+            try {
+                const res = await fetch('/api/student/leave', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start_date, end_date, reason })
+                });
+                const d = await res.json();
+                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.textContent = d.message || '';
+                if (d.success) { document.getElementById('lvReason').value = ''; loadLeaves(); }
+            } catch (e) {
+                msg.style.color = '#BF2600';
+                msg.textContent = 'Connection failed. Try again.';
+            }
+        }
+
+        async function cancelLeave(id) {
+            if (!confirm('Withdraw this leave request?')) return;
+            try {
+                const res = await fetch('/api/student/leave/' + id + '/cancel', { method: 'POST' });
+                const d = await res.json();
+                const msg = document.getElementById('lvMsg');
+                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.textContent = d.message || '';
+                loadLeaves();
+            } catch (e) { /* the list reload below will show the real state */ }
         }
 
         // ---------- Face self-registration ----------
@@ -528,9 +683,18 @@
             const min = new Date(t.getTime() - 30 * 86400000); el.min = min.toISOString().slice(0, 10);
         })();
 
+        // Leave is forward-looking only — the picker should not offer the past.
+        (function initLeaveDates() {
+            const today = new Date().toISOString().slice(0, 10);
+            ['lvStart', 'lvEnd'].forEach(function (id) {
+                document.getElementById(id).min = today;
+            });
+        })();
+
         load();
         loadGrievances();
         loadProfile();
+        loadLeaves();
     </script>
 </body>
 

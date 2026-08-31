@@ -21,15 +21,29 @@ Usage:
     # grab a frame from the webcam and score it
     python test_antispoof.py --camera
 
-Interpreting the output: for a REAL face you want a high score with the FIXED
-column. Take a few real photos and a few spoof attempts (a face on a phone
-screen or a printout) and pick a threshold that separates them, then set it in
-.env as ANTISPOOF_THRESHOLD.
+Picking a threshold (do this on the VM, with the real camera):
+
+    # capture ~10 real faces, one run per person/lighting condition
+    python test_antispoof.py --camera --label real
+
+    # capture ~10 spoof attempts: a face on a phone screen, a printout
+    python test_antispoof.py --camera --label spoof
+
+    # get a recommended ANTISPOOF_THRESHOLD from the collected samples
+    python test_antispoof.py --suggest
+
+    # start over
+    python test_antispoof.py --reset
+
+Labelled scores accumulate in .antispoof_scores.json. --suggest picks the
+threshold that misclassifies fewest samples, weighting an accepted spoof as
+three times worse than a real face being asked to retry.
 """
 
 import os
 import sys
 import glob
+import json
 import numpy as np
 
 try:
@@ -128,9 +142,115 @@ def score(session, in_name, out_name, size, bgr, bbox):
     return results[0], results[1]
 
 
+SCORES_FILE = ".antispoof_scores.json"
+
+
+def load_scores():
+    if not os.path.exists(SCORES_FILE):
+        return {"real": [], "spoof": []}
+    try:
+        with open(SCORES_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        return {"real": data.get("real", []), "spoof": data.get("spoof", [])}
+    except (ValueError, OSError):
+        return {"real": [], "spoof": []}
+
+
+def save_scores(data):
+    with open(SCORES_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def suggest_threshold():
+    """Recommend a threshold from the labelled samples collected so far.
+
+    Doing this by eye is where the previous attempt stalled: the two groups
+    overlap in the tails, and picking a number from a printed table is guesswork.
+    """
+    data = load_scores()
+    real = sorted(s["score"] for s in data["real"])
+    spoof = sorted(s["score"] for s in data["spoof"])
+
+    print(f"Collected: {len(real)} real, {len(spoof)} spoof "
+          f"(from {SCORES_FILE})\n")
+    if len(real) < 5 or len(spoof) < 5:
+        print("Not enough samples yet. Aim for at least 10 of each, captured on")
+        print("the VM with the real camera and real spoof attempts:")
+        print("    python test_antispoof.py --camera --label real")
+        print("    python test_antispoof.py --camera --label spoof   # phone/printout")
+        return
+
+    def pct(values, p):
+        if not values:
+            return 0.0
+        k = (len(values) - 1) * p
+        lo, hi = int(k), min(int(k) + 1, len(values) - 1)
+        return values[lo] + (values[hi] - values[lo]) * (k - lo)
+
+    print(f"REAL   min={real[0]:.4f}  p05={pct(real, 0.05):.4f}  "
+          f"median={pct(real, 0.5):.4f}  max={real[-1]:.4f}")
+    print(f"SPOOF  min={spoof[0]:.4f}  p95={pct(spoof, 0.95):.4f}  "
+          f"median={pct(spoof, 0.5):.4f}  max={spoof[-1]:.4f}\n")
+
+    # Pick the threshold that misclassifies the fewest samples; break ties by
+    # choosing the midpoint of the widest gap so the margin is as large as
+    # possible on both sides.
+    candidates = sorted(set(real + spoof))
+    best, best_err = None, None
+    for i in range(len(candidates)):
+        t = candidates[i]
+        # reject anything scoring BELOW the threshold
+        false_reject = sum(1 for r in real if r < t)     # real faces blocked
+        false_accept = sum(1 for s in spoof if s >= t)   # spoofs let through
+        # A spoof getting in is worse than a real face being asked to retry,
+        # so weight false accepts more heavily.
+        err = false_reject + 3 * false_accept
+        if best_err is None or err < best_err:
+            best, best_err = t, err
+
+    false_reject = sum(1 for r in real if r < best)
+    false_accept = sum(1 for s in spoof if s >= best)
+    gap_lo = max([s for s in spoof if s < best], default=0.0)
+    gap_hi = min([r for r in real if r >= best], default=1.0)
+    midpoint = round((gap_lo + gap_hi) / 2, 3)
+
+    print(f"Suggested ANTISPOOF_THRESHOLD={midpoint}")
+    print(f"  separates {gap_lo:.4f} (highest spoof below) "
+          f"from {gap_hi:.4f} (lowest real above)")
+    print(f"  at this threshold: {false_reject}/{len(real)} real faces rejected, "
+          f"{false_accept}/{len(spoof)} spoofs accepted")
+    if false_accept:
+        print("\n  WARNING: some spoofs still pass. Collect more samples, or")
+        print("  accept a higher threshold and more retries for real users.")
+    print("\nAdd to .env:")
+    print(f"    ANTISPOOF_THRESHOLD={midpoint}")
+    print("    # and REMOVE ANTISPOOF_DISABLED=1 to turn liveness back on")
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     use_camera = "--camera" in sys.argv
+
+    if "--reset" in sys.argv:
+        if os.path.exists(SCORES_FILE):
+            os.remove(SCORES_FILE)
+        print(f"Cleared {SCORES_FILE}")
+        return
+
+    if "--suggest" in sys.argv:
+        suggest_threshold()
+        return
+
+    label = None
+    if "--label" in sys.argv:
+        idx = sys.argv.index("--label")
+        if idx + 1 < len(sys.argv):
+            label = sys.argv[idx + 1].strip().lower()
+        if label not in ("real", "spoof"):
+            print("[ERROR] --label must be followed by 'real' or 'spoof'")
+            sys.exit(2)
+        # the label value is not a path
+        args = [a for a in args if a != label]
 
     if not os.path.exists(MODEL):
         print(f"[ERROR] model not found: {MODEL}")
@@ -174,6 +294,7 @@ def main():
     print(f"{'image':<45} {'OLD crop':>12} {'FIXED crop':>12}")
     print("-" * 72)
     fixed_scores = []
+    labelled = []
     for name, img in images:
         bbox = detect_face(img)
         if bbox is None:
@@ -181,15 +302,28 @@ def main():
             continue
         old, fixed = score(session, in_cfg.name, out_cfg.name, size, img, bbox)
         fixed_scores.append(fixed)
+        labelled.append({"source": os.path.basename(name), "score": round(float(fixed), 4)})
         print(f"{os.path.basename(name)[:44]:<45} {old:>12.4f} {fixed:>12.4f}")
 
     if fixed_scores:
         print("-" * 72)
         print(f"FIXED scores: min={min(fixed_scores):.4f} "
               f"max={max(fixed_scores):.4f} mean={sum(fixed_scores)/len(fixed_scores):.4f}")
-        print("\nIf these are REAL faces, the FIXED score should be high (well above 0.5).")
-        print("Now run the same test on spoof attempts (a face shown on a phone/printout)")
-        print("and set ANTISPOOF_THRESHOLD in .env between the two groups.")
+
+        if label:
+            data = load_scores()
+            data[label].extend(labelled)
+            save_scores(data)
+            print(f"\nRecorded {len(labelled)} sample(s) as '{label}' "
+                  f"({len(data['real'])} real / {len(data['spoof'])} spoof so far).")
+            print("When you have at least 10 of each, run:")
+            print("    python test_antispoof.py --suggest")
+        else:
+            print("\nIf these are REAL faces, the FIXED score should be high (well above 0.5).")
+            print("To pick a threshold mechanically instead of by eye, label your samples:")
+            print("    python test_antispoof.py --camera --label real")
+            print("    python test_antispoof.py --camera --label spoof")
+            print("    python test_antispoof.py --suggest")
 
 
 if __name__ == "__main__":

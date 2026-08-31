@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from auth_utils import hash_password, verify_password, default_student_password
+import login_throttle
 
 
 class TestPasswordHashing:
@@ -96,39 +97,103 @@ class TestStaffAuthentication:
 
 
 class TestLoginRateLimiting:
-    """Mirrors login_blocked()/record_login_failure()."""
+    """Exercises the real login_throttle implementation against the DB.
+
+    These used to re-implement an in-memory dict in the test itself, which
+    stopped testing anything real once the throttle moved into the database.
+    """
 
     MAX, WINDOW = 8, 10
 
-    def _blocked(self, attempts, key):
-        cutoff = datetime.now() - timedelta(minutes=self.WINDOW)
-        tries = [t for t in attempts.get(key, []) if t > cutoff]
-        attempts[key] = tries
-        return len(tries) >= self.MAX
+    def _fail(self, db, key, times=1, when=None):
+        for _ in range(times):
+            login_throttle.record_failure(db, key, now=when)
 
-    def test_locks_after_max_attempts(self):
-        a = {}
-        for _ in range(self.MAX - 1):
-            a.setdefault("u", []).append(datetime.now())
-        assert not self._blocked(a, "u")
-        a["u"].append(datetime.now())
-        assert self._blocked(a, "u")
+    def _blocked(self, db, key):
+        return login_throttle.is_blocked(
+            db, key, max_attempts=self.MAX, lockout_minutes=self.WINDOW
+        )[0]
 
-    def test_lock_is_per_identifier(self):
-        a = {"victim": [datetime.now()] * self.MAX}
-        assert self._blocked(a, "victim")
-        assert not self._blocked(a, "bystander")
+    def test_locks_after_max_attempts(self, db):
+        self._fail(db, "u", self.MAX - 1)
+        assert not self._blocked(db, "u")
+        self._fail(db, "u")
+        assert self._blocked(db, "u")
 
-    def test_old_attempts_expire_out_of_window(self):
+    def test_lock_is_per_identifier(self, db):
+        self._fail(db, "victim", self.MAX)
+        assert self._blocked(db, "victim")
+        assert not self._blocked(db, "bystander")
+
+    def test_key_is_case_and_space_insensitive(self, db):
+        """'Admin ' must not get a separate budget from 'admin'."""
+        self._fail(db, "  ADMIN  ", self.MAX)
+        assert self._blocked(db, "admin")
+
+    def test_old_attempts_expire_out_of_window(self, db):
         stale = datetime.now() - timedelta(minutes=self.WINDOW + 1)
-        a = {"u": [stale] * self.MAX}
-        assert not self._blocked(a, "u")
+        self._fail(db, "u", self.MAX, when=stale)
+        assert not self._blocked(db, "u")
 
-    def test_clearing_on_success_unblocks(self):
-        a = {"u": [datetime.now()] * self.MAX}
-        assert self._blocked(a, "u")
-        a.pop("u", None)
-        assert not self._blocked(a, "u")
+    def test_expired_rows_are_pruned(self, db):
+        """The check also cleans up, so the table cannot grow without bound."""
+        stale = datetime.now() - timedelta(minutes=self.WINDOW + 1)
+        self._fail(db, "u", self.MAX, when=stale)
+        self._blocked(db, "u")
+        left = db.execute(
+            "SELECT COUNT(*) FROM login_attempts WHERE identifier = 'u'"
+        ).fetchone()[0]
+        assert left == 0
+
+    def test_clearing_on_success_unblocks(self, db):
+        self._fail(db, "u", self.MAX)
+        assert self._blocked(db, "u")
+        login_throttle.clear(db, "u")
+        assert not self._blocked(db, "u")
+
+    def test_lockout_survives_a_restart(self, db_path):
+        """The whole point of moving this into the database: a redeploy must
+        not hand an attacker a fresh set of attempts."""
+        import sqlite3
+        first = sqlite3.connect(db_path)
+        for _ in range(self.MAX):
+            login_throttle.record_failure(first, "persist")
+        first.close()                                   # simulate the restart
+
+        second = sqlite3.connect(db_path)
+        blocked, wait = login_throttle.is_blocked(
+            second, "persist", max_attempts=self.MAX, lockout_minutes=self.WINDOW
+        )
+        second.close()
+        assert blocked, "lockout must survive the process restarting"
+        assert wait > 0
+
+    def test_seconds_remaining_is_sane(self, db):
+        self._fail(db, "u", self.MAX)
+        _blocked, wait = login_throttle.is_blocked(
+            db, "u", max_attempts=self.MAX, lockout_minutes=self.WINDOW
+        )
+        assert 0 < wait <= self.WINDOW * 60
+
+    def test_empty_identifier_is_never_blocked(self, db):
+        assert not self._blocked(db, "")
+        assert not self._blocked(db, None)
+
+    def test_terminal_keys_are_namespaced_per_batch(self, db):
+        """A kiosk PIN under attack must not lock out another batch's kiosk —
+        nor collide with a student whose roll number is '3'."""
+        self._fail(db, login_throttle.terminal_key(3), self.MAX)
+        assert self._blocked(db, login_throttle.terminal_key(3))
+        assert not self._blocked(db, login_throttle.terminal_key(4))
+        assert not self._blocked(db, "3")
+
+    def test_broken_store_fails_open(self, db):
+        """If the table is missing, users must still be able to log in."""
+        db.execute("DROP TABLE login_attempts")
+        db.commit()
+        assert not self._blocked(db, "u")
+        login_throttle.record_failure(db, "u")     # must not raise
+        login_throttle.clear(db, "u")              # must not raise
 
 
 class TestOtpReset:

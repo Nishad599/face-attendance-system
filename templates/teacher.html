@@ -5,10 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teacher Portal — CDAC Attendance</title>
+    <meta name="theme-color" content="#0052CC">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/theme.js"></script>
+    <script src="/static/js/pwa.js" defer></script>
     <style>
         body { background: var(--bg-page); }
         .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
@@ -32,6 +36,33 @@
         .chart .col .cap { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; }
         .chart .col .val { font-size: .72rem; font-weight: 600; }
         @media (max-width:820px){ #tab-analytics > div[style*="grid"]{ grid-template-columns:1fr !important; } }
+
+        /* Teachers mark attendance from a phone at the front of the room more
+           often than from a desk, so the tab strip and control rows have to
+           survive a narrow viewport. */
+        @media (max-width: 640px) {
+            .app-page { padding: 12px; }
+            /* Horizontal scroll beats wrapping into four ragged rows. */
+            .app-tabs {
+                display: flex; flex-wrap: nowrap; overflow-x: auto;
+                -webkit-overflow-scrolling: touch; scrollbar-width: none;
+            }
+            .app-tabs::-webkit-scrollbar { display: none; }
+            .app-tab { flex: 0 0 auto; white-space: nowrap; }
+            .controls, .inline-form { flex-direction: column; align-items: stretch; }
+            .controls .app-form-group, .inline-form .app-form-group,
+            .controls .app-btn, .inline-form .app-btn { width: 100%; }
+            .controls select, .controls input { min-width: 0; width: 100%; box-sizing: border-box; }
+            .app-btn { min-height: 44px; }
+            .bulkbar { flex-direction: column; }
+            .bulkbar .app-btn { width: 100%; }
+            .app-table { font-size: 0.85rem; }
+            .app-table th, .app-table td { padding: 8px 10px; white-space: nowrap; }
+            /* Keep per-row Approve/Reject side by side rather than stacking
+               them into a tall column on every row. */
+            .row-actions { display: flex; gap: 6px; }
+            .row-actions .app-btn { min-height: 36px; }
+        }
     </style>
 </head>
 
@@ -61,6 +92,7 @@
             <button class="app-tab" data-tab="facereq" onclick="switchTab('facereq')">Face Requests</button>
             <button class="app-tab" data-tab="profilereq" onclick="switchTab('profilereq')">Detail Requests</button>
             <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
+            <button class="app-tab" data-tab="leaves" onclick="switchTab('leaves')">Leave</button>
             <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
             <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
         </div>
@@ -224,6 +256,39 @@
             </div>
         </div>
 
+        <!-- ===== LEAVE (planned absences) ===== -->
+        <div id="tab-leaves" style="display:none;">
+            <div class="controls">
+                <div class="app-form-group">
+                    <label class="app-form-label">Show</label>
+                    <select id="lvStatus" class="app-form-input" onchange="loadLeaves()">
+                        <option value="pending">Pending</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="cancelled">Withdrawn</option>
+                    </select>
+                </div>
+                <button class="app-btn app-btn-subtle" onclick="loadLeaves()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <p class="muted" style="margin:0 0 12px;">Approved leave is excused: those days are
+                removed from the student's working-day total rather than counted as absent.</p>
+            <div class="bulkbar" id="lvBulkbar" style="display:none;">
+                <button class="app-btn app-btn-success app-btn-sm" onclick="actLeaves('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
+                <button class="app-btn app-btn-danger app-btn-sm" onclick="actLeaves('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
+            </div>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;" id="lvSelAllCell"><input type="checkbox" id="lvSelAll" onchange="lvToggleAll(this)"></th>
+                            <th>Roll No</th><th>Name</th><th>Dates</th><th>Days</th><th>Reason</th><th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaveRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- ===== HOLIDAYS ===== -->
         <div id="tab-holidays" style="display:none;">
             <div class="card">
@@ -338,10 +403,11 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'leaves', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
             if (tab === 'holidays') loadHolidays();
             if (tab === 'students') loadPending();
             if (tab === 'grievances') loadGrievances();
+            if (tab === 'leaves') loadLeaves();
             if (tab === 'analytics') loadAnalytics();
             if (tab === 'facereq') loadFaceRequests();
             if (tab === 'profilereq') loadProfileReqs();
@@ -579,6 +645,62 @@
             const data = await res.json();
             toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
             if (data.success) loadGrievances();
+        }
+
+        // ---------- Leave (planned absences) ----------
+        async function loadLeaves() {
+            const status = document.getElementById('lvStatus').value;
+            const tbody = document.getElementById('leaveRows');
+            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
+            const res = await fetch('/api/teacher/leaves?status=' + status);
+            const data = await res.json();
+            const rows = data.leaves || [];
+            const isPending = status === 'pending';
+            document.getElementById('lvBulkbar').style.display = isPending && rows.length ? 'flex' : 'none';
+            document.getElementById('lvSelAllCell').style.visibility = isPending ? 'visible' : 'hidden';
+            if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7" class="muted">No ${status} requests.</td></tr>`; return; }
+            tbody.innerHTML = rows.map(x => {
+                const span = x.start_date === x.end_date
+                    ? esc(x.start_date)
+                    : esc(x.start_date) + ' → ' + esc(x.end_date);
+                // Flag requests whose dates have already passed: approving one
+                // still excuses those days, but the teacher should notice.
+                const late = x.upcoming ? '' :
+                    ' <span class="app-badge app-badge-warning">past</span>';
+                return `
+                <tr>
+                    <td>${isPending ? `<input type="checkbox" class="lvchk" value="${x.id}">` : ''}</td>
+                    <td><strong>${esc(x.roll_no)}</strong></td>
+                    <td>${esc(x.student_name)}</td>
+                    <td>${span}${late}</td>
+                    <td>${x.days}</td>
+                    <td>${esc(x.reason)}</td>
+                    <td>${isPending ? `<div class="row-actions">
+                        <button class="app-btn app-btn-success app-btn-sm" onclick="actLeaves('approve', false, ${x.id})">Approve</button>
+                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actLeaves('reject', false, ${x.id})">Reject</button>
+                    </div>` : `<span class="app-badge ${x.status === 'approved' ? 'app-badge-success' : 'app-badge-neutral'}">${esc(x.status)}</span>`}</td>
+                </tr>`;
+            }).join('');
+            document.getElementById('lvSelAll').checked = false;
+        }
+        function lvToggleAll(cb) { document.querySelectorAll('.lvchk').forEach(c => c.checked = cb.checked); }
+        async function actLeaves(action, selectedOnly, singleId) {
+            let ids;
+            if (singleId) ids = [singleId];
+            else {
+                ids = Array.from(document.querySelectorAll('.lvchk:checked')).map(c => parseInt(c.value));
+                if (!ids.length) { toast('No requests selected', 'error'); return; }
+            }
+            const verb = action === 'approve' ? 'Approve' : 'Reject';
+            if (!confirm(`${verb} ${ids.length} leave request(s)?` +
+                (action === 'approve' ? ' Those days will not count against attendance.' : ''))) return;
+            const res = await fetch('/api/teacher/leaves/action', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, action })
+            });
+            const data = await res.json();
+            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
+            if (data.success) loadLeaves();
         }
 
         async function init() {

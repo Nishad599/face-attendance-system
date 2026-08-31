@@ -71,3 +71,10 @@ student_photos/
 # Migration bundles — contain .env, TLS keys, DB and student photos
 migration-*.tar.gz
 migration-*.sha256
+
+# Anti-spoof threshold samples — machine-specific (camera, lighting, faces),
+# so they must not be shared between deployments.
+.antispoof_scores.json
+
+# healthcheck.sh failure counter
+.health_failures
