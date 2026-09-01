@@ -23,6 +23,7 @@ from camera_manager import camera_manager
 from asian_face_model import asian_face_recognizer
 import secrets
 import hashlib
+import re
 from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
 from attendance_manager import create_slot_manager_instance
 import pytz
@@ -1903,6 +1904,23 @@ async def admin_dashboard(request: Request, session: Dict[str, Any] = Depends(re
 
 # Add these routes to your FastAPI app (replace the incomplete Flask ones)
 
+def _sw_asset_version() -> str:
+    """Short digest of the assets the service worker precaches.
+
+    Changes whenever any of them changes, so the worker installs a fresh cache
+    and drops the old one (its activate handler deletes non-matching caches).
+    """
+    h = hashlib.sha256()
+    for rel in ("static/css/app.css", "static/js/theme.js",
+                "static/js/pwa.js", "static/js/sw.js"):
+        try:
+            with open(rel, "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            h.update(rel.encode())          # missing file still affects the hash
+    return "v" + h.hexdigest()[:12]
+
+
 @app.get("/sw.js")
 async def service_worker():
     """Serve the service worker from the root.
@@ -1916,6 +1934,15 @@ async def service_worker():
         raise HTTPException(status_code=404, detail="Not found")
     with open(path, "r", encoding="utf-8") as f:
         body = f.read()
+
+    # Stamp the cache version from the actual asset contents. The file ships a
+    # hand-written `const VERSION = 'v2'`, which only changes if someone
+    # remembers to bump it — so after a deploy that touched app.css or
+    # theme.js, browsers kept serving the previously cached copies and users
+    # saw a stale UI. Deriving it from the files means every real change
+    # invalidates the cache on its own.
+    body = re.sub(r"const VERSION = '[^']*';",
+                  f"const VERSION = '{_sw_asset_version()}';", body, count=1)
     return Response(
         content=body,
         media_type="application/javascript",
