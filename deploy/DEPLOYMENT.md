@@ -63,10 +63,10 @@ sudo systemctl restart attendance
 
 **Let the deploy restart it without a password.** The GitHub runner is not
 interactive, so `sudo systemctl restart` would hang. Grant just that one
-command (replace `user1` with the runner's user):
+command (replace `nishadk` with the runner's user):
 
 ```bash
-echo 'user1 ALL=(root) NOPASSWD: /bin/systemctl restart attendance, /bin/systemctl status attendance' | sudo tee /etc/sudoers.d/attendance
+echo 'nishadk ALL=(root) NOPASSWD: /bin/systemctl restart attendance, /bin/systemctl status attendance' | sudo tee /etc/sudoers.d/attendance
 sudo chmod 440 /etc/sudoers.d/attendance
 ```
 
@@ -98,7 +98,7 @@ None of these are installed by the deploy. Add them once with `crontab -e`:
 ```
 
 `cron` does not expand `$HOME` in every implementation — if a job silently does
-nothing, replace `$HOME` with the absolute path (`/home/user1/student`).
+nothing, replace `$HOME` with the absolute path (`/home/nishadk/student`).
 
 **Test each one before trusting it:**
 
