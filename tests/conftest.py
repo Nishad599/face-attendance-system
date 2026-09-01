@@ -142,8 +142,18 @@ CREATE TABLE subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     course_id INTEGER NOT NULL, name TEXT NOT NULL, code TEXT,
     min_attendance REAL DEFAULT 75, start_date DATE, end_date DATE,
-    is_active INTEGER DEFAULT 1, created_at TIMESTAMP
+    is_active INTEGER DEFAULT 1, created_at TIMESTAMP,
+    sequence INTEGER, faculty TEXT, coordinator TEXT, hours TEXT,
+    teaching_days INTEGER, exam_date DATE
 );
+CREATE TABLE academic_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id INTEGER NOT NULL, title TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'event',
+    start_date DATE NOT NULL, end_date DATE,
+    notes TEXT, coordinator TEXT, created_at TIMESTAMP
+);
+CREATE UNIQUE INDEX idx_events_unique ON academic_events (course_id, title, start_date);
 CREATE TABLE timetable (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     course_id INTEGER NOT NULL, weekday INTEGER NOT NULL,

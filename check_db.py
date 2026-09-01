@@ -14,6 +14,7 @@ REQUIRED_COLUMNS = {
     "slot_attendance": ["course_id"],
     "holidays": ["course_id"],
     "users": ["email"],
+    "subjects": ["sequence", "faculty", "exam_date"],
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",
@@ -21,7 +22,9 @@ REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    # phase 5
                    "login_attempts", "leave_requests", "alert_log",
                    # phase 6
-                   "subjects", "timetable", "consent_records"]
+                   "subjects", "timetable", "consent_records",
+                   # phase 7
+                   "academic_events"]
 
 
 def table_exists(cur, table_name):

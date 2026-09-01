@@ -143,6 +143,76 @@ def set_grid(conn, course_id, entries):
     return written
 
 
+def course_calendar(conn, course_id, today=None):
+    """The published academic calendar: modules and events on one timeline.
+
+    Modules and events live in separate tables on purpose — only a module can
+    have attendance attributed to it — but students need to read them as a
+    single schedule, so they are merged here and sorted by date.
+    """
+    from datetime import date as _date
+    today = _as_date(today) or _date.today()
+
+    items = []
+
+    try:
+        rows = conn.execute(
+            "SELECT id, name, code, sequence, faculty, coordinator, hours, "
+            "       teaching_days, exam_date, start_date, end_date, min_attendance "
+            "FROM subjects WHERE course_id = ? AND is_active = 1", (course_id,)
+        ).fetchall()
+    except Exception:
+        rows = []
+    for r in rows:
+        start, end = _as_date(r[9]), _as_date(r[10])
+        items.append({
+            "type": "module", "id": r[0], "title": r[1], "code": r[2],
+            "sequence": r[3], "faculty": r[4], "coordinator": r[5],
+            "hours": r[6], "days": r[7],
+            "exam_date": str(r[8])[:10] if r[8] else None,
+            "start_date": str(r[9])[:10] if r[9] else None,
+            "end_date": str(r[10])[:10] if r[10] else None,
+            "min_attendance": r[11],
+            "_sort": start or today,
+        })
+
+    try:
+        rows = conn.execute(
+            "SELECT id, title, kind, start_date, end_date, notes, coordinator "
+            "FROM academic_events WHERE course_id = ?", (course_id,)
+        ).fetchall()
+    except Exception:
+        rows = []
+    for r in rows:
+        start, end = _as_date(r[3]), _as_date(r[4])
+        items.append({
+            "type": "event", "id": r[0], "title": r[1], "kind": r[2],
+            "start_date": str(r[3])[:10] if r[3] else None,
+            "end_date": str(r[4])[:10] if r[4] else None,
+            "notes": r[5], "coordinator": r[6],
+            "_sort": start or today,
+        })
+
+    for it in items:
+        start = _as_date(it.get("start_date"))
+        end = _as_date(it.get("end_date")) or start
+        if not start:
+            it["status"] = "upcoming"
+        elif end and end < today:
+            it["status"] = "done"
+        elif start <= today and (not end or today <= end):
+            it["status"] = "current"
+        else:
+            it["status"] = "upcoming"
+
+    # Sort by start date, then put modules before same-day events so a module
+    # beginning on the day of an event reads first.
+    items.sort(key=lambda i: (i["_sort"], 0 if i["type"] == "module" else 1))
+    for it in items:
+        it.pop("_sort", None)
+    return items
+
+
 def _holiday_dates(conn, course_id):
     out = set()
     try:

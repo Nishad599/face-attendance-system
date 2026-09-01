@@ -4852,6 +4852,52 @@ async def student_timetable(session: Dict[str, Any] = Depends(require_student)):
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/student/schedule")
+async def student_schedule(session: Dict[str, Any] = Depends(require_student)):
+    """The published academic calendar for the student's batch."""
+    try:
+        info = session.get("user_info", {})
+        course_id = info.get("course_id")
+        if not course_id:
+            return {"success": True, "items": [], "holidays": []}
+
+        holidays = attendance_system.conn.execute(
+            "SELECT date, name FROM holidays WHERE course_id IS NULL OR course_id = ? "
+            "ORDER BY date", (course_id,)
+        ).fetchall()
+        return {
+            "success": True,
+            "batch": info.get("batch"),
+            "items": timetable.course_calendar(attendance_system.conn, course_id),
+            "holidays": [{"date": str(h[0])[:10], "name": h[1],
+                          "day_name": working_days.day_name(h[0])} for h in holidays],
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/courses/{course_id}/schedule")
+async def course_schedule(course_id: int,
+                          session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """The published academic calendar for a batch (staff view)."""
+    try:
+        assert_course_allowed(session, course_id)
+        holidays = attendance_system.conn.execute(
+            "SELECT date, name FROM holidays WHERE course_id IS NULL OR course_id = ? "
+            "ORDER BY date", (course_id,)
+        ).fetchall()
+        return {
+            "success": True,
+            "items": timetable.course_calendar(attendance_system.conn, course_id),
+            "holidays": [{"date": str(h[0])[:10], "name": h[1],
+                          "day_name": working_days.day_name(h[0])} for h in holidays],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @app.get("/api/student/subjects")
 async def student_subject_attendance(session: Dict[str, Any] = Depends(require_student)):
     """Per-module attendance for the logged-in student."""

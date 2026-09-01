@@ -100,6 +100,21 @@ class TestApprovedLeave:
         assert not any(r["roll_no"] == "T002" for r in after["at_risk"]), \
             "student with fully-excused absences should no longer be at risk"
 
+    def test_zero_working_days_is_never_at_risk(self, seeded, db, patched_db):
+        """Found when a month boundary made every working day fall outside the
+        reporting period: 0 present / 0 working days scores 0%, which the
+        at-risk filter read as failing. A student with nothing to attend
+        cannot be at risk — and approving leave must never flag someone."""
+        today = date.today()
+        # Excuse the whole period for every student.
+        for sid in seeded["ids"].values():
+            self._approve_leave(db, sid, seeded["start"], today)
+
+        rep = reports.teacher_monthly_report(1, today.year, today.month)
+        assert all(r["working_days"] == 0 for r in rep["students"])
+        assert rep["at_risk"] == [], "nobody with zero working days should be at risk"
+        assert rep["at_risk_count"] == 0
+
     def test_missing_table_is_tolerated(self, seeded, db, patched_db):
         """Databases that have not run migrate_phase5 yet must still report,
         just without leave handling."""

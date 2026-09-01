@@ -291,7 +291,11 @@ def teacher_monthly_report(course_id: int, year: int, month: int, at_risk_thresh
 
     conn.close()
     rows.sort(key=lambda r: r["rate"])
-    at_risk = [r for r in rows if r["rate"] < at_risk_threshold]
+    # A student with no working days in the period cannot be at risk. Without
+    # this guard, someone whose every day was excused by approved leave scores
+    # 0/0 = 0% and is flagged — the opposite of what approving leave means.
+    at_risk = [r for r in rows
+               if r["working_days"] > 0 and r["rate"] < at_risk_threshold]
     return {
         "course_id": course_id,
         "batch": batch_name,

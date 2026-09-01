@@ -205,3 +205,26 @@ non-fatally at the end of each deploy.
 | Preview alerts | `./venv/bin/python send_alerts.py --dry-run` |
 | Preview reports | `./venv/bin/python send_reports.py --dry-run` |
 | Email config check | Admin dashboard → email card, or `/api/admin/email-status` |
+
+---
+
+## Importing a batch's academic calendar
+
+The published schedule (modules, exams, events, holidays) loads from CSV:
+
+```bash
+cd $HOME/student
+./venv/bin/python import_calendar.py --batch 2 --file data/calendar_pgcp_bda_aug2026.csv --dry-run
+./venv/bin/python import_calendar.py --batch 2 --file data/calendar_pgcp_bda_aug2026.csv
+```
+
+Check `--batch` against the real id first (`SELECT id, name FROM courses`).
+
+Re-running updates rather than duplicating, so a corrected calendar can simply
+be re-imported. The importer also widens the batch's start/end dates to cover
+the calendar, and warns about dates that contradict each other — an exam
+falling on a holiday or a Sunday.
+
+Only `module` rows become subjects and can carry attendance. Events (picnics,
+revision days, exams) stay separate; holidays go to the `holidays` table and
+are automatically excluded from working days.

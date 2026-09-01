@@ -12,6 +12,24 @@ import pytest
 import reports
 
 
+def same_month_pair(work_days):
+    """Two working days that share a month.
+
+    The seeded fixture runs backwards from today, so it straddles a month
+    boundary for part of every month. A test that marks work_days[0] and
+    work_days[1] and then reports on "this month" passes for most of the month
+    and fails on the 1st — which is exactly how this was found.
+    """
+    from collections import defaultdict
+    by_month = defaultdict(list)
+    for d in work_days:
+        by_month[(d.year, d.month)].append(d)
+    for days in by_month.values():
+        if len(days) >= 2:
+            return days[0], days[1]
+    raise AssertionError("fixture has no month with two working days")
+
+
 class TestDayCredit:
     """The pure scoring rule, independent of any database."""
 
@@ -83,8 +101,7 @@ class TestHalfDayIsOptIn:
         day = seeded["work_days"][0]
         self._mark(db, sid, day, "morning_1")
 
-        today = date.today()
-        rep = reports.student_monthly_report(sid, today.year, today.month)
+        rep = reports.student_monthly_report(sid, day.year, day.month)
         assert rep["present_days"] == 1.0
 
     def test_morning_only_scores_half_when_enabled(self, seeded, db, patched_db):
@@ -94,8 +111,7 @@ class TestHalfDayIsOptIn:
         db.execute("UPDATE courses SET half_day_enabled = 1 WHERE id = 1")
         db.commit()
 
-        today = date.today()
-        rep = reports.student_monthly_report(sid, today.year, today.month)
+        rep = reports.student_monthly_report(sid, day.year, day.month)
         assert rep["present_days"] == 0.5
         assert rep["half_day"] is True
 
@@ -107,36 +123,37 @@ class TestHalfDayIsOptIn:
         db.execute("UPDATE courses SET half_day_enabled = 1 WHERE id = 1")
         db.commit()
 
-        today = date.today()
-        rep = reports.student_monthly_report(sid, today.year, today.month)
+        rep = reports.student_monthly_report(sid, day.year, day.month)
         assert rep["present_days"] == 1.0
 
     def test_partial_days_are_reported_separately(self, seeded, db, patched_db):
         """A half day is neither present nor absent — the student should be
         able to see which days they only half-attended."""
         sid = seeded["ids"]["C"]
-        self._mark(db, sid, seeded["work_days"][0], "morning_1")
-        self._mark(db, sid, seeded["work_days"][1], "afternoon_2")
+        # Two consecutive days from the same month, so the assertion does not
+        # depend on which side of a month boundary today happens to fall.
+        d1, d2 = same_month_pair(seeded["work_days"])
+        self._mark(db, sid, d1, "morning_1")
+        self._mark(db, sid, d2, "afternoon_2")
         db.execute("UPDATE courses SET half_day_enabled = 1 WHERE id = 1")
         db.commit()
 
-        today = date.today()
-        rep = reports.student_monthly_report(sid, today.year, today.month)
+        rep = reports.student_monthly_report(sid, d1.year, d1.month)
         assert rep["partial_days"] == 2
         assert len(rep["partial_dates"]) == 2
         # those two days are not counted as absences
-        assert seeded["work_days"][0].strftime("%d %b (%a)") not in rep["absent_dates"]
+        assert d1.strftime("%d %b (%a)") not in rep["absent_dates"]
 
     def test_rate_uses_fractional_credit(self, seeded, db, patched_db):
         """Two half days out of N working days must read as 1/N, not 2/N."""
         sid = seeded["ids"]["C"]
-        self._mark(db, sid, seeded["work_days"][0], "morning_1")
-        self._mark(db, sid, seeded["work_days"][1], "morning_1")
+        d1, d2 = same_month_pair(seeded["work_days"])
+        self._mark(db, sid, d1, "morning_1")
+        self._mark(db, sid, d2, "morning_1")
         db.execute("UPDATE courses SET half_day_enabled = 1 WHERE id = 1")
         db.commit()
 
-        today = date.today()
-        rep = reports.student_monthly_report(sid, today.year, today.month)
+        rep = reports.student_monthly_report(sid, d1.year, d1.month)
         assert rep["present_days"] == 1.0
         expected = round(1.0 / rep["working_days"] * 100, 1)
         assert rep["rate"] == expected

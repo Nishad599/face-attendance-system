@@ -67,7 +67,7 @@ if not defined DIRTY (
 )
 
 echo Uncommitted changes:
-git status --short
+git --no-pager status --short
 echo.
 
 set "CONFIRM="
@@ -95,7 +95,7 @@ if errorlevel 1 (
 
 echo.
 echo Staged:
-git diff --cached --stat
+git --no-pager diff --cached --stat
 echo.
 
 set "COMMIT_MSG="
@@ -148,7 +148,7 @@ if errorlevel 1 (
         goto :end
     )
     echo !AHEAD! commit^(s^) to push:
-    git log --oneline "@{u}..HEAD"
+    git --no-pager log --oneline "@{u}..HEAD"
     echo.
 )
 

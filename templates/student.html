@@ -195,6 +195,14 @@
             </div>
         </div>
 
+        <div class="card" id="scheduleCard" style="display:none;">
+            <h2>Course calendar</h2>
+            <p class="muted" style="margin-top:-8px;">Your full schedule — modules, exams and
+                events. <span id="schedToggle"></span></p>
+            <div id="schedList"></div>
+            <div id="holidayList" style="margin-top:18px;"></div>
+        </div>
+
         <div class="card" id="timetableCard" style="display:none;">
             <h2>My timetable</h2>
             <p class="muted" style="margin-top:-8px;" id="ttHint"></p>
@@ -431,6 +439,100 @@
             } catch (e) {
                 alert('Connection failed. Try again.');
             }
+        }
+
+        // ---------- Course calendar ----------
+        const KIND_STYLE = {
+            module:    { icon: 'fa-book',              colour: '#0052CC', label: 'Module' },
+            exam:      { icon: 'fa-file-pen',          colour: '#DE350B', label: 'Exam' },
+            revision:  { icon: 'fa-rotate-left',       colour: '#FF8B00', label: 'Revision' },
+            interview: { icon: 'fa-user-tie',          colour: '#6554C0', label: 'Interview' },
+            placement: { icon: 'fa-briefcase',         colour: '#00875A', label: 'Placement' },
+            induction: { icon: 'fa-graduation-cap',    colour: '#0065FF', label: 'Ceremony' },
+            activity:  { icon: 'fa-people-group',      colour: '#36B37E', label: 'Activity' },
+            event:     { icon: 'fa-calendar-day',      colour: '#6B778C', label: 'Event' }
+        };
+
+        let _schedItems = [], _schedShowAll = false;
+
+        function fmtRange(a, b) {
+            if (!a) return '';
+            const opts = { day: '2-digit', month: 'short' };
+            const d1 = new Date(a + 'T00:00:00');
+            const s1 = d1.toLocaleDateString('en-GB', opts);
+            if (!b || b === a) return s1 + ' ' + d1.getFullYear();
+            const d2 = new Date(b + 'T00:00:00');
+            const s2 = d2.toLocaleDateString('en-GB', opts) + ' ' + d2.getFullYear();
+            return s1 + ' – ' + s2;
+        }
+
+        function renderSchedule() {
+            // Default to the current and upcoming items: a 6-month calendar is
+            // a wall of text, and what's finished is rarely what you came for.
+            const items = _schedShowAll
+                ? _schedItems
+                : _schedItems.filter(i => i.status !== 'done');
+
+            document.getElementById('schedList').innerHTML = items.map(function (i) {
+                const style = KIND_STYLE[i.type === 'module' ? 'module' : (i.kind || 'event')]
+                              || KIND_STYLE.event;
+                const isNow = i.status === 'current';
+                const dim = i.status === 'done' ? 'opacity:.55;' : '';
+                const bits = [];
+                if (i.faculty) bits.push(esc(i.faculty));
+                if (i.hours) bits.push(esc(i.hours));
+                if (i.days) bits.push(i.days + ' days');
+                if (i.exam_date) bits.push('exam ' + fmtRange(i.exam_date));
+                if (i.coordinator) bits.push('coord: ' + esc(i.coordinator));
+
+                return '<div style="display:flex;gap:12px;padding:12px 0;' +
+                    'border-bottom:1px solid var(--border-color);' + dim + '">' +
+                    '<div style="flex:0 0 26px;color:' + style.colour + ';font-size:1rem;">' +
+                        '<i class="fa-solid ' + style.icon + '"></i></div>' +
+                    '<div style="flex:1;min-width:0;">' +
+                        '<div style="font-weight:600;">' +
+                            (i.sequence != null ? '<span class="muted">' + i.sequence + '. </span>' : '') +
+                            esc(i.title) +
+                            (isNow ? ' <span class="app-badge app-badge-success">in progress</span>' : '') +
+                        '</div>' +
+                        '<div class="muted" style="font-size:.85rem;margin-top:2px;">' +
+                            fmtRange(i.start_date, i.end_date) +
+                            (bits.length ? ' · ' + bits.join(' · ') : '') +
+                        '</div>' +
+                    '</div></div>';
+            }).join('') || '<p class="muted">Nothing scheduled.</p>';
+
+            const doneCount = _schedItems.filter(i => i.status === 'done').length;
+            document.getElementById('schedToggle').innerHTML = doneCount
+                ? '<a href="#" onclick="toggleSchedule(event)">' +
+                  (_schedShowAll ? 'Hide' : 'Show') + ' ' + doneCount + ' completed</a>'
+                : '';
+        }
+
+        function toggleSchedule(e) {
+            e.preventDefault();
+            _schedShowAll = !_schedShowAll;
+            renderSchedule();
+        }
+
+        async function loadSchedule() {
+            try {
+                const d = await (await fetch('/api/student/schedule')).json();
+                _schedItems = (d && d.items) || [];
+                if (!_schedItems.length) return;
+                document.getElementById('scheduleCard').style.display = '';
+                renderSchedule();
+
+                const hols = (d && d.holidays) || [];
+                document.getElementById('holidayList').innerHTML = hols.length
+                    ? '<div style="font-weight:600;margin-bottom:6px;">Holidays</div>' +
+                      hols.map(h => '<span class="app-badge app-badge-warning" ' +
+                          'style="margin:0 6px 6px 0;display:inline-block;">' +
+                          esc(h.name) + ' — ' + fmtRange(h.date) +
+                          (h.day_name ? ' (' + esc(h.day_name.slice(0, 3)) + ')' : '') +
+                          '</span>').join('')
+                    : '';
+            } catch (e) { /* card stays hidden */ }
         }
 
         // ---------- Modules & timetable ----------
@@ -830,6 +932,7 @@
         loadConsent();
         loadSubjects();
         loadTimetable();
+        loadSchedule();
     </script>
 </body>
 
