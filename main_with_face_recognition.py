@@ -8,7 +8,6 @@ import sys
 from fastapi.responses import HTMLResponse
 from photo_utils import create_student_photo_directory, get_student_photo_path
 import os
-import time
 from db import get_connection, is_postgres
 import base64
 import json
@@ -44,7 +43,9 @@ def sweep_stale_registration_files(max_age_hours: int = 6) -> int:
     than a few hours is certainly dead. Best-effort; never raises.
     """
     import glob
-    cutoff = time.time() - max_age_hours * 3600
+    # NB: `from datetime import time` at the top of this module shadows the
+    # stdlib `time` module, so use datetime for the clock here.
+    cutoff = datetime.now().timestamp() - max_age_hours * 3600
     removed = 0
     for path in glob.glob("temp_encodings_*.npy"):
         try:
