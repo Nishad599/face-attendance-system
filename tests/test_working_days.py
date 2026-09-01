@@ -68,7 +68,7 @@ class TestWorkingDayRule:
         assert "Sunday" in why
 
     def test_batch_holiday_blocks_that_batch(self, seeded, db):
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, 'Diwali', 1)",
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, 'Diwali', 'holiday', 1)",
                    (MONDAY.strftime("%Y-%m-%d"),))
         db.commit()
         ok, why = wd.check(db, 1, MONDAY)
@@ -78,13 +78,13 @@ class TestWorkingDayRule:
     def test_a_batch_holiday_does_not_block_another_batch(self, seeded, db):
         """The old check matched any holiday row regardless of batch, so one
         batch's day off silently blocked everyone."""
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, 'BDA only', 1)",
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, 'BDA only', 'holiday', 1)",
                    (MONDAY.strftime("%Y-%m-%d"),))
         db.commit()
         assert wd.is_working_day(db, 2, MONDAY), "batch 2 should be unaffected"
 
     def test_institute_wide_holiday_blocks_every_batch(self, seeded, db):
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, 'Republic Day', NULL)",
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, 'Republic Day', 'holiday', NULL)",
                    (MONDAY.strftime("%Y-%m-%d"),))
         db.commit()
         assert not wd.is_working_day(db, 1, MONDAY)
@@ -101,13 +101,26 @@ class TestWorkingDayRule:
         assert why.startswith("06 Sep 2026")
         assert "cannot be marked" in why
 
-    def test_holiday_with_no_name_still_blocks(self, seeded, db):
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, NULL, 1)",
+    def test_holiday_with_a_blank_name_still_blocks(self, seeded, db):
+        """`holidays.name` is NOT NULL in production, but it can be empty —
+        the day must still block, with a generic label."""
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, '', 'holiday', 1)",
                    (MONDAY.strftime("%Y-%m-%d"),))
         db.commit()
         ok, why = wd.check(db, 1, MONDAY)
         assert not ok
         assert "Holiday" in why
+
+    def test_two_batches_can_share_a_holiday_date(self, seeded, db):
+        """Both batches take Independence Day off. The old schema had UNIQUE on
+        `date` alone, so the second batch's calendar import crashed."""
+        for cid, label in ((1, "Independence Day"), (2, "Independence Day")):
+            db.execute(
+                "INSERT INTO holidays (date, name, type, course_id) VALUES (?, ?, 'holiday', ?)",
+                (MONDAY.strftime("%Y-%m-%d"), label, cid))
+        db.commit()
+        assert not wd.is_working_day(db, 1, MONDAY)
+        assert not wd.is_working_day(db, 2, MONDAY)
 
     def test_missing_table_does_not_raise(self, seeded, db):
         """A broken holidays table must not stop attendance being marked on an
@@ -121,7 +134,7 @@ class TestWorkingDayRule:
 class TestHolidayName:
 
     def test_returns_the_name(self, seeded, db):
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, 'Holi', 1)",
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, 'Holi', 'holiday', 1)",
                    (MONDAY.strftime("%Y-%m-%d"),))
         db.commit()
         assert wd.holiday_name(db, 1, MONDAY) == "Holi"

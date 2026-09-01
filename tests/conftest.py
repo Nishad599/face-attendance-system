@@ -61,11 +61,19 @@ CREATE TABLE attendance (
     course_id INTEGER,
     subject_id INTEGER
 );
+-- Mirrors production, including `type NOT NULL` — a laxer fixture here let
+-- import_calendar.py ship without it and crash on the real database.
+-- UNIQUE is (date, course_id) as of migrate_phase8: the old date-only
+-- constraint stopped two batches taking the same public holiday.
 CREATE TABLE holidays (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date DATE, name TEXT, type TEXT,
-    created_at TIMESTAMP, course_id INTEGER
+    date DATE NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    course_id INTEGER
 );
+CREATE UNIQUE INDEX idx_holidays_date_course ON holidays (date, course_id);
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -144,7 +152,7 @@ CREATE TABLE subjects (
     min_attendance REAL DEFAULT 75, start_date DATE, end_date DATE,
     is_active INTEGER DEFAULT 1, created_at TIMESTAMP,
     sequence INTEGER, faculty TEXT, coordinator TEXT, hours TEXT,
-    teaching_days INTEGER, exam_date DATE
+    teaching_days INTEGER, exam_date DATE, mid_quiz_date DATE
 );
 CREATE TABLE academic_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

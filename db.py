@@ -140,6 +140,35 @@ class _PgConnection:
 # Public API
 # ---------------------------------------------------------------------------
 
+# Seconds a statement waits for a lock before giving up. Attendance arrives in
+# bursts — sixty students marking at the start of a slot while teachers have
+# the portal open — so a short timeout surfaces as "database is locked".
+SQLITE_BUSY_TIMEOUT_MS = int(os.getenv("SQLITE_BUSY_TIMEOUT_MS", "15000") or 15000)
+
+
+def _tune_sqlite(conn):
+    """Apply the pragmas that make concurrent use survivable.
+
+    The default DELETE journal has one writer block every reader for the whole
+    write. WAL lets readers carry on while a write is in progress, which is the
+    difference between a slot-start burst working and failing.
+
+    journal_mode is a persistent property of the file, so this only really
+    takes effect once; the others are per-connection. Best-effort: a database
+    that refuses these should still open.
+    """
+    try:
+        conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode=WAL")
+        # NORMAL is the standard companion to WAL: still crash-safe, without
+        # an fsync on every single commit.
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except Exception as e:
+        print(f"[WARN] could not tune SQLite connection: {e}")
+    return conn
+
+
 def get_connection(db_path='attendance.db', dict_rows=False):
     """Return a database connection for the active backend.
 
@@ -152,10 +181,11 @@ def get_connection(db_path='attendance.db', dict_rows=False):
         conn = psycopg2.connect(DATABASE_URL)
         return _PgConnection(conn, dict_rows=dict_rows)
     else:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn = sqlite3.connect(db_path, check_same_thread=False,
+                               timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
         if dict_rows:
             conn.row_factory = sqlite3.Row
-        return conn
+        return _tune_sqlite(conn)
 
 
 def table_exists(conn, table_name):

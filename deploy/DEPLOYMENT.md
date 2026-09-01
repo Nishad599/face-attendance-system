@@ -214,9 +214,18 @@ The published schedule (modules, exams, events, holidays) loads from CSV:
 
 ```bash
 cd $HOME/student
+# PGCP-BDA
 ./venv/bin/python import_calendar.py --batch 2 --file data/calendar_pgcp_bda_aug2026.csv --dry-run
 ./venv/bin/python import_calendar.py --batch 2 --file data/calendar_pgcp_bda_aug2026.csv
+
+# PGCP-AI
+./venv/bin/python import_calendar.py --batch 3 --file data/calendar_pgcp_ai_feb2026.csv --dry-run
+./venv/bin/python import_calendar.py --batch 3 --file data/calendar_pgcp_ai_feb2026.csv
 ```
+
+Each calendar is scoped to its batch: students only ever see their own, and
+holidays declared for one batch do not affect the other. Teachers can add
+further entries themselves from the **Modules** tab of the teacher portal.
 
 Check `--batch` against the real id first (`SELECT id, name FROM courses`).
 

@@ -315,6 +315,42 @@
             </div>
 
             <div class="card">
+                <h2>Course calendar</h2>
+                <p class="muted" style="margin-top:-8px;">Add anything your students should see —
+                    a guest lecture, a test, a trip. It appears in the calendar of
+                    <strong>this batch only</strong>. Sundays are allowed.
+                    Choosing <em>Holiday</em> also stops attendance being marked that day.</p>
+                <div class="inline-form">
+                    <div class="app-form-group"><label class="app-form-label">Title</label>
+                        <input type="text" id="evTitle" class="app-form-input" placeholder="e.g. Guest lecture: Kafka"></div>
+                    <div class="app-form-group"><label class="app-form-label">Type</label>
+                        <select id="evKind" class="app-form-input">
+                            <option value="event">Event</option>
+                            <option value="exam">Exam / quiz</option>
+                            <option value="revision">Revision</option>
+                            <option value="interview">Mock interview</option>
+                            <option value="placement">Placement</option>
+                            <option value="induction">Ceremony</option>
+                            <option value="activity">Activity / trip</option>
+                            <option value="holiday">Holiday (blocks attendance)</option>
+                        </select></div>
+                    <div class="app-form-group"><label class="app-form-label">From</label>
+                        <input type="date" id="evStart" class="app-form-input" onchange="syncEventEnd()"></div>
+                    <div class="app-form-group"><label class="app-form-label">To</label>
+                        <input type="date" id="evEnd" class="app-form-input"></div>
+                    <div class="app-form-group"><label class="app-form-label">Note</label>
+                        <input type="text" id="evNotes" class="app-form-input" placeholder="Optional"></div>
+                    <button class="app-btn app-btn-primary" onclick="addEvent()"><i class="fa-solid fa-plus"></i> Add</button>
+                </div>
+                <div class="app-table-wrapper" style="margin-top:12px;">
+                    <table class="app-table">
+                        <thead><tr><th>Dates</th><th>Entry</th><th>Type</th><th></th></tr></thead>
+                        <tbody id="eventRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Weekly timetable</h2>
                 <p class="muted" style="margin-top:-8px;">Which module runs in which slot.
                     Students see this in their portal, and new attendance is tagged with it.</p>
@@ -727,6 +763,7 @@
                 </tr>`;
             }).join('') : '<tr><td colspan="6" class="muted">No modules yet — add one above.</td></tr>';
 
+            await loadEvents(cid);
             await loadTimetableEditor(cid);
         }
 
@@ -759,6 +796,83 @@
             const d = await (await fetch(`/api/subjects/${id}`, { method: 'DELETE' })).json();
             toast(d.message || (d.success ? 'Removed' : 'Failed'), d.success ? 'success' : 'error');
             if (d.success) loadModules();
+        }
+
+        // ---------- Course calendar entries ----------
+        const EV_LABEL = {
+            module: 'Module', exam: 'Exam', revision: 'Revision', interview: 'Interview',
+            placement: 'Placement', induction: 'Ceremony', activity: 'Activity', event: 'Event'
+        };
+
+        function syncEventEnd() {
+            // Most entries are one day; mirror the start forward.
+            const s = document.getElementById('evStart'), e = document.getElementById('evEnd');
+            e.min = s.value;
+            if (!e.value || e.value < s.value) e.value = s.value;
+        }
+
+        async function loadEvents(cid) {
+            const tbody = document.getElementById('eventRows');
+            const d = await (await fetch(`/api/courses/${cid}/schedule`)).json();
+            const rows = (d.items || []).filter(i => i.type === 'event');
+            const hols = d.holidays || [];
+
+            const evHtml = rows.map(i => {
+                const span = i.start_date === i.end_date
+                    ? esc(i.start_date)
+                    : esc(i.start_date) + ' → ' + esc(i.end_date);
+                return `<tr>
+                    <td>${span}</td>
+                    <td>${esc(i.title)}${i.notes ? '<br><span class="muted">' + esc(i.notes) + '</span>' : ''}</td>
+                    <td><span class="app-badge app-badge-neutral">${esc(EV_LABEL[i.kind] || i.kind)}</span></td>
+                    <td><button class="app-btn app-btn-danger app-btn-sm"
+                        onclick="removeEvent(${i.id}, '${esc(i.title).replace(/'/g, "\\'")}')">Remove</button></td>
+                </tr>`;
+            }).join('');
+
+            // Holidays live in a different table but belong in the same view.
+            const holHtml = hols.map(h => `<tr>
+                    <td>${esc(h.date)}<br><span class="muted" style="font-size:.8rem;">${esc(h.day_name || '')}</span></td>
+                    <td>${esc(h.name)}</td>
+                    <td><span class="app-badge app-badge-warning">Holiday</span></td>
+                    <td><span class="muted" style="font-size:.8rem;">manage in Holidays tab</span></td>
+                </tr>`).join('');
+
+            tbody.innerHTML = (evHtml + holHtml) ||
+                '<tr><td colspan="4" class="muted">Nothing on the calendar yet.</td></tr>';
+        }
+
+        async function addEvent() {
+            const cid = currentBatch();
+            if (!cid) { toast('Pick a batch first', 'error'); return; }
+            const title = document.getElementById('evTitle').value.trim();
+            const start_date = document.getElementById('evStart').value;
+            if (!title || !start_date) { toast('Title and start date are required', 'error'); return; }
+
+            const res = await fetch(`/api/courses/${cid}/events`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    kind: document.getElementById('evKind').value,
+                    start_date,
+                    end_date: document.getElementById('evEnd').value || start_date,
+                    notes: document.getElementById('evNotes').value.trim()
+                })
+            });
+            const d = await res.json();
+            toast(d.message || (d.success ? 'Added' : 'Failed'), d.success ? 'success' : 'error');
+            if (d.success) {
+                document.getElementById('evTitle').value = '';
+                document.getElementById('evNotes').value = '';
+                loadEvents(cid);
+            }
+        }
+
+        async function removeEvent(id, title) {
+            if (!confirm(`Remove "${title}" from the calendar?`)) return;
+            const d = await (await fetch(`/api/events/${id}`, { method: 'DELETE' })).json();
+            toast(d.message || (d.success ? 'Removed' : 'Failed'), d.success ? 'success' : 'error');
+            if (d.success) loadEvents(currentBatch());
         }
 
         async function loadTimetableEditor(cid) {

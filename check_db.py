@@ -14,7 +14,7 @@ REQUIRED_COLUMNS = {
     "slot_attendance": ["course_id"],
     "holidays": ["course_id"],
     "users": ["email"],
-    "subjects": ["sequence", "faculty", "exam_date"],
+    "subjects": ["sequence", "faculty", "exam_date", "mid_quiz_date"],
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",

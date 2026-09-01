@@ -8,6 +8,7 @@ import sys
 from fastapi.responses import HTMLResponse
 from photo_utils import create_student_photo_directory, get_student_photo_path
 import os
+import time
 from db import get_connection, is_postgres
 import base64
 import json
@@ -32,6 +33,29 @@ from analytics_manager import AnalyticsManager
 from anti_spoofing import anti_spoof_checker
 import timetable
 import working_days
+
+
+def sweep_stale_registration_files(max_age_hours: int = 6) -> int:
+    """Delete abandoned temp_encodings_*.npy scratch files.
+
+    Face registration writes one per session and removes it on completion —
+    but a student who starts and walks away leaves it behind forever. The
+    registration session itself expires after 30 minutes, so anything older
+    than a few hours is certainly dead. Best-effort; never raises.
+    """
+    import glob
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for path in glob.glob("temp_encodings_*.npy"):
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        except OSError:
+            continue        # in use, or already gone
+    if removed:
+        print(f"[OK] Cleaned up {removed} abandoned registration file(s)")
+    return removed
 
 # Initialize managers.
 # NOTE: the slot manager reads base tables (courses, session_configs) that are
@@ -1397,6 +1421,9 @@ class AttendanceSystem:
 
 # Initialize attendance system
 attendance_system = AttendanceSystem()
+
+# Clear scratch files left by registrations that were started and abandoned.
+sweep_stale_registration_files()
 
 # Now that base tables (courses, session_configs, students, …) exist, build the
 # slot manager (it reads those tables at construction time).
@@ -4892,6 +4919,110 @@ async def course_schedule(course_id: int,
             "holidays": [{"date": str(h[0])[:10], "name": h[1],
                           "day_name": working_days.day_name(h[0])} for h in holidays],
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+EVENT_KINDS = ["event", "exam", "revision", "interview", "placement",
+               "induction", "activity", "holiday"]
+
+
+@app.post("/api/courses/{course_id}/events")
+async def create_event(course_id: int, data: dict = Body(...),
+                       session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Add a calendar entry for a batch.
+
+    Visible only to that batch's students — every calendar read is scoped by
+    course_id. A 'holiday' kind writes to the holidays table instead, because
+    that is what excludes the day from attendance.
+    """
+    try:
+        assert_course_allowed(session, course_id)
+        title = (data.get("title") or "").strip()
+        kind = (data.get("kind") or "event").strip().lower()
+        start = working_days.as_date(data.get("start_date"))
+        end = working_days.as_date(data.get("end_date")) or start
+
+        if not title:
+            return {"success": False, "message": "Title is required"}
+        if not start:
+            return {"success": False, "message": "A valid start date is required"}
+        if end < start:
+            return {"success": False, "message": "End date cannot be before the start date"}
+        if kind not in EVENT_KINDS:
+            return {"success": False, "message": f"Unknown kind '{kind}'"}
+
+        cur = attendance_system.conn.cursor()
+
+        if kind == "holiday":
+            # Holidays are a different thing: they stop attendance being marked.
+            n, d = 0, start
+            while d <= end:
+                ds = d.strftime("%Y-%m-%d")
+                exists = cur.execute(
+                    "SELECT id FROM holidays WHERE date = ? AND "
+                    "(course_id = ? OR course_id IS NULL)", (ds, course_id)).fetchone()
+                if exists:
+                    cur.execute("UPDATE holidays SET name = ? WHERE id = ?", (title, exists[0]))
+                else:
+                    cur.execute(
+                        "INSERT INTO holidays (date, name, type, course_id) "
+                        "VALUES (?, ?, 'holiday', ?)", (ds, title, course_id))
+                n += 1
+                d += timedelta(days=1)
+            attendance_system.conn.commit()
+            audit(session, "holiday_add", target=title, course_id=course_id)
+            return {"success": True,
+                    "message": f"'{title}' added as a holiday ({n} day(s)). "
+                               f"Attendance cannot be marked on those days."}
+
+        dup = cur.execute(
+            "SELECT id FROM academic_events WHERE course_id = ? AND title = ? AND start_date = ?",
+            (course_id, title, start.strftime("%Y-%m-%d"))).fetchone()
+        if dup:
+            return {"success": False,
+                    "message": "That entry already exists on that date"}
+
+        cur.execute(
+            "INSERT INTO academic_events (course_id, title, kind, start_date, end_date, "
+            "notes, coordinator) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (course_id, title, kind, start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"),
+             (data.get("notes") or "").strip() or None,
+             (data.get("coordinator") or "").strip() or None))
+        attendance_system.conn.commit()
+        audit(session, "event_add", target=title, course_id=course_id)
+
+        # Sunday events are normal here (mock interviews, picnics), so this is
+        # information rather than a warning.
+        note = ""
+        if start.weekday() == 6:
+            note = " (note: that is a Sunday)"
+        return {"success": True, "message": f"'{title}' added to the calendar{note}",
+                "id": cur.lastrowid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/events/{event_id}")
+async def delete_event(event_id: int,
+                       session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Remove a calendar entry."""
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT course_id, title FROM academic_events WHERE id = ?", (event_id,)
+        ).fetchone()
+        if not row:
+            return {"success": False, "message": "Entry not found"}
+        assert_course_allowed(session, row[0])
+        attendance_system.conn.execute(
+            "DELETE FROM academic_events WHERE id = ?", (event_id,))
+        attendance_system.conn.commit()
+        audit(session, "event_delete", target=row[1], course_id=row[0])
+        return {"success": True, "message": f"'{row[1]}' removed"}
     except HTTPException:
         raise
     except Exception as e:

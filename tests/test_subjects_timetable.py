@@ -171,7 +171,7 @@ class TestSubjectAttendance:
                       if r["code"] == "ML-101")["expected"]
 
         workday = next(d for d in with_subjects["work_days"] if d.weekday() != 6)
-        db.execute("INSERT INTO holidays (date, name, course_id) VALUES (?, 'Test', 1)",
+        db.execute("INSERT INTO holidays (date, name, type, course_id) VALUES (?, 'Test', 'holiday', 1)",
                    (workday.strftime("%Y-%m-%d"),))
         db.commit()
 

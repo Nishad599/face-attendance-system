@@ -17,8 +17,9 @@ CSV columns (header row required):
     hours       free text, e.g. "120 hrs (36+44+40)"
     faculty     free text
     days        teaching days as printed
-    exam_date   YYYY-MM-DD (modules only)
-    coordinator free text
+    exam_date      YYYY-MM-DD (modules only)
+    mid_quiz_date  YYYY-MM-DD (modules only, optional)
+    coordinator    free text
 
 Re-running updates existing rows rather than duplicating them, so a corrected
 calendar can simply be re-imported.
@@ -66,6 +67,7 @@ def upsert_module(conn, course_id, r, dry):
     start = parse_date(r.get("start_date"))
     end = parse_date(r.get("end_date")) or start
     exam = parse_date(r.get("exam_date"))
+    mid = parse_date(r.get("mid_quiz_date"))
     seq = (r.get("seq") or "").strip()
     days = (r.get("days") or "").strip()
 
@@ -86,19 +88,20 @@ def upsert_module(conn, course_id, r, dry):
         (r.get("hours") or "").strip() or None,
         int(days) if days.isdigit() else None,
         exam.strftime("%Y-%m-%d") if exam else None,
+        mid.strftime("%Y-%m-%d") if mid else None,
         start.strftime("%Y-%m-%d"),
         end.strftime("%Y-%m-%d"),
     )
     if existing:
         conn.execute(
             "UPDATE subjects SET sequence=?, faculty=?, coordinator=?, hours=?, "
-            "teaching_days=?, exam_date=?, start_date=?, end_date=?, is_active=1 "
-            "WHERE id=?", (*params, existing[0]))
+            "teaching_days=?, exam_date=?, mid_quiz_date=?, start_date=?, end_date=?, "
+            "is_active=1 WHERE id=?", (*params, existing[0]))
         return "update", title
     conn.execute(
         "INSERT INTO subjects (course_id, name, min_attendance, sequence, faculty, "
-        "coordinator, hours, teaching_days, exam_date, start_date, end_date, is_active) "
-        "VALUES (?, ?, 75, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+        "coordinator, hours, teaching_days, exam_date, mid_quiz_date, start_date, "
+        "end_date, is_active) VALUES (?, ?, 75, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
         (course_id, title, *params))
     return "insert", title
 
@@ -168,14 +171,18 @@ def upsert_holiday(conn, course_id, r, dry):
     while d <= end:
         ds = d.strftime("%Y-%m-%d")
         if not dry:
+            # `type` is NOT NULL in the real schema — omitting it crashed the
+            # first production import.
             existing = conn.execute(
-                "SELECT id FROM holidays WHERE date = ? AND course_id = ?",
-                (ds, course_id)).fetchone()
+                "SELECT id FROM holidays WHERE date = ? AND "
+                "(course_id = ? OR course_id IS NULL)", (ds, course_id)).fetchone()
             if existing:
-                conn.execute("UPDATE holidays SET name = ? WHERE id = ?", (title, existing[0]))
+                conn.execute(
+                    "UPDATE holidays SET name = ?, type = 'holiday', course_id = ? WHERE id = ?",
+                    (title, course_id, existing[0]))
             else:
                 conn.execute(
-                    "INSERT INTO holidays (date, name, course_id) VALUES (?, ?, ?)",
+                    "INSERT INTO holidays (date, name, type, course_id) VALUES (?, ?, 'holiday', ?)",
                     (ds, title, course_id))
         n += 1
         d += timedelta(days=1)
@@ -199,17 +206,30 @@ def check_clashes(conn, course_id):
     except Exception:
         return warnings
 
-    for name, exam in conn.execute(
-        "SELECT name, exam_date FROM subjects WHERE course_id = ? AND exam_date IS NOT NULL",
-        (course_id,),
+    # Exams and mid-quizzes both matter; a picnic on a Sunday is fine, an exam
+    # on one is not.
+    for name, start, exam, mid in conn.execute(
+        "SELECT name, start_date, exam_date, mid_quiz_date FROM subjects "
+        "WHERE course_id = ?", (course_id,),
     ).fetchall():
-        key = str(exam)[:10]
-        if key in holidays:
-            warnings.append(f"'{name}' exam on {key} falls on a holiday ({holidays[key]})")
-        d = parse_date(key)
-        if d and d.weekday() == 6:
-            warnings.append(f"'{name}' exam on {key} falls on a Sunday")
+        for label, value in (("exam", exam), ("mid quiz", mid)):
+            if not value:
+                continue
+            key = str(value)[:10]
+            if key in holidays:
+                warnings.append(
+                    f"'{name}' {label} on {key} falls on a holiday ({holidays[key]})")
+            d = parse_date(key)
+            if d and d.weekday() == 6:
+                warnings.append(f"'{name}' {label} on {key} falls on a Sunday")
+            # A quiz dated before its own module begins is a transcription slip.
+            s_d = parse_date(str(start)[:10]) if start else None
+            if d and s_d and d < s_d:
+                warnings.append(
+                    f"'{name}' {label} on {key} is BEFORE the module starts ({s_d})")
 
+    # Events on a Sunday are deliberate here (mock interviews, picnics), so
+    # only a clash with a declared holiday is worth reporting.
     for title, start in conn.execute(
         "SELECT title, start_date FROM academic_events WHERE course_id = ?", (course_id,)
     ).fetchall():
