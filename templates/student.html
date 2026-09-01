@@ -44,8 +44,20 @@
         /* This is the most-visited page in the app and almost all of that
            traffic is on a phone, so the small-screen layout is not an
            afterthought here. */
+        /* Sticky tab bar: on a long page the student can switch section
+           without scrolling back to the top. */
+        #studentTabs { position: sticky; top: 0; z-index: 5;
+            background: var(--bg-page); padding-top: 4px; }
+
         @media (max-width: 640px) {
             .app-page { padding: 12px; }
+            /* Four tabs will not fit across a phone: let them scroll
+               sideways rather than wrap into a ragged second row. */
+            #studentTabs { overflow-x: auto; -webkit-overflow-scrolling: touch;
+                scrollbar-width: none; }
+            #studentTabs::-webkit-scrollbar { display: none; }
+            #studentTabs .app-tab { padding: 10px 14px; font-size: 0.88rem;
+                white-space: nowrap; }
             .app-page-header h1 { font-size: 1.35rem; }
             /* 2-up stat cards beat a single column: the four numbers stay
                visible together without scrolling. */
@@ -163,6 +175,14 @@
             </button>
         </div>
 
+        <div class="app-tabs" id="studentTabs">
+            <button class="app-tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+            <button class="app-tab" data-tab="calendar" onclick="switchTab('calendar')">Calendar</button>
+            <button class="app-tab" data-tab="requests" onclick="switchTab('requests')">Requests</button>
+            <button class="app-tab" data-tab="details" onclick="switchTab('details')">My details</button>
+        </div>
+
+        <div id="tab-overview">
         <div class="grid">
             <div class="stat-card" style="text-align:center;">
                 <div class="lbl">Attendance</div>
@@ -183,6 +203,19 @@
             </p>
         </div>
 
+        <div class="card">
+            <h2>Recent attendance</h2>
+            <div class="app-table-wrapper">
+                <table class="app-table">
+                    <thead><tr><th>Date</th><th>Time In</th><th>Session</th><th>Type</th></tr></thead>
+                    <tbody id="historyRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        </div>
+
+        <div id="tab-calendar" style="display:none;">
         <div class="card" id="subjectsCard" style="display:none;">
             <h2>My modules</h2>
             <p class="muted" style="margin-top:-8px;">Attendance counted per module, against
@@ -214,59 +247,9 @@
             </div>
         </div>
 
-        <div class="card">
-            <h2>Recent attendance</h2>
-            <div class="app-table-wrapper">
-                <table class="app-table">
-                    <thead><tr><th>Date</th><th>Time In</th><th>Session</th><th>Type</th></tr></thead>
-                    <tbody id="historyRows"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
-                </table>
-            </div>
         </div>
 
-        <div class="card">
-            <h2>My details</h2>
-            <p class="muted" style="margin-top:-8px;">Edit anything below and submit — the change
-                is applied once your teacher approves it.</p>
-
-            <div id="pcBanner" class="banner" style="display:none;margin-bottom:16px;"></div>
-
-            <div class="form-row">
-                <div class="app-form-group" style="margin:0;">
-                    <label class="app-form-label">Roll number</label>
-                    <input type="text" id="pcRoll" class="app-form-input">
-                </div>
-                <div class="app-form-group" style="margin:0;">
-                    <label class="app-form-label">Full name</label>
-                    <input type="text" id="pcName" class="app-form-input">
-                </div>
-                <div class="app-form-group" style="margin:0;">
-                    <label class="app-form-label">Email</label>
-                    <input type="email" id="pcEmail" class="app-form-input">
-                </div>
-                <div class="app-form-group" style="margin:0;">
-                    <label class="app-form-label">Date of birth</label>
-                    <input type="date" id="pcDob" class="app-form-input">
-                </div>
-                <div class="app-form-group" style="margin:0;flex:1;min-width:200px;">
-                    <label class="app-form-label">Reason (optional)</label>
-                    <input type="text" id="pcReason" class="app-form-input" placeholder="e.g. surname spelt wrong">
-                </div>
-                <button class="app-btn app-btn-primary" id="pcSubmit" onclick="submitProfileChange()">
-                    Request change
-                </button>
-                <button class="app-btn app-btn-subtle" onclick="loadProfile()">Reset</button>
-            </div>
-            <div id="pcMsg" class="muted" style="margin-top:10px;"></div>
-
-            <div class="app-table-wrapper" style="margin-top:16px;">
-                <table class="app-table">
-                    <thead><tr><th>Requested</th><th>Changes</th><th>Status</th></tr></thead>
-                    <tbody id="pcRows"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
+        <div id="tab-requests" style="display:none;">
         <div class="card">
             <h2>Attendance dispute</h2>
             <p class="muted" style="margin-top:-8px;">Were you present but not marked? Raise a request (last 30 days). Your teacher will review it.</p>
@@ -329,6 +312,54 @@
                 </table>
             </div>
         </div>
+        </div>
+
+        <div id="tab-details" style="display:none;">
+        <div class="card">
+            <h2>My details</h2>
+            <p class="muted" style="margin-top:-8px;">Edit anything below and submit — the change
+                is applied once your teacher approves it.</p>
+
+            <div id="pcBanner" class="banner" style="display:none;margin-bottom:16px;"></div>
+
+            <div class="form-row">
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Roll number</label>
+                    <input type="text" id="pcRoll" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Full name</label>
+                    <input type="text" id="pcName" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Email</label>
+                    <input type="email" id="pcEmail" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;">
+                    <label class="app-form-label">Date of birth</label>
+                    <input type="date" id="pcDob" class="app-form-input">
+                </div>
+                <div class="app-form-group" style="margin:0;flex:1;min-width:200px;">
+                    <label class="app-form-label">Reason (optional)</label>
+                    <input type="text" id="pcReason" class="app-form-input" placeholder="e.g. surname spelt wrong">
+                </div>
+                <button class="app-btn app-btn-primary" id="pcSubmit" onclick="submitProfileChange()">
+                    Request change
+                </button>
+                <button class="app-btn app-btn-subtle" onclick="loadProfile()">Reset</button>
+            </div>
+            <div id="pcMsg" class="muted" style="margin-top:10px;"></div>
+
+            <div class="app-table-wrapper" style="margin-top:16px;">
+                <table class="app-table">
+                    <thead><tr><th>Requested</th><th>Changes</th><th>Status</th></tr></thead>
+                    <tbody id="pcRows"><tr><td colspan="3" class="muted">Loading…</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        </div>
+
     </div>
 
     <script>
@@ -925,14 +956,47 @@
             });
         })();
 
+        // ---------- Tabs ----------
+        // Each tab's data is fetched the first time it is opened, so the
+        // initial page load only pays for Overview.
+        const TAB_LOADERS = {
+            overview: [load],
+            calendar: [loadSubjects, loadTimetable, loadSchedule],
+            requests: [loadGrievances, loadLeaves],
+            details:  [loadProfile],
+        };
+        const _tabLoaded = {};
+
+        function switchTab(tab) {
+            document.querySelectorAll('#studentTabs .app-tab').forEach(function (b) {
+                b.classList.toggle('active', b.dataset.tab === tab);
+            });
+            Object.keys(TAB_LOADERS).forEach(function (t) {
+                const el = document.getElementById('tab-' + t);
+                if (el) el.style.display = (t === tab) ? '' : 'none';
+            });
+            if (!_tabLoaded[tab]) {
+                _tabLoaded[tab] = true;
+                (TAB_LOADERS[tab] || []).forEach(function (fn) {
+                    try { fn(); } catch (e) { console.error(tab, e); }
+                });
+            }
+            // Remember the tab so a refresh (or the PWA resuming) stays put.
+            try { localStorage.setItem('studentTab', tab); } catch (e) { }
+        }
+
+        // Overview is always loaded: its stats also drive the greeting, the
+        // face-registration banner and the consent prompt.
         load();
-        loadGrievances();
-        loadProfile();
-        loadLeaves();
         loadConsent();
-        loadSubjects();
-        loadTimetable();
-        loadSchedule();
+        _tabLoaded.overview = true;
+
+        (function restoreTab() {
+            let saved = 'overview';
+            try { saved = localStorage.getItem('studentTab') || 'overview'; } catch (e) { }
+            if (!document.getElementById('tab-' + saved)) saved = 'overview';
+            switchTab(saved);
+        })();
     </script>
 </body>
 
