@@ -552,59 +552,74 @@ class AttendanceSlotManager:
                 'slot_active': False
             }
     
-    def get_live_student_count(self, date_str: Optional[str] = None) -> Dict:
+    def get_live_student_count(self, date_str: Optional[str] = None,
+                               course_id: Optional[int] = None) -> Dict:
         """
-        Get live count of students present today
-        
+        Get live count of students present today.
+
         Args:
-            date_str: Date to check, defaults to IST today
-            
+            date_str:  Date to check, defaults to IST today
+            course_id: Restrict to one batch (the terminal's batch). None = all
+                       batches, which is what the staff dashboard wants.
+
         Returns:
             Dict with detailed attendance counts
         """
         if date_str is None:
             date_str = get_ist_date_str()
-        
+
         try:
             cursor = self.conn.cursor()
-            
-            # Get total active students
-            cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
+
+            # Batch scoping. A terminal is bound to one course, so its totals
+            # must not include students from other batches.
+            if course_id is None:
+                stu_where, stu_args = "", ()
+                att_where, att_args = "", ()
+            else:
+                stu_where, stu_args = " AND course_id = ?", (course_id,)
+                att_where, att_args = " AND course_id = ?", (course_id,)
+
+            # Total active students in scope
+            cursor.execute(
+                "SELECT COUNT(*) FROM students WHERE status = 'active'" + stu_where,
+                stu_args)
             total_students = cursor.fetchone()[0]
-            
-            # Get counts by slot
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE 'morning%'
-            ''', (date_str,))
+
+            # Presence comes from `attendance`, the table the app actually
+            # writes to. `slot_attendance` is legacy and stays empty, which is
+            # why this used to report 0 present / 0%.
+            cursor.execute(
+                "SELECT COUNT(DISTINCT student_id) FROM attendance "
+                "WHERE date = ? AND session_type LIKE 'morning%'" + att_where,
+                (date_str,) + att_args)
             morning_count = cursor.fetchone()[0]
-            
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE 'afternoon%'
-            ''', (date_str,))
+
+            cursor.execute(
+                "SELECT COUNT(DISTINCT student_id) FROM attendance "
+                "WHERE date = ? AND session_type LIKE 'afternoon%'" + att_where,
+                (date_str,) + att_args)
             afternoon_count = cursor.fetchone()[0]
-            
-            # Get unique students present (attended at least one slot)
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id)
-                FROM slot_attendance 
-                WHERE date = ?
-            ''', (date_str,))
-            
+
+            # Unique students present (attended at least one slot)
+            cursor.execute(
+                "SELECT COUNT(DISTINCT student_id) FROM attendance "
+                "WHERE date = ?" + att_where,
+                (date_str,) + att_args)
             total_present = cursor.fetchone()[0]
-            absent_count = total_students - total_present
-            
+
+            absent_count = max(total_students - total_present, 0)
+
             # Get current slot info
             current_slot = self.get_current_slot()
             next_slot = self.get_next_slot()
-            
-            # Calculate attendance percentage
+
             attendance_percentage = (total_present / total_students * 100) if total_students > 0 else 0
-            
+
             return {
                 'success': True,
                 'date': date_str,
+                'course_id': course_id,
                 'total_students': total_students,
                 'total_present': total_present,
                 'total_absent': absent_count,
@@ -615,7 +630,7 @@ class AttendanceSlotManager:
                 'next_slot': next_slot,
                 'last_updated': get_ist_time_str()
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting live count: {str(e)}")
             return {
@@ -625,7 +640,7 @@ class AttendanceSlotManager:
                 'total_present': 0,
                 'total_absent': 0
             }
-    
+
     def update_daily_summary(self, date_str: str):
         """Update the daily attendance summary table"""
         try:

@@ -6201,11 +6201,29 @@ async def get_student_sparkline(student_id: int, days: int = 14, session: Dict[s
         return {"success": False, "message": str(e)}
 
 @app.get("/api/attendance/live-count")
-async def get_live_attendance_count(session: Dict[str, Any] = Depends(require_staff_or_terminal)):
-    """Get live student count with slot information"""
+async def get_live_attendance_count(course_id: Optional[int] = None,
+                                    session: Dict[str, Any] = Depends(require_staff_or_terminal)):
+    """Get live student count with slot information.
+
+    Scoped to one batch wherever the caller belongs to one: a terminal is
+    pinned to the batch it signed in as, and a teacher with a single assigned
+    batch defaults to it. Without this, every terminal showed the site-wide
+    student total regardless of which batch it was running.
+    """
     try:
+        scope_course_id = course_id
+        if session.get("user_type") == "terminal":
+            # A terminal may never widen its scope, whatever it asks for.
+            scope_course_id = session.get("user_info", {}).get("course_id")
+        elif scope_course_id is not None:
+            assert_course_allowed(session, scope_course_id)
+        else:
+            allowed = teacher_allowed_course_ids(session)
+            if allowed is not None and len(allowed) == 1:
+                scope_course_id = allowed[0]
+
         manager = create_slot_manager_instance()
-        count_data = manager.get_live_student_count()
+        count_data = manager.get_live_student_count(course_id=scope_course_id)
         return count_data
     except Exception as e:
         print(f"Error in live count: {e}")
