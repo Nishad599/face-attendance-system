@@ -238,10 +238,159 @@
             color: var(--text-secondary);
             margin: 0;
         }
+
+        /* ================================================================
+           TERMINAL / KIOSK MODE
+           The kiosk runs on a 10" tablet. The stock page did not fit it: in
+           landscape (1280x800) the camera ran past the fold and Start/Stop
+           could not be reached without scrolling, which is unusable when a
+           student is standing at the device.
+
+           Terminal mode drops the chrome a kiosk cannot use, locks the page
+           to the viewport, and gives every remaining pixel to the camera.
+           Nothing here applies to staff, who get the normal scrolling page.
+           ================================================================ */
+
+        /* A kiosk has no dashboard to go back to and nobody reads the
+           instructions panel mid-queue. */
+        .terminal-mode .app-breadcrumb,
+        .terminal-mode .app-page-header p,
+        .terminal-mode #instructionsSection {
+            display: none;
+        }
+
+        .terminal-mode .app-page-header {
+            margin-bottom: 10px;
+        }
+
+        .terminal-mode .app-page-header h1 {
+            font-size: 1.25rem;
+            margin: 0;
+        }
+
+        /* Compact the batch banner and the stat strip - on a tablet these were
+           eating roughly a third of the height before the camera started. */
+        .terminal-mode .app-alert {
+            padding: 8px 12px;
+            font-size: 0.84rem;
+            margin-bottom: 10px;
+        }
+
+        .terminal-mode .att-stats {
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .terminal-mode .att-stat-box {
+            padding: 8px 10px;
+        }
+
+        .terminal-mode .att-stat-box .val {
+            font-size: 1.3rem;
+        }
+
+        .terminal-mode .att-stat-box .lbl {
+            font-size: 0.72rem;
+        }
+
+        /* Touch targets. The stock buttons were ~40px tall; a finger needs 48. */
+        .terminal-mode .att-btns .app-btn {
+            min-height: 52px;
+            font-size: 1rem;
+        }
+
+        .terminal-mode #groupMode {
+            width: 22px;
+            height: 22px;
+        }
+
+        .terminal-mode .att-section {
+            padding: 14px 16px;
+        }
+
+        .terminal-mode .att-section h2 {
+            font-size: 1rem;
+            margin-bottom: 6px;
+        }
+
+        .terminal-mode .att-section p.sub {
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+
+        /* ---- Landscape tablet: lock to the viewport ----------------------
+           Above 700px wide and no taller than a tablet, the page becomes a
+           fixed-height flex column. The camera takes the leftover space via
+           flex:1 rather than a fixed aspect ratio, which is what pushed the
+           controls off-screen at 1280x800. */
+        @media (min-width: 700px) and (max-height: 1100px) {
+            .terminal-mode .app-page {
+                height: calc(100dvh - var(--nav-height));
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                padding: 12px 16px;
+            }
+
+            .terminal-mode .att-layout {
+                flex: 1;
+                min-height: 0;
+                margin-bottom: 0;
+                align-items: stretch;
+            }
+
+            .terminal-mode .att-layout > .att-section {
+                display: flex;
+                flex-direction: column;
+                min-height: 0;
+            }
+
+            /* The video is the only element allowed to absorb slack. */
+            .terminal-mode .att-video {
+                aspect-ratio: auto;
+                flex: 1;
+                min-height: 0;
+                max-height: none;
+            }
+
+            /* Results scroll inside their own column instead of growing the
+               page - the page itself must never scroll at a kiosk. */
+            .terminal-mode #detectionResults,
+            .terminal-mode .att-layout > .att-section:last-child {
+                overflow-y: auto;
+                min-height: 0;
+            }
+
+            /* The manual fallback is long; keep it reachable without pushing
+               the camera controls out of view. */
+            .terminal-mode #manualFallback {
+                overflow-y: auto;
+                max-height: 34vh;
+            }
+
+            /* Group mode must NOT stack here. On a scrolling desktop page
+               going single-column gives the camera the full width, but inside
+               a fixed-height kiosk it puts the results panel underneath and
+               squeezes the video to a ~90px sliver. Widen the column instead
+               and keep the camera full height. */
+            .terminal-mode .att-layout.cam-wide {
+                grid-template-columns: 2.6fr 1fr;
+            }
+        }
+
+        /* ---- Portrait tablet -------------------------------------------
+           Stacked is right here, but the camera should still dominate and the
+           results must be reachable with a short scroll rather than a long
+           one. */
+        @media (min-width: 700px) and (min-height: 1101px) {
+            .terminal-mode .att-video {
+                max-height: 46vh;
+            }
+        }
     </style>
 </head>
 
-<body>
+<body{% if is_terminal %} class="terminal-mode"{% endif %}>
     <!-- Navbar -->
     {% include "_navbar.html" %}
 
@@ -389,7 +538,7 @@
         </div>
 
         <!-- Instructions -->
-        <div class="att-section">
+        <div class="att-section" id="instructionsSection">
             <h2><i class="fa-solid fa-clipboard-list"></i> Instructions</h2>
             <div class="att-instructions mt-16">
                 <div class="step">
@@ -712,6 +861,34 @@
                 }
             }).catch(e => console.error('Session check failed:', e));
         });
+
+        // ---------- Keep a kiosk tablet awake ----------
+        // The terminal runs unattended on a tablet, which will otherwise dim
+        // and sleep mid-session and stop the camera. The Wake Lock API needs a
+        // secure context (the app serves HTTPS) and is released whenever the
+        // page is hidden, so it has to be re-acquired on visibilitychange.
+        // Entirely best-effort: unsupported browsers just carry on.
+        let wakeLock = null;
+
+        async function requestWakeLock() {
+            if (!document.body.classList.contains('terminal-mode')) return;
+            if (!('wakeLock' in navigator)) return;
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', function () { wakeLock = null; });
+            } catch (e) {
+                // Denied, or the tab is not visible. Not worth surfacing.
+                console.debug('wake lock unavailable:', e && e.message);
+            }
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible' && wakeLock === null) {
+                requestWakeLock();
+            }
+        });
+
+        requestWakeLock();
 
         // ---------- Terminal manual fallback ----------
         async function submitManualRequest() {
