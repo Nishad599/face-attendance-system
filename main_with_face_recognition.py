@@ -1578,8 +1578,13 @@ def audit(session, action, target=None, details=None, course_id=None):
 LATE_GRACE_MINUTES = int(os.getenv("LATE_GRACE_MINUTES", "10") or 10)
 
 
-def compute_is_late(slot_key: str = None, when: datetime = None) -> bool:
+def compute_is_late(slot_key: str = None, when: datetime = None,
+                    course_id: int = None) -> bool:
     """True when the arrival is more than LATE_GRACE_MINUTES after the slot start.
+
+    course_id matters: slot timings are configured per batch, so lateness has to
+    be judged against the student's own batch. Without it a student could be
+    flagged late against another batch's earlier start time.
 
     Falls back to False when no slot is active or slot timings can't be read,
     so a failure here can never wrongly flag a student.
@@ -1588,12 +1593,12 @@ def compute_is_late(slot_key: str = None, when: datetime = None) -> bool:
         if attendance_manager is None:
             return False
         now = when or datetime.now(timezone)
-        slots = getattr(attendance_manager, "attendance_slots", {}) or {}
+        slots = attendance_manager.slots_for_course(course_id) or {}
 
         if slot_key and slot_key in slots:
             slot = slots[slot_key]
         else:
-            current = attendance_manager.get_current_slot(now)
+            current = attendance_manager.get_current_slot(now, course_id)
             if not current:
                 return False
             slot = current.get("slot_info") or {}
@@ -2512,12 +2517,15 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                         status = "already_marked"
                         message = f"{student_name} already marked present today"
                     else:
-                        # Mark attendance (carry the student's batch + late flag)
-                        late = compute_is_late()
+                        # Mark attendance (carry the student's batch + late flag).
+                        # Resolve the batch first: slot timings are per batch, so
+                        # the late check needs it to compare against the right
+                        # start time.
                         s_course = cursor.execute(
                             "SELECT course_id FROM students WHERE id = ?", (student_id,)
                         ).fetchone()
                         s_course_id = s_course[0] if s_course else None
+                        late = compute_is_late(course_id=s_course_id)
 
                         # No attendance on a Sunday or a holiday, by any route.
                         ok_day, why = working_days.check(
@@ -2532,7 +2540,8 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                             })
                             continue
 
-                        slot = attendance_manager.get_current_slot() if attendance_manager else None
+                        slot = (attendance_manager.get_current_slot(course_id=s_course_id)
+                                if attendance_manager else None)
                         slot_key = (slot or {}).get("slot_key")
                         # Record which module this class was, at mark time — a
                         # later timetable change must not rewrite history.
@@ -3270,23 +3279,33 @@ async def update_session_configuration(
             end_time=data['end_time'],
             course_id=data.get('course_id')
         )
+        if success and attendance_manager is not None:
+            # The app-wide manager is built once at import; without this its
+            # fallback view keeps the old timings until the next restart.
+            attendance_manager.reload_config()
         return {"success": success, "message": message}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 @app.get("/api/admin/current-slots")
-async def get_current_slot_info(session: Dict[str, Any] = Depends(require_admin_access)):
-    """Get current active slot and next slot information"""
+async def get_current_slot_info(course_id: Optional[int] = None,
+                                session: Dict[str, Any] = Depends(require_admin_access)):
+    """Get current active slot and next slot information for a batch.
+
+    Without course_id this reports the merged view across every batch, which
+    belongs to no batch in particular - pass the batch you are looking at.
+    """
     try:
         manager = create_slot_manager_instance()
-        current_slot = manager.get_current_slot()
-        next_slot = manager.get_next_slot()
-        
+        current_slot = manager.get_current_slot(course_id=course_id)
+        next_slot = manager.get_next_slot(course_id=course_id)
+
         return {
             "success": True,
+            "course_id": course_id,
             "current_slot": current_slot,
             "next_slot": next_slot,
-            "all_slots": manager.attendance_slots
+            "all_slots": manager.slots_for_course(course_id)
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -3297,6 +3316,8 @@ async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_ad
     try:
         manager = create_slot_manager_instance()
         manager.reload_config()
+        if attendance_manager is not None:
+            attendance_manager.reload_config()
         return {"success": True, "message": "Slot configuration reloaded successfully"}
     except Exception as e:
         return {"success": False, "message": str(e)}

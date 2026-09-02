@@ -20,6 +20,28 @@ logger = logging.getLogger(__name__)
 # IST timezone constant
 IST = pytz.timezone('Asia/Kolkata')
 
+# Per-batch slot timings, cached across manager instances.
+#
+# The marking path builds a fresh AttendanceSlotManager per request, so an
+# uncached lookup would re-query session_configs for every detected face. A
+# short TTL keeps that cheap while still letting an admin's edit take effect
+# on its own - the global `attendance_manager` in the app is built once at
+# import and would otherwise serve stale timings until the next restart.
+_SLOT_CACHE = {}
+_SLOT_CACHE_TTL_SECONDS = 20
+
+
+def invalidate_slot_cache(course_id=None):
+    """Drop cached timings so the next read hits the database.
+
+    Called when slot configuration is saved, so a teacher sees their change
+    immediately rather than up to TTL seconds later.
+    """
+    if course_id is None:
+        _SLOT_CACHE.clear()
+    else:
+        _SLOT_CACHE.pop(int(course_id), None)
+
 def get_ist_time():
     """Get current time in IST"""
     return datetime.now(IST)
@@ -138,16 +160,36 @@ class AttendanceSlotManager:
         self.conn.commit()
         logger.info("Slot attendance tables initialized")
     
-    def load_session_configs(self):
-        """Load slot configuration from existing session_configs table"""
+    def load_session_configs(self, course_id: Optional[int] = None):
+        """Load slot configuration from the session_configs table.
+
+        session_configs is per-batch. Loading every batch at once collapses
+        them, because the dict is keyed by session_type and each batch has its
+        own 'morning_1', 'afternoon_2' and so on - so the last row read silently
+        overwrote every other batch's timings. Editing one batch's slot then
+        appeared to do nothing, and its students could not mark attendance
+        outside whichever batch happened to win.
+
+        Pass a course_id to get that batch's real timings. course_id=None keeps
+        the old all-batches view, which is only meaningful as a fallback for a
+        batch that has no rows of its own.
+        """
         cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT session_type, start_time, end_time 
-            FROM session_configs 
-            WHERE is_active = 1
-            ORDER BY start_time
-        ''')
-        
+        if course_id is None:
+            cursor.execute('''
+                SELECT session_type, start_time, end_time
+                FROM session_configs
+                WHERE is_active = 1
+                ORDER BY start_time
+            ''')
+        else:
+            cursor.execute('''
+                SELECT session_type, start_time, end_time
+                FROM session_configs
+                WHERE is_active = 1 AND course_id = ?
+                ORDER BY start_time
+            ''', (int(course_id),))
+
         slots = {}
         for row in cursor.fetchall():
             session_type, start_time_str, end_time_str = row
@@ -236,6 +278,7 @@ class AttendanceSlotManager:
     
     def reload_config(self):
         """Reload slot configuration from database"""
+        invalidate_slot_cache()
         self.attendance_slots = self.load_session_configs()
         slot_info = ", ".join([
             f"{slot['name']} ({slot['start_time'].strftime('%H:%M')}-{slot['end_time'].strftime('%H:%M')})"
@@ -243,13 +286,38 @@ class AttendanceSlotManager:
         ])
         logger.info(f"Slot configuration reloaded: {slot_info}")
     
-    def get_current_slot(self, check_time: Optional[datetime] = None) -> Optional[Dict]:
+    def slots_for_course(self, course_id: Optional[int] = None) -> Dict:
+        """Slot timings that apply to one batch.
+
+        Falls back to the all-batches view when the batch has no rows of its
+        own, so a course created before slots were configured still works.
+        """
+        if course_id is None:
+            return self.attendance_slots
+
+        key = int(course_id)
+        now = datetime.now().timestamp()
+        hit = _SLOT_CACHE.get(key)
+        if hit and (now - hit[0]) < _SLOT_CACHE_TTL_SECONDS:
+            return hit[1]
+
+        slots = self.load_session_configs(key)
+        if not slots:
+            slots = self.attendance_slots
+        _SLOT_CACHE[key] = (now, slots)
+        return slots
+
+    def get_current_slot(self, check_time: Optional[datetime] = None,
+                         course_id: Optional[int] = None) -> Optional[Dict]:
         """
         Check if current time falls within any attendance slot
-        
+
         Args:
             check_time: Optional datetime to check, defaults to IST now
-            
+            course_id: Batch whose timings apply. Slots are configured per
+                       batch, so omitting this checks against a merged view
+                       that may belong to a different batch entirely.
+
         Returns:
             Dict with slot info if within slot, None otherwise
         """
@@ -258,7 +326,7 @@ class AttendanceSlotManager:
         
         current_time = check_time.time()
         
-        for slot_key, slot_info in self.attendance_slots.items():
+        for slot_key, slot_info in self.slots_for_course(course_id).items():
             if slot_info['start_time'] <= current_time <= slot_info['end_time']:
                 return {
                     'slot_key': slot_key,
@@ -275,8 +343,9 @@ class AttendanceSlotManager:
         end_minutes = end_time.hour * 60 + end_time.minute
         return max(0, end_minutes - current_minutes)
     
-    def get_next_slot(self, check_time: Optional[datetime] = None) -> Optional[Dict]:
-        """Get information about the next upcoming slot"""
+    def get_next_slot(self, check_time: Optional[datetime] = None,
+                      course_id: Optional[int] = None) -> Optional[Dict]:
+        """Get information about the next upcoming slot for a batch."""
         if check_time is None:
             check_time = get_ist_time()
             
@@ -284,7 +353,7 @@ class AttendanceSlotManager:
         next_slot = None
         min_wait_time = float('inf')
         
-        for slot_key, slot_info in self.attendance_slots.items():
+        for slot_key, slot_info in self.slots_for_course(course_id).items():
             start_time = slot_info['start_time']
             
             # Calculate minutes until this slot starts
@@ -334,6 +403,10 @@ class AttendanceSlotManager:
 
             if cursor.rowcount > 0:
                 self.conn.commit()
+                # Drop the cached timings so the change is live at once rather
+                # than after the TTL - and clear every batch when the update
+                # was unscoped, because then it touched all of them.
+                invalidate_slot_cache(course_id)
                 self.reload_config()
                 return True, f"Session '{session_type}' updated to {start_time}-{end_time}"
             else:
@@ -392,9 +465,21 @@ class AttendanceSlotManager:
             current_timestamp = get_ist_timestamp_str()
             current_time_only = get_ist_time_str()
             
+            # Slot timings are configured per batch, so they have to be read
+            # against THIS student's batch. Using the manager-wide table meant a
+            # student was judged against whichever batch's timings happened to
+            # be loaded, and could be told they were outside their slot when
+            # their own batch was mid-session.
+            cursor = self.conn.cursor()
+            row = cursor.execute(
+                "SELECT course_id FROM students WHERE id = ?", (student_id,)
+            ).fetchone()
+            student_course_id = row[0] if row else None
+            slots = self.slots_for_course(student_course_id)
+
             # Check if we're in a valid slot (unless forced)
             if force_slot:
-                if force_slot not in self.attendance_slots:
+                if force_slot not in slots:
                     return {
                         'success': False,
                         'message': f'Invalid slot: {force_slot}',
@@ -402,14 +487,14 @@ class AttendanceSlotManager:
                     }
                 current_slot = {
                     'slot_key': force_slot,
-                    'slot_info': self.attendance_slots[force_slot],
+                    'slot_info': slots[force_slot],
                     'is_active': True
                 }
             else:
-                current_slot = self.get_current_slot(current_time)
+                current_slot = self.get_current_slot(current_time, student_course_id)
                 
             if not current_slot:
-                next_slot = self.get_next_slot(current_time)
+                next_slot = self.get_next_slot(current_time, student_course_id)
                 next_info = ""
                 if next_slot:
                     hours = next_slot['wait_minutes'] // 60
@@ -624,9 +709,13 @@ class AttendanceSlotManager:
 
             absent_count = max(total_students - total_present, 0)
 
-            # Get current slot info
-            current_slot = self.get_current_slot()
-            next_slot = self.get_next_slot()
+            # Get current slot info. With exactly one batch in scope - a batch
+            # terminal, or a teacher with one assigned batch - show that batch's
+            # own timings. A combined terminal spans batches whose slots may
+            # differ, so it falls back to the merged view.
+            slot_course = ids[0] if ids and len(ids) == 1 else None
+            current_slot = self.get_current_slot(course_id=slot_course)
+            next_slot = self.get_next_slot(course_id=slot_course)
 
             attendance_percentage = (total_present / total_students * 100) if total_students > 0 else 0
 
