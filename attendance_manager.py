@@ -553,14 +553,16 @@ class AttendanceSlotManager:
             }
     
     def get_live_student_count(self, date_str: Optional[str] = None,
-                               course_id: Optional[int] = None) -> Dict:
+                               course_id=None) -> Dict:
         """
         Get live count of students present today.
 
         Args:
             date_str:  Date to check, defaults to IST today
-            course_id: Restrict to one batch (the terminal's batch). None = all
-                       batches, which is what the staff dashboard wants.
+            course_id: Restrict to one batch (an int) or several (a list of
+                       ints, for a combined terminal covering more than one
+                       batch). None = all batches, which is what the staff
+                       dashboard wants.
 
         Returns:
             Dict with detailed attendance counts
@@ -571,14 +573,26 @@ class AttendanceSlotManager:
         try:
             cursor = self.conn.cursor()
 
-            # Batch scoping. A terminal is bound to one course, so its totals
-            # must not include students from other batches.
-            if course_id is None:
+            # Batch scoping. A terminal is bound to the batches it signed in
+            # for, so its totals must not include students from any other.
+            if isinstance(course_id, (list, tuple, set)):
+                ids = [int(c) for c in course_id]
+            elif course_id is None:
+                ids = None
+            else:
+                ids = [int(course_id)]
+
+            if ids is None:
                 stu_where, stu_args = "", ()
                 att_where, att_args = "", ()
+            elif not ids:
+                # An empty scope means "no batches", not "every batch".
+                stu_where, stu_args = " AND 1 = 0", ()
+                att_where, att_args = " AND 1 = 0", ()
             else:
-                stu_where, stu_args = " AND course_id = ?", (course_id,)
-                att_where, att_args = " AND course_id = ?", (course_id,)
+                marks = ",".join("?" for _ in ids)
+                stu_where, stu_args = f" AND course_id IN ({marks})", tuple(ids)
+                att_where, att_args = f" AND course_id IN ({marks})", tuple(ids)
 
             # Total active students in scope
             cursor.execute(
@@ -619,7 +633,9 @@ class AttendanceSlotManager:
             return {
                 'success': True,
                 'date': date_str,
-                'course_id': course_id,
+                # Normalised scope: a list of course ids, or None for
+                # "every batch". Echoed so a caller can confirm what it got.
+                'course_ids': ids,
                 'total_students': total_students,
                 'total_present': total_present,
                 'total_absent': absent_count,

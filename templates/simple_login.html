@@ -98,6 +98,39 @@
             margin-bottom: 16px;
             display: none;
         }
+
+        .term-batch-list {
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .term-batch {
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 12px;
+        }
+
+        .term-batch:last-child { border-bottom: none; }
+
+        .term-batch-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            font-size: .92rem;
+        }
+
+        .term-batch-head input { cursor: pointer; }
+
+        /* The PIN box only appears once its batch is ticked, so an operator
+           opening a single-batch terminal sees exactly one field. */
+        .term-batch-pin {
+            margin-top: 8px;
+            display: none;
+        }
+
+        .term-batch.on .term-batch-pin { display: block; }
     </style>
 </head>
 
@@ -137,15 +170,14 @@
                 <!-- Terminal fields -->
                 <div id="terminalFields" style="display:none;">
                     <div class="app-form-group">
-                        <label class="app-form-label">Batch</label>
-                        <select name="batch" class="app-form-input" id="terminalBatch">
-                            <option value="">Loading batches…</option>
-                        </select>
-                    </div>
-                    <div class="app-form-group">
-                        <label class="app-form-label">Terminal PIN</label>
-                        <input type="password" name="pin" class="app-form-input" placeholder="Enter batch PIN"
-                            autocomplete="off" inputmode="numeric">
+                        <label class="app-form-label">Batches</label>
+                        <p class="sub" style="margin:0 0 8px;font-size:.82rem;color:var(--text-secondary);">
+                            Tick one batch, or several to run one camera for all of them.
+                            Each batch needs its own PIN.
+                        </p>
+                        <div id="terminalBatchList" class="term-batch-list">
+                            <p class="sub" style="margin:0;font-size:.86rem;">Loading batches…</p>
+                        </div>
                     </div>
                 </div>
 
@@ -164,21 +196,67 @@
 
     <script>
         let terminalBatchesLoaded = false;
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         async function loadTerminalBatches() {
             if (terminalBatchesLoaded) return;
+            const box = document.getElementById('terminalBatchList');
             try {
                 const res = await fetch('/api/terminal/batches');
                 const data = await res.json();
-                const sel = document.getElementById('terminalBatch');
                 if (data.batches && data.batches.length) {
-                    sel.innerHTML = data.batches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                    box.innerHTML = data.batches.map(b => `
+                        <div class="term-batch" data-course-id="${b.id}">
+                            <label class="term-batch-head">
+                                <input type="checkbox" class="term-batch-check" value="${b.id}">
+                                <span>${escapeHtml(b.name)}</span>
+                            </label>
+                            <div class="term-batch-pin">
+                                <input type="password" class="app-form-input term-pin"
+                                       placeholder="PIN for ${escapeHtml(b.name)}"
+                                       autocomplete="off" inputmode="numeric">
+                            </div>
+                        </div>`).join('');
+                    box.querySelectorAll('.term-batch-check').forEach(function (cb) {
+                        cb.addEventListener('change', function () {
+                            const row = this.closest('.term-batch');
+                            row.classList.toggle('on', this.checked);
+                            if (this.checked) row.querySelector('.term-pin').focus();
+                            else row.querySelector('.term-pin').value = '';
+                        });
+                    });
+                    // One batch on the system: tick it so the common case is
+                    // still "type the PIN and go".
+                    if (data.batches.length === 1) {
+                        const only = box.querySelector('.term-batch-check');
+                        only.checked = true;
+                        only.dispatchEvent(new Event('change'));
+                    }
                     terminalBatchesLoaded = true;
                 } else {
-                    sel.innerHTML = '<option value="">No terminal-enabled batches</option>';
+                    box.innerHTML = '<p class="sub" style="margin:0;padding:10px 12px;font-size:.86rem;">No terminal-enabled batches. Set a terminal PIN on a batch first.</p>';
                 }
             } catch (e) {
-                document.getElementById('terminalBatch').innerHTML = '<option value="">Failed to load</option>';
+                box.innerHTML = '<p class="sub" style="margin:0;padding:10px 12px;font-size:.86rem;">Failed to load batches.</p>';
             }
+        }
+
+        // Collect the ticked batches and their PINs.
+        function terminalSelection() {
+            const out = [];
+            document.querySelectorAll('#terminalBatchList .term-batch.on').forEach(function (row) {
+                out.push({
+                    course_id: parseInt(row.dataset.courseId, 10),
+                    pin: row.querySelector('.term-pin').value,
+                    name: row.querySelector('.term-batch-head span').textContent
+                });
+            });
+            return out;
         }
 
         // Switch fields + labels based on selected role
@@ -218,8 +296,17 @@
             let endpoint, payload;
             if (role === 'terminal') {
                 endpoint = '/api/terminal-login';
-                payload = { course_id: parseInt(this.batch.value), pin: this.pin.value };
-                if (!payload.course_id) { errorDiv.textContent = 'Select a batch'; errorDiv.style.display = 'block'; btn.disabled = false; btn.innerHTML = '<span id="submitLabel">Open Terminal</span>'; return; }
+                const picked = terminalSelection();
+                const fail = function (msg) {
+                    errorDiv.textContent = msg;
+                    errorDiv.style.display = 'block';
+                    btn.disabled = false;
+                    btn.innerHTML = '<span id="submitLabel">Open Terminal</span>';
+                };
+                if (!picked.length) { fail('Select at least one batch'); return; }
+                const blank = picked.filter(b => !b.pin.trim());
+                if (blank.length) { fail('Enter the PIN for ' + blank.map(b => b.name).join(', ')); return; }
+                payload = { batches: picked.map(b => ({ course_id: b.course_id, pin: b.pin })) };
             } else {
                 endpoint = role === 'staff' ? '/api/admin-login' : '/api/user-login';
                 payload = { username: this.username.value, password: this.password.value };

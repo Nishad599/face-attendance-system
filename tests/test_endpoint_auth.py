@@ -151,13 +151,22 @@ class TestGuardsExist:
     @pytest.mark.parametrize("path,method", [
         ("/api/attendance/live-count", "get"),
         ("/api/detect_attendance", "post"),
-        ("/api/attendance/today", "get"),
     ])
     def test_terminal_can_still_reach_live_attendance(self, path, method):
         """The kiosk reuses /attendance — these must accept a terminal session."""
         sig = self._handler_signature(path, method)
         assert "require_staff_or_terminal" in sig, (
             f"{path} must use require_staff_or_terminal or the batch terminal breaks")
+
+    def test_today_attendance_is_staff_only(self):
+        """/api/attendance/today returns every active student's name and email
+        across every batch, with no batch scoping. It used to allow terminal
+        sessions, which meant a kiosk in one batch's lab could read the whole
+        institute's roll. Only admin.html consumes it, so the kiosk loses
+        nothing by being locked out."""
+        sig = self._handler_signature("/api/attendance/today", "get")
+        assert "require_teacher_or_admin" in sig
+        assert "require_staff_or_terminal" not in sig
 
     def test_students_can_still_upload_their_own_photos(self):
         """Self-registration posts to /api/upload_face_photo."""

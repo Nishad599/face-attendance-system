@@ -355,6 +355,22 @@ def require_terminal(session: Optional[Dict[str, Any]] = Depends(get_current_ses
     return session
 
 
+def terminal_course_ids(session: Dict[str, Any]) -> List[int]:
+    """Batches a terminal session may act on.
+
+    Sessions created before combined terminals existed only carry `course_id`,
+    so fall back to it rather than returning an empty scope - an empty scope
+    means "no batches" everywhere it is used, which would silently break a
+    kiosk that is still logged in across the upgrade.
+    """
+    info = session.get("user_info", {}) or {}
+    ids = info.get("course_ids")
+    if isinstance(ids, (list, tuple)) and ids:
+        return [int(c) for c in ids]
+    single = info.get("course_id")
+    return [int(single)] if single is not None else []
+
+
 def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     """Course ids a session may act on.
 
@@ -1830,9 +1846,21 @@ async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
 # Attendance Terminal (kiosk) — per-batch PIN (Phase 8)
 # ==================================================================
 
-class TerminalLogin(BaseModel):
+class TerminalBatchPin(BaseModel):
     course_id: int
     pin: str
+
+
+class TerminalLogin(BaseModel):
+    """Either a single batch (course_id + pin) or a combined terminal.
+
+    A combined terminal covers several batches at once - one camera in a shared
+    lab or lobby. It requires the PIN of *every* batch it covers, so holding one
+    batch's PIN never grants visibility into another's students.
+    """
+    course_id: Optional[int] = None
+    pin: Optional[str] = None
+    batches: Optional[List[TerminalBatchPin]] = None
 
 
 @app.get("/api/terminal/batches")
@@ -1849,29 +1877,73 @@ async def terminal_batches():
 
 @app.post("/api/terminal-login")
 async def terminal_login(data: TerminalLogin, response: Response):
-    """Open the attendance terminal for a batch after verifying its PIN."""
+    """Open the attendance terminal for one batch, or several combined.
+
+    Every batch in the request must be unlocked with its own PIN. That is what
+    keeps a combined terminal safe: it is not a privilege escalation, it is the
+    operator proving they hold each batch's PIN.
+    """
     try:
+        # Normalise both request shapes into one list of (course_id, pin).
+        if data.batches:
+            wanted = [(b.course_id, b.pin) for b in data.batches]
+        elif data.course_id is not None:
+            wanted = [(data.course_id, data.pin)]
+        else:
+            return {"success": False, "message": "Select a batch"}
+
+        # De-duplicate while keeping the operator's order.
+        seen, pairs = set(), []
+        for cid, pin in wanted:
+            if cid is None or cid in seen:
+                continue
+            seen.add(cid)
+            pairs.append((int(cid), pin))
+        if not pairs:
+            return {"success": False, "message": "Select a batch"}
+
         # A 4-6 digit PIN is brute-forceable in seconds without a throttle.
         # Keyed per batch so one kiosk being attacked cannot lock out another.
-        throttle_key = login_throttle.terminal_key(data.course_id)
-        blocked, wait = login_blocked(throttle_key)
-        if blocked:
-            return {"success": False,
-                    "message": f"Too many incorrect PINs. Try again in {wait} seconds."}
+        for cid, _ in pairs:
+            blocked, wait = login_blocked(login_throttle.terminal_key(cid))
+            if blocked:
+                return {"success": False,
+                        "message": f"Too many incorrect PINs. Try again in {wait} seconds."}
 
-        row = attendance_system.conn.execute(
-            "SELECT name, terminal_pin_hash FROM courses WHERE id = ? AND is_active = 1",
-            (data.course_id,),
-        ).fetchone()
-        if not row or not row[1]:
-            return {"success": False, "message": "No terminal is set up for that batch"}
-        if not verify_password((data.pin or "").strip(), row[1]):
-            record_login_failure(throttle_key)
-            return {"success": False, "message": "Incorrect PIN"}
-        clear_login_failures(throttle_key)
+        course_ids, batch_names = [], []
+        for cid, pin in pairs:
+            throttle_key = login_throttle.terminal_key(cid)
+            row = attendance_system.conn.execute(
+                "SELECT name, terminal_pin_hash FROM courses WHERE id = ? AND is_active = 1",
+                (cid,),
+            ).fetchone()
+            if not row or not row[1]:
+                return {"success": False, "message": "No terminal is set up for that batch"}
+            if not verify_password((pin or "").strip(), row[1]):
+                record_login_failure(throttle_key)
+                # Name the batch: with several PINs on screen the operator
+                # otherwise cannot tell which one they mistyped.
+                label = f" for {row[0]}" if len(pairs) > 1 else ""
+                return {"success": False, "message": f"Incorrect PIN{label}"}
+            clear_login_failures(throttle_key)
+            course_ids.append(cid)
+            batch_names.append(row[0])
 
-        user_info = {"role": "terminal", "course_id": data.course_id,
-                     "name": f"Terminal · {row[0]}", "batch_name": row[0]}
+        if len(course_ids) == 1:
+            display = f"Terminal · {batch_names[0]}"
+        else:
+            display = f"Combined Terminal · {len(course_ids)} batches"
+
+        user_info = {
+            "role": "terminal",
+            # course_id stays the first batch so anything still reading the
+            # single-batch field keeps working.
+            "course_id": course_ids[0],
+            "course_ids": course_ids,
+            "name": display,
+            "batch_name": " + ".join(batch_names),
+            "batch_names": batch_names,
+        }
         token = SessionManager.create_session("terminal", user_info)
         _set_session_cookie(response, token)
         return {"success": True, "message": "Terminal ready", "redirect_url": "/attendance"}
@@ -2004,6 +2076,7 @@ async def attendance_page(request: Request, session: Optional[Dict[str, Any]] = 
         "request": request,
         "is_terminal": session.get("user_type") == "terminal",
         "terminal_batch": info.get("batch_name", ""),
+        "terminal_batch_count": len(info.get("course_ids") or ([info["course_id"]] if info.get("course_id") else [])),
     })
 
 @app.get("/students", response_class=HTMLResponse)
@@ -2344,11 +2417,6 @@ async def attendance_management_page(request: Request, session: Dict[str, Any] =
     """Enhanced attendance management page"""
     return templates.TemplateResponse("attendance_management.html", {"request": request})
 
-@app.get("/advanced-attendance", response_class=HTMLResponse)
-async def advanced_attendance_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
-    """Advanced attendance management page"""
-    return templates.TemplateResponse("advanced_attendance.html", {"request": request})
-
 # API endpoints
 @app.post("/api/detect_attendance")
 async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] = Depends(require_staff_or_terminal)):
@@ -2561,8 +2629,13 @@ async def complete_registration(reg_data: RegistrationComplete, session: Dict[st
         raise HTTPException(status_code=400, detail=message)
 
 @app.get("/api/attendance/today")
-async def get_today_attendance(session: Dict[str, Any] = Depends(require_staff_or_terminal)):
-    """Get today's attendance"""
+async def get_today_attendance(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Get today's attendance.
+
+    Staff only: the payload is every active student's name and email across
+    every batch, and it is not batch-scoped. Only the admin page consumes it,
+    so a kiosk has no reason to reach it.
+    """
     return attendance_system.get_today_attendance()
 
 @app.get("/api/students/count")
@@ -4525,25 +4598,31 @@ async def terminal_manual_request(data: dict = Body(...),
     longer stuck when the camera fails.
     """
     try:
-        info = session.get("user_info", {})
-        course_id = info.get("course_id")
         roll = (data.get("roll_no") or "").strip()
         reason = (data.get("reason") or "").strip() or "Camera could not recognise me at the terminal"
         if not roll:
             return {"success": False, "message": "Enter your roll number"}
 
+        # A combined terminal serves several batches, so resolve the roll
+        # against all of them - and read the batch back off the student rather
+        # than assuming the terminal's first one.
+        tcids = terminal_course_ids(session)
+        if not tcids:
+            return {"success": False, "message": "This terminal has no batch assigned"}
+        marks = ",".join("?" for _ in tcids)
+
         cur = attendance_system.conn.cursor()
         row = cur.execute(
-            "SELECT id, name FROM students WHERE student_id = ? AND course_id = ? "
-            "AND status IN ('active','pending_registration')",
-            (roll, course_id),
+            f"SELECT id, name, course_id FROM students WHERE student_id = ? "
+            f"AND course_id IN ({marks}) AND status IN ('active','pending_registration')",
+            (roll, *tcids),
         ).fetchone()
         if not row:
             # Same message either way — the kiosk is a public surface, so it
             # must not confirm which roll numbers exist.
             return {"success": False,
                     "message": "No student with that roll number in this batch"}
-        student_db_id, student_name = row[0], row[1]
+        student_db_id, student_name, course_id = row[0], row[1], row[2]
 
         today = date.today().strftime("%Y-%m-%d")
         ok_day, why = working_days.check(attendance_system.conn, course_id, today)
@@ -6214,7 +6293,8 @@ async def get_live_attendance_count(course_id: Optional[int] = None,
         scope_course_id = course_id
         if session.get("user_type") == "terminal":
             # A terminal may never widen its scope, whatever it asks for.
-            scope_course_id = session.get("user_info", {}).get("course_id")
+            # A combined terminal legitimately covers several batches.
+            scope_course_id = terminal_course_ids(session)
         elif scope_course_id is not None:
             assert_course_allowed(session, scope_course_id)
         else:
@@ -6252,12 +6332,17 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
     # Terminal sessions restrict marking to their batch
     terminal_batch_ids = None
     if session and session.get("user_type") == "terminal":
-        tcid = session.get("user_info", {}).get("course_id")
-        terminal_batch_ids = {
-            r[0] for r in attendance_system.conn.execute(
-                "SELECT id FROM students WHERE course_id = ?", (tcid,)
-            ).fetchall()
-        }
+        tcids = terminal_course_ids(session)
+        if tcids:
+            marks = ",".join("?" for _ in tcids)
+            terminal_batch_ids = {
+                r[0] for r in attendance_system.conn.execute(
+                    f"SELECT id FROM students WHERE course_id IN ({marks})",
+                    tuple(tcids),
+                ).fetchall()
+            }
+        else:
+            terminal_batch_ids = set()
 
     try:
         # Convert base64 to image (same as existing detect_attendance)

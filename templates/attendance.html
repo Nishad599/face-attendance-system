@@ -13,9 +13,18 @@
         /* Page-specific layout for camera + results side by side */
         .att-layout {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            /* The camera column carries the group shot, so it gets the larger
+               share. Results are a list and read fine in a narrower column. */
+            grid-template-columns: 1.6fr 1fr;
             gap: 24px;
             margin-bottom: 24px;
+            align-items: start;
+        }
+
+        /* Group photo mode: hand the camera the full page width so five people
+           still get enough pixels each for recognition. */
+        .att-layout.cam-wide {
+            grid-template-columns: 1fr;
         }
 
         @media (max-width: 900px) {
@@ -72,11 +81,21 @@
 
         .att-video {
             width: 100%;
-            background: #1a1a2e;
+            background: #000;
             border-radius: var(--border-radius);
             display: block;
-            min-height: 240px;
-            object-fit: cover;
+            /* 16:9 matches the HD stream we request, so the preview shows
+               exactly what gets captured - no hidden margins. */
+            aspect-ratio: 16 / 9;
+            min-height: 320px;
+            max-height: 72vh;
+            /* `cover` cropped the sides of the frame, cutting off whoever
+               stood at either end of a row. `contain` shows the whole frame. */
+            object-fit: contain;
+        }
+
+        .att-layout.cam-wide .att-video {
+            max-height: 78vh;
         }
 
         .att-btns {
@@ -234,6 +253,23 @@
             <p>Automatic face recognition attendance system</p>
         </div>
 
+        {% if is_terminal %}
+        <!-- Which batches this kiosk is marking. On a combined terminal the
+             operator has to be able to see at a glance that a batch they
+             expected is actually covered. -->
+        <div class="app-alert app-alert-info" style="align-items:flex-start;">
+            <i class="fa-solid fa-desktop"></i>
+            <div>
+                <strong>{% if terminal_batch_count > 1 %}Combined terminal{% else %}Batch terminal{% endif %}</strong>
+                &mdash; marking attendance for <strong>{{ terminal_batch }}</strong>.
+                {% if terminal_batch_count > 1 %}
+                Each student is recorded against their own batch.
+                {% endif %}
+                Students from any other batch will not be marked.
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Sunday Notice -->
         <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
             <i class="fa-solid fa-calendar-xmark"></i>
@@ -293,6 +329,7 @@
                         <span><i class="fa-solid fa-users"></i> Group photo mode</span>
                     </label>
                     <span class="sub" id="groupHint" style="margin:0;font-size:.84rem;"></span>
+                    <span id="camRes" class="text-xs text-muted" style="margin-left:auto;"></span>
                 </div>
                 <div id="groupSummary" style="display:none;margin-top:10px;padding:12px;
                      border-radius:6px;background:var(--bg-page);font-size:.9rem;"></div>
@@ -438,8 +475,20 @@
 
         async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                document.getElementById('video').srcObject = stream;
+                // A group of five spread across the frame leaves each face only
+                // ~100px wide on the 640x480 default stream - too few pixels for
+                // a reliable embedding. Ask for HD and let the browser fall back
+                // on its own if the webcam cannot deliver it.
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        facingMode: 'user'
+                    }
+                });
+                const videoEl = document.getElementById('video');
+                videoEl.srcObject = stream;
+                videoEl.addEventListener('loadedmetadata', reportCameraResolution, { once: true });
                 document.getElementById('startBtn').disabled = true;
                 document.getElementById('stopBtn').disabled = false;
                 document.getElementById('captureBtn').disabled = false;
@@ -525,14 +574,23 @@
             }
         }
 
+        // Longest edge we send to the server. 1600px keeps each of five faces
+        // around 250px wide - plenty for recognition - while holding a frame
+        // under ~300KB, which matters because auto-detect posts one every 3s.
+        const MAX_CAPTURE_EDGE = 1600;
+
         async function captureFrame() {
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+            let w = video.videoWidth, h = video.videoHeight;
+            if (!w || !h) { showMessage('Camera is still starting up', 'warning'); return; }
+            const scale = Math.min(1, MAX_CAPTURE_EDGE / Math.max(w, h));
+            canvas.width = Math.round(w * scale);
+            canvas.height = Math.round(h * scale);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg', 0.85);
             try {
                 showMessage('Processing...', 'info');
                 const r = await fetch('/api/detect_attendance_slots', {
@@ -557,6 +615,27 @@
                 ? 'Point the camera at the whole row, then press Capture — everyone recognised is marked at once.'
                 : '';
             if (!on) document.getElementById('groupSummary').style.display = 'none';
+            // Give the camera the full page width while framing a group.
+            const layout = document.querySelector('.att-layout');
+            if (layout) layout.classList.toggle('cam-wide', on);
+            reportCameraResolution();
+        }
+
+        // Tell the operator what the webcam actually delivered. If it falls back
+        // to 640x480 a group shot will not recognise reliably, and the fix is a
+        // better camera - not standing closer.
+        function reportCameraResolution() {
+            const video = document.getElementById('video');
+            const out = document.getElementById('camRes');
+            if (!out) return;
+            if (!video.videoWidth) { out.textContent = ''; return; }
+            const w = video.videoWidth, h = video.videoHeight;
+            out.textContent = `Camera: ${w}×${h}`;
+            out.className = w >= 1280 ? 'text-xs text-muted' : 'text-xs';
+            out.style.color = w >= 1280 ? '' : 'var(--color-warning)';
+            out.title = w >= 1280
+                ? 'Good enough for a group of five.'
+                : 'Low resolution — faces at the edge of a group shot may not be recognised.';
         }
 
         function showGroupSummary(result) {

@@ -80,8 +80,7 @@ Student_attendance/
 ├── phase1_integration.py           # Multi-session / working-days calendar
 ├── camera_manager.py               # Camera capture handling
 ├── photo_utils.py                  # Student photo directory helpers
-├── bulk_mark_attendance.py         # Bulk attendance utility
-├── setup_database.py               # Creates the SQLite schema
+├── setup_database.py               # Creates the base schema (migrations add the rest)
 ├── requirements.txt                # Python dependencies
 ├── templates/                      # Jinja2 HTML (dashboard, login, students…)
 ├── static/                         # CSS themes, images (CDAC logo)
@@ -123,15 +122,24 @@ venv_win\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-> ⚠️ `dlib`, `insightface`, and `onnxruntime` may need build tools (CMake / Visual C++ Build Tools on Windows). On first run, InsightFace downloads the `buffalo_l` model automatically.
+> ⚠️ `insightface` and `onnxruntime` may need build tools (CMake / Visual C++ Build Tools on Windows). On first run, InsightFace downloads the `buffalo_l` model automatically.
 
 ### 3. Initialize the database
 
 ```bash
 python setup_database.py
+for i in 1 2 3 4 5 6 7 8; do python migrate_phase$i.py; done
 ```
 
-This creates `attendance.db` with the `students`, `attendance`, `face_encodings`, `slot_attendance`, `session_configs`, and related tables. If a database already exists it is safely backed up first.
+`setup_database.py` creates only the base tables (`students`, `attendance`,
+`face_encodings`, `registration_sessions`). Everything else — `users`,
+`sessions`, `courses`, `grievances`, `subjects`, `timetable`, `leave_requests`
+and the rest — is added by the phase migrations, so **both steps are
+required** on a fresh install. Every migration is idempotent, which is why the
+deploy workflow re-runs them on each push. Verify the result with
+`python check_db.py`.
+
+If an `attendance.db` already exists it is safely backed up first.
 
 ### 4. Run the app
 
