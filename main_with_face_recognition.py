@@ -3080,7 +3080,35 @@ async def student_calendar(year: Optional[int] = None, month: Optional[int] = No
             except (ValueError, TypeError):
                 join_date = None
 
-        days, present_count, absent_count = [], 0, 0
+        # Approved leave is excused — it must not show as an absence here, or
+        # the calendar contradicts the percentage shown above it.
+        leave_dates = set()
+        try:
+            for ls, le in cur.execute(
+                "SELECT start_date, end_date FROM leave_requests WHERE student_id = ? "
+                "AND status = 'approved' AND start_date <= ? AND end_date >= ?",
+                (sid, last.strftime("%Y-%m-%d"), first.strftime("%Y-%m-%d")),
+            ).fetchall():
+                ld = datetime.strptime(str(ls)[:10], "%Y-%m-%d").date()
+                lend = datetime.strptime(str(le)[:10], "%Y-%m-%d").date()
+                while ld <= lend:
+                    if first <= ld <= last:
+                        leave_dates.add(ld)
+                    ld += timedelta(days=1)
+        except Exception:
+            leave_dates = set()     # pre-migrate_phase5 database
+
+        half_day = False
+        try:
+            hd = cur.execute(
+                "SELECT half_day_enabled FROM courses WHERE id = ?", (course_id,)
+            ).fetchone()
+            half_day = bool(hd and hd[0])
+        except Exception:
+            half_day = False
+
+        days, present_count, absent_count = [], 0.0, 0
+        leave_count = 0
         d = first
         while d <= last:
             info = {"date": d.strftime("%Y-%m-%d"), "day": d.day,
@@ -3095,15 +3123,24 @@ async def student_calendar(year: Optional[int] = None, month: Optional[int] = No
             elif d in holidays:
                 info["status"] = "holiday"
                 info["note"] = holidays[d]
+            elif d in leave_dates:
+                info["status"] = "leave"
+                info["note"] = "Approved leave"
+                leave_count += 1
             elif d in marks:
-                info["status"] = "present"
+                import reports as _reports
+                credit = _reports.day_credit(marks[d]["sessions"], half_day)
+                info["status"] = "half_day" if credit < 1 else "present"
+                info["credit"] = credit
                 info["time_in"] = marks[d]["time_in"]
                 info["sessions"] = marks[d]["sessions"]
-                if marks[d]["is_late"]:
+                if credit < 1:
+                    info["note"] = "Half day"
+                elif marks[d]["is_late"]:
                     info["note"] = "Late"
                 elif marks[d]["is_manual"]:
                     info["note"] = "Marked manually"
-                present_count += 1
+                present_count += credit
             else:
                 absent_count += 1
             days.append(info)
@@ -3116,12 +3153,15 @@ async def student_calendar(year: Optional[int] = None, month: Optional[int] = No
             "month_label": first.strftime("%B %Y"),
             "first_weekday": first.weekday(),          # 0=Mon .. 6=Sun
             "days": days,
+            "half_day": half_day,
             "summary": {
-                "present": present_count, "absent": absent_count,
-                "working_days": working,
+                "present": round(present_count, 1), "absent": absent_count,
+                "leave": leave_count,
+                "working_days": round(working, 1),
                 "rate": round(present_count / working * 100, 1) if working else 0.0,
             },
             "can_go_next": (year, month) < (today.year, today.month),
+            "can_go_prev": True,
         }
     except HTTPException:
         raise

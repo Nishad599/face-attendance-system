@@ -37,6 +37,34 @@
         .card h2 { margin: 0 0 16px; font-size: 1.1rem; }
         .banner { background: #FFFAE6; border: 1px solid #FFC400; color: #7A5B00; padding: 14px 18px;
             border-radius: var(--border-radius); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+        /* --- attendance calendar --- */
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .cal-dow { text-align: center; font-size: .72rem; font-weight: 600;
+            color: var(--text-secondary); text-transform: uppercase; padding: 4px 0; }
+        .cal-day { aspect-ratio: 1; border-radius: 6px; display: flex;
+            flex-direction: column; align-items: center; justify-content: center;
+            font-size: .82rem; border: 1px solid transparent; position: relative; }
+        .cal-day .n { font-weight: 600; line-height: 1; }
+        .cal-day .t { font-size: .6rem; opacity: .8; margin-top: 2px; }
+        .cal-day.blank { background: transparent; }
+        /* Colours carry meaning, so each state also gets a distinct label in
+           the legend and a title attribute — never colour alone. */
+        .cal-day.present  { background: #E3FCEF; color: #006644; }
+        .cal-day.half_day { background: #E3FCEF; color: #006644;
+            background-image: linear-gradient(135deg, #E3FCEF 50%, #FFFAE6 50%); }
+        .cal-day.absent   { background: #FFEBE6; color: #BF2600; }
+        .cal-day.leave    { background: #EAE6FF; color: #403294; }
+        .cal-day.holiday  { background: #FFFAE6; color: #7A5B00; }
+        .cal-day.sunday   { background: var(--bg-page); color: var(--text-subtle); }
+        .cal-day.future,
+        .cal-day.before_joining { background: var(--bg-page); color: var(--text-subtle);
+            opacity: .5; }
+        .cal-day.today { border-color: var(--color-primary); border-width: 2px; }
+        .cal-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px;
+            font-size: .8rem; color: var(--text-secondary); }
+        .cal-legend span.sw { display: inline-block; width: 11px; height: 11px;
+            border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
         /* Form rows: a flex row on desktop, full-width stacked fields on phones. */
         .form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
         .form-row .app-form-group { margin: 0; }
@@ -216,6 +244,26 @@
         </div>
 
         <div id="tab-calendar" style="display:none;">
+        <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                <h2 style="margin:0;" id="calTitle">Attendance calendar</h2>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <button class="app-btn app-btn-subtle app-btn-sm" id="calPrev"
+                            onclick="calShift(-1)" aria-label="Previous month">
+                        <i class="fa-solid fa-chevron-left"></i></button>
+                    <button class="app-btn app-btn-subtle app-btn-sm" onclick="calToday()">Today</button>
+                    <button class="app-btn app-btn-subtle app-btn-sm" id="calNext"
+                            onclick="calShift(1)" aria-label="Next month">
+                        <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </div>
+            <div id="calSummary" class="muted" style="margin-bottom:10px;font-size:.9rem;"></div>
+            <div class="cal-grid" id="calHead"></div>
+            <div class="cal-grid" id="calBody"></div>
+            <div class="cal-legend" id="calLegend"></div>
+        </div>
+
         <div class="card" id="subjectsCard" style="display:none;">
             <h2>My modules</h2>
             <p class="muted" style="margin-top:-8px;">Attendance counted per module, against
@@ -470,6 +518,77 @@
             } catch (e) {
                 alert('Connection failed. Try again.');
             }
+        }
+
+        // ---------- Attendance calendar ----------
+        const CAL_LEGEND = [
+            ['present',  '#E3FCEF', 'Present'],
+            ['half_day', '#FFFAE6', 'Half day'],
+            ['absent',   '#FFEBE6', 'Absent'],
+            ['leave',    '#EAE6FF', 'Approved leave'],
+            ['holiday',  '#FFFAE6', 'Holiday'],
+            ['sunday',   '#EBECF0', 'Sunday']
+        ];
+        let _calYear = null, _calMonth = null;
+
+        function calShift(delta) {
+            let y = _calYear, m = _calMonth + delta;
+            if (m < 1) { m = 12; y -= 1; }
+            if (m > 12) { m = 1; y += 1; }
+            loadAttendanceCalendar(y, m);
+        }
+
+        function calToday() {
+            const t = new Date();
+            loadAttendanceCalendar(t.getFullYear(), t.getMonth() + 1);
+        }
+
+        async function loadAttendanceCalendar(year, month) {
+            const qs = (year && month) ? `?year=${year}&month=${month}` : '';
+            let d;
+            try {
+                d = await (await fetch('/api/student/calendar' + qs)).json();
+            } catch (e) { return; }
+            if (!d || !d.success) return;
+
+            _calYear = d.year; _calMonth = d.month;
+            document.getElementById('calTitle').textContent = d.month_label;
+            // Server says whether a later month exists; never offer the future.
+            document.getElementById('calNext').disabled = !d.can_go_next;
+
+            const s = d.summary || {};
+            const colour = s.rate < 75 ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
+            document.getElementById('calSummary').innerHTML =
+                `<strong style="color:${colour};">${s.rate}%</strong> this month · ` +
+                `${s.present} present · ${s.absent} absent` +
+                (s.leave ? ` · ${s.leave} on approved leave` : '') +
+                ` · ${s.working_days} working days`;
+
+            document.getElementById('calHead').innerHTML =
+                ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+                    .map(x => `<div class="cal-dow">${x}</div>`).join('');
+
+            // first_weekday is 0=Mon, matching the header above.
+            const pad = Array.from({ length: d.first_weekday },
+                                   () => '<div class="cal-day blank"></div>');
+            const todayStr = new Date().toISOString().slice(0, 10);
+
+            const cells = (d.days || []).map(day => {
+                const isToday = day.date === todayStr ? ' today' : '';
+                const label = day.note || day.status.replace('_', ' ');
+                const time = day.time_in ? String(day.time_in).slice(0, 5) : '';
+                return `<div class="cal-day ${day.status}${isToday}"
+                             title="${esc(day.date)} — ${esc(label)}">
+                            <span class="n">${day.day}</span>
+                            ${time ? `<span class="t">${esc(time)}</span>` : ''}
+                        </div>`;
+            });
+            document.getElementById('calBody').innerHTML = pad.concat(cells).join('');
+
+            document.getElementById('calLegend').innerHTML = CAL_LEGEND
+                .filter(l => l[0] !== 'half_day' || d.half_day)   // only if the batch uses it
+                .map(l => `<span><span class="sw" style="background:${l[1]};"></span>${l[2]}</span>`)
+                .join('');
         }
 
         // ---------- Course calendar ----------
@@ -961,7 +1080,7 @@
         // initial page load only pays for Overview.
         const TAB_LOADERS = {
             overview: [load],
-            calendar: [loadSubjects, loadTimetable, loadSchedule],
+            calendar: [loadAttendanceCalendar, loadSubjects, loadTimetable, loadSchedule],
             requests: [loadGrievances, loadLeaves],
             details:  [loadProfile],
         };
