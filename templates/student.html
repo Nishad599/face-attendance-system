@@ -47,23 +47,44 @@
         .cal-day .n { font-weight: 600; line-height: 1; }
         .cal-day .t { font-size: .6rem; opacity: .8; margin-top: 2px; }
         .cal-day.blank { background: transparent; }
-        /* Colours carry meaning, so each state also gets a distinct label in
-           the legend and a title attribute — never colour alone. */
+        /* Every state is distinguishable without relying on colour alone:
+           each also carries a letter/symbol, a tooltip, and a legend entry. */
         .cal-day.present  { background: #E3FCEF; color: #006644; }
-        .cal-day.half_day { background: #E3FCEF; color: #006644;
-            background-image: linear-gradient(135deg, #E3FCEF 50%, #FFFAE6 50%); }
+        .cal-day.half_day { color: #7A5B00;
+            background-image: linear-gradient(135deg, #E3FCEF 50%, #FFF0B3 50%); }
         .cal-day.absent   { background: #FFEBE6; color: #BF2600; }
         .cal-day.leave    { background: #EAE6FF; color: #403294; }
-        .cal-day.holiday  { background: #FFFAE6; color: #7A5B00; }
-        .cal-day.sunday   { background: var(--bg-page); color: var(--text-subtle); }
-        .cal-day.future,
-        .cal-day.before_joining { background: var(--bg-page); color: var(--text-subtle);
-            opacity: .5; }
-        .cal-day.today { border-color: var(--color-primary); border-width: 2px; }
+        .cal-day.holiday  { background: #FFF0B3; color: #7A5B00; }
+        .cal-day.sunday   { background: #EBECF0; color: #6B778C; }
+        /* Not "faded present" — these are days that were never part of the
+           student's record, so they get a hatch rather than a wash. */
+        .cal-day.before_joining {
+            color: var(--text-subtle);
+            background-image: repeating-linear-gradient(45deg,
+                transparent, transparent 4px,
+                rgba(107,119,140,.14) 4px, rgba(107,119,140,.14) 8px);
+        }
+        .cal-day.future { color: var(--text-subtle);
+            border: 1px dashed var(--border-color); background: transparent; }
+        .cal-day.today { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+        .cal-day.clickable { cursor: pointer; }
+        .cal-day.clickable:hover { filter: brightness(.95); }
         .cal-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px;
             font-size: .8rem; color: var(--text-secondary); }
-        .cal-legend span.sw { display: inline-block; width: 11px; height: 11px;
-            border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+        .cal-legend span.sw { display: inline-block; width: 12px; height: 12px;
+            border-radius: 3px; margin-right: 5px; vertical-align: -2px;
+            border: 1px solid rgba(9,30,66,.12); }
+        /* Detail panel shown when a day is tapped. */
+        .cal-detail { margin-top: 14px; padding: 12px 14px; border-radius: 8px;
+            background: var(--bg-page); border: 1px solid var(--border-color);
+            font-size: .9rem; }
+        .cal-detail h4 { margin: 0 0 6px; font-size: .95rem; }
+        .cal-detail .row { display: flex; gap: 8px; margin-top: 3px;
+            color: var(--text-secondary); }
+        .cal-detail .row b { color: var(--text-primary); font-weight: 600; }
+        .empty-note { color: var(--text-secondary); font-size: .9rem;
+            padding: 14px; border: 1px dashed var(--border-color);
+            border-radius: 8px; background: var(--bg-page); }
 
         /* Form rows: a flex row on desktop, full-width stacked fields on phones. */
         .form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
@@ -206,6 +227,7 @@
         <div class="app-tabs" id="studentTabs">
             <button class="app-tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
             <button class="app-tab" data-tab="calendar" onclick="switchTab('calendar')">Calendar</button>
+            <button class="app-tab" data-tab="timetable" onclick="switchTab('timetable')">Timetable</button>
             <button class="app-tab" data-tab="requests" onclick="switchTab('requests')">Requests</button>
             <button class="app-tab" data-tab="details" onclick="switchTab('details')">My details</button>
         </div>
@@ -262,13 +284,19 @@
             <div class="cal-grid" id="calHead"></div>
             <div class="cal-grid" id="calBody"></div>
             <div class="cal-legend" id="calLegend"></div>
+            <div class="cal-detail" id="calDetail" style="display:none;"></div>
+            <div class="cal-detail" id="calDetail" style="display:none;"></div>
         </div>
 
-        <div class="card" id="subjectsCard" style="display:none;">
+        </div>
+
+        <div id="tab-timetable" style="display:none;">
+        <div class="card" id="subjectsCard">
             <h2>My modules</h2>
             <p class="muted" style="margin-top:-8px;">Attendance counted per module, against
                 each module's own minimum.</p>
-            <div class="app-table-wrapper">
+            <div id="subjectsEmpty" class="empty-note" style="display:none;"></div>
+            <div class="app-table-wrapper" id="subjectsTable" style="display:none;">
                 <table class="app-table">
                     <thead><tr><th>Module</th><th>Attended</th><th>Classes</th><th>Rate</th></tr></thead>
                     <tbody id="subjectRows"></tbody>
@@ -276,25 +304,26 @@
             </div>
         </div>
 
-        <div class="card" id="scheduleCard" style="display:none;">
+        <div class="card" id="scheduleCard">
             <h2>Course calendar</h2>
             <p class="muted" style="margin-top:-8px;">Your full schedule — modules, exams and
                 events. <span id="schedToggle"></span></p>
+            <div id="schedEmpty" class="empty-note" style="display:none;"></div>
             <div id="schedList"></div>
             <div id="holidayList" style="margin-top:18px;"></div>
         </div>
 
-        <div class="card" id="timetableCard" style="display:none;">
+        <div class="card" id="timetableCard">
             <h2>My timetable</h2>
             <p class="muted" style="margin-top:-8px;" id="ttHint"></p>
-            <div class="app-table-wrapper">
+            <div id="ttEmpty" class="empty-note" style="display:none;"></div>
+            <div class="app-table-wrapper" id="ttWrapper" style="display:none;">
                 <table class="app-table" id="ttTable">
                     <thead><tr><th>Day</th></tr></thead>
                     <tbody id="ttRows"></tbody>
                 </table>
             </div>
         </div>
-
         </div>
 
         <div id="tab-requests" style="display:none;">
@@ -521,15 +550,28 @@
         }
 
         // ---------- Attendance calendar ----------
-        const CAL_LEGEND = [
-            ['present',  '#E3FCEF', 'Present'],
-            ['half_day', '#FFFAE6', 'Half day'],
-            ['absent',   '#FFEBE6', 'Absent'],
-            ['leave',    '#EAE6FF', 'Approved leave'],
-            ['holiday',  '#FFFAE6', 'Holiday'],
-            ['sunday',   '#EBECF0', 'Sunday']
-        ];
-        let _calYear = null, _calMonth = null;
+        // Colour + symbol + label for every state the endpoint can return.
+        // Nothing relies on colour alone, and nothing appears on the grid
+        // without a matching legend entry.
+        const CAL_STATES = {
+            present:        { sw: '#E3FCEF', label: 'Present',           mark: '' },
+            // Same split fill as the cell — a flat amber swatch is
+            // indistinguishable from Holiday in the legend.
+            half_day:       { sw: 'linear-gradient(135deg,#E3FCEF 50%,#FFF0B3 50%)',
+                              label: 'Half day',          mark: '½' },
+            absent:         { sw: '#FFEBE6', label: 'Absent',            mark: '' },
+            leave:          { sw: '#EAE6FF', label: 'Approved leave',    mark: 'L' },
+            holiday:        { sw: '#FFF0B3', label: 'Holiday',           mark: 'H' },
+            sunday:         { sw: '#EBECF0', label: 'Sunday',            mark: '' },
+            before_joining: { sw: '#F4F5F7', label: 'Before you joined', mark: '' },
+            future:         { sw: '#FFFFFF', label: 'Not yet',           mark: '' }
+        };
+        const SLOT_NAMES = {
+            morning_1: 'Morning 1', morning_2: 'Morning 2',
+            afternoon_1: 'Afternoon 1', afternoon_2: 'Afternoon 2'
+        };
+
+        let _calYear = null, _calMonth = null, _calDays = [];
 
         function calShift(delta) {
             let y = _calYear, m = _calMonth + delta;
@@ -543,52 +585,99 @@
             loadAttendanceCalendar(t.getFullYear(), t.getMonth() + 1);
         }
 
+        function calShowDay(iso) {
+            const day = _calDays.find(function (x) { return x.date === iso; });
+            const box = document.getElementById('calDetail');
+            if (!day) { box.style.display = 'none'; return; }
+
+            const state = CAL_STATES[day.status] || { label: day.status };
+            const dt = new Date(iso + 'T00:00:00');
+            const pretty = dt.toLocaleDateString('en-GB',
+                { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+            let rows = '<div class="row"><b>Status</b><span>' + esc(state.label) + '</span></div>';
+            if (day.time_in) {
+                rows += '<div class="row"><b>Marked at</b><span>' +
+                        esc(String(day.time_in).slice(0, 5)) + '</span></div>';
+            }
+            if (day.sessions && day.sessions.length) {
+                rows += '<div class="row"><b>Sessions</b><span>' +
+                        day.sessions.map(function (x) {
+                            return esc(SLOT_NAMES[x] || x);
+                        }).join(', ') + '</span></div>';
+            }
+            // Skip a note that only restates the status ("Half day" twice).
+            if (day.note && day.note !== state.label) {
+                rows += '<div class="row"><b>Note</b><span>' + esc(day.note) + '</span></div>';
+            }
+            if (day.status === 'absent') {
+                rows += '<div class="row" style="margin-top:8px;"><span>Were you actually here? ' +
+                        'Raise it under <b>Requests</b> &rarr; Attendance dispute.</span></div>';
+            }
+            box.innerHTML = '<h4>' + esc(pretty) + '</h4>' + rows;
+            box.style.display = '';
+        }
+
         async function loadAttendanceCalendar(year, month) {
-            const qs = (year && month) ? `?year=${year}&month=${month}` : '';
+            const qs = (year && month) ? ('?year=' + year + '&month=' + month) : '';
             let d;
             try {
                 d = await (await fetch('/api/student/calendar' + qs)).json();
             } catch (e) { return; }
             if (!d || !d.success) return;
 
-            _calYear = d.year; _calMonth = d.month;
+            _calYear = d.year; _calMonth = d.month; _calDays = d.days || [];
             document.getElementById('calTitle').textContent = d.month_label;
-            // Server says whether a later month exists; never offer the future.
+            // The server says whether a later month exists; never offer the future.
             document.getElementById('calNext').disabled = !d.can_go_next;
+            document.getElementById('calDetail').style.display = 'none';
 
             const s = d.summary || {};
             const colour = s.rate < 75 ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
+            const bits = [s.present + ' present', s.absent + ' absent'];
+            if (s.leave) bits.push(s.leave + ' on approved leave');
+            bits.push(s.working_days + ' working days');
             document.getElementById('calSummary').innerHTML =
-                `<strong style="color:${colour};">${s.rate}%</strong> this month · ` +
-                `${s.present} present · ${s.absent} absent` +
-                (s.leave ? ` · ${s.leave} on approved leave` : '') +
-                ` · ${s.working_days} working days`;
+                '<strong style="color:' + colour + ';">' + s.rate + '%</strong> this month · ' +
+                bits.join(' · ');
 
             document.getElementById('calHead').innerHTML =
-                ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-                    .map(x => `<div class="cal-dow">${x}</div>`).join('');
+                ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                    .map(function (x) { return '<div class="cal-dow">' + x + '</div>'; }).join('');
 
             // first_weekday is 0=Mon, matching the header above.
-            const pad = Array.from({ length: d.first_weekday },
-                                   () => '<div class="cal-day blank"></div>');
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const pad = [];
+            for (let i = 0; i < d.first_weekday; i++) pad.push('<div class="cal-day blank"></div>');
 
-            const cells = (d.days || []).map(day => {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const seen = {};        // states actually used this month
+
+            const cells = _calDays.map(function (day) {
+                seen[day.status] = true;
+                const st = CAL_STATES[day.status] || { label: day.status, mark: '' };
                 const isToday = day.date === todayStr ? ' today' : '';
-                const label = day.note || day.status.replace('_', ' ');
+                const tip = day.date + ' — ' + (day.note || st.label);
                 const time = day.time_in ? String(day.time_in).slice(0, 5) : '';
-                return `<div class="cal-day ${day.status}${isToday}"
-                             title="${esc(day.date)} — ${esc(label)}">
-                            <span class="n">${day.day}</span>
-                            ${time ? `<span class="t">${esc(time)}</span>` : ''}
-                        </div>`;
+                // A symbol as well as the colour, so the state survives
+                // greyscale, colour blindness and a dim phone screen.
+                const sub = time || st.mark || '';
+                return '<div class="cal-day ' + day.status + isToday + ' clickable" ' +
+                       'title="' + esc(tip) + '" onclick="calShowDay(&quot;' + day.date + '&quot;)">' +
+                       '<span class="n">' + day.day + '</span>' +
+                       (sub ? '<span class="t">' + esc(sub) + '</span>' : '') +
+                       '</div>';
             });
             document.getElementById('calBody').innerHTML = pad.concat(cells).join('');
 
-            document.getElementById('calLegend').innerHTML = CAL_LEGEND
-                .filter(l => l[0] !== 'half_day' || d.half_day)   // only if the batch uses it
-                .map(l => `<span><span class="sw" style="background:${l[1]};"></span>${l[2]}</span>`)
-                .join('');
+            // Legend built from what is on screen — never lists a state the
+            // student cannot see, never omits one they can.
+            document.getElementById('calLegend').innerHTML = Object.keys(CAL_STATES)
+                .filter(function (k) { return seen[k]; })
+                .map(function (k) {
+                    const st = CAL_STATES[k];
+                    return '<span><span class="sw" style="background:' + st.sw + ';"></span>' +
+                           esc(st.label) + (st.mark ? ' (' + st.mark + ')' : '') + '</span>';
+                }).join('');
         }
 
         // ---------- Course calendar ----------
@@ -669,8 +758,17 @@
             try {
                 const d = await (await fetch('/api/student/schedule')).json();
                 _schedItems = (d && d.items) || [];
-                if (!_schedItems.length) return;
-                document.getElementById('scheduleCard').style.display = '';
+                const empty = document.getElementById('schedEmpty');
+                if (!_schedItems.length) {
+                    empty.textContent = 'Your course schedule has not been published yet. '
+                        + 'Modules, exam dates and events will appear here once your '
+                        + 'coordinator adds them.';
+                    empty.style.display = '';
+                    document.getElementById('schedList').innerHTML = '';
+                    document.getElementById('schedToggle').innerHTML = '';
+                    return;
+                }
+                empty.style.display = 'none';
                 renderSchedule();
 
                 const hols = (d && d.holidays) || [];
@@ -687,11 +785,20 @@
 
         // ---------- Modules & timetable ----------
         async function loadSubjects() {
+            const empty = document.getElementById('subjectsEmpty');
+            const table = document.getElementById('subjectsTable');
             try {
                 const d = await (await fetch('/api/student/subjects')).json();
                 const rows = (d && d.subjects) || [];
-                if (!rows.length) return;              // batch has no modules set up
-                document.getElementById('subjectsCard').style.display = '';
+                if (!rows.length) {
+                    // Silence reads as breakage — say why it is empty.
+                    empty.textContent = 'No modules have been set up for your batch yet. '
+                        + 'Once your coordinator adds them, your attendance for each '
+                        + 'module will show here.';
+                    empty.style.display = ''; table.style.display = 'none';
+                    return;
+                }
+                empty.style.display = 'none'; table.style.display = '';
                 document.getElementById('subjectRows').innerHTML = rows.map(function (s) {
                     const colour = s.at_risk ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
                     const flag = s.at_risk
@@ -702,10 +809,15 @@
                         flag + '</td><td>' + s.attended + '</td><td>' + s.expected + '</td>' +
                         '<td style="color:' + colour + ';font-weight:600;">' + s.rate + '%</td></tr>';
                 }).join('');
-            } catch (e) { /* card stays hidden */ }
+            } catch (e) {
+                empty.textContent = 'Could not load your modules. Pull down to refresh.';
+                empty.style.display = ''; table.style.display = 'none';
+            }
         }
 
         async function loadTimetable() {
+            const empty = document.getElementById('ttEmpty');
+            const wrap = document.getElementById('ttWrapper');
             try {
                 const d = await (await fetch('/api/student/timetable')).json();
                 const grid = (d && d.grid) || [];
@@ -714,9 +826,23 @@
                 const days = grid.filter(function (row) {
                     return row.slots.some(function (c) { return c.subject_name || c.room; });
                 });
-                if (!days.length) return;
-
-                document.getElementById('timetableCard').style.display = '';
+                if (!days.length) {
+                    // Slot times are still worth showing even with no subjects
+                    // assigned — that is when attendance can be marked.
+                    const known = Object.keys(times);
+                    let msg = 'No weekly timetable has been set up for your batch yet.';
+                    if (known.length) {
+                        msg += ' Attendance slots are currently: ' + known.map(function (k) {
+                            const t = times[k];
+                            return (SLOT_NAMES[k] || k) + ' ' + t.start + '\u2013' + t.end;
+                        }).join(', ') + '.';
+                    }
+                    empty.textContent = msg;
+                    empty.style.display = ''; wrap.style.display = 'none';
+                    document.getElementById('ttHint').textContent = '';
+                    return;
+                }
+                empty.style.display = 'none'; wrap.style.display = '';
                 const slots = grid[0].slots;
                 document.querySelector('#ttTable thead').innerHTML =
                     '<tr><th>Day</th>' + slots.map(function (s) {
@@ -737,7 +863,10 @@
                 }).join('');
                 document.getElementById('ttHint').textContent =
                     'Times are when each slot is open for marking attendance.';
-            } catch (e) { /* card stays hidden */ }
+            } catch (e) {
+                empty.textContent = 'Could not load your timetable. Try refreshing.';
+                empty.style.display = ''; wrap.style.display = 'none';
+            }
         }
 
         // ---------- Planned leave ----------
@@ -1080,7 +1209,10 @@
         // initial page load only pays for Overview.
         const TAB_LOADERS = {
             overview: [load],
-            calendar: [loadAttendanceCalendar, loadSubjects, loadTimetable, loadSchedule],
+            // The attendance calendar and the course timetable answer
+            // different questions, so they get their own tabs.
+            calendar:  [loadAttendanceCalendar],
+            timetable: [loadSubjects, loadSchedule, loadTimetable],
             requests: [loadGrievances, loadLeaves],
             details:  [loadProfile],
         };
