@@ -1215,7 +1215,7 @@ class AttendanceSystem:
 
 
 
-    def get_today_attendance(self):
+    def get_today_attendance(self, session=None):
         """Today's attendance, one row per active student.
 
         Reads the primary `attendance` table. It previously joined
@@ -1236,7 +1236,12 @@ class AttendanceSystem:
         today = datetime.now(timezone).date().strftime('%Y-%m-%d')
         cursor = self.conn.cursor()
 
-        cursor.execute('''
+        # Every active student's name and email, so it has to respect the
+        # caller's institute.
+        where, params = (tenancy.student_filter(self.conn, session, "s.course_id")
+                         if session else ("", []))
+
+        sql = """
             SELECT s.name, s.student_id, s.email,
                    MIN(CASE WHEN a.session_type LIKE 'morning%' THEN a.time_in END)
                        AS morning_time,
@@ -1247,9 +1252,11 @@ class AttendanceSystem:
             LEFT JOIN attendance a
                    ON a.student_id = s.id AND a.date = ?
             WHERE s.status = 'active'
+        """ + where + """
             GROUP BY s.id, s.name, s.student_id, s.email
             ORDER BY s.name
-        ''', (today,))
+        """
+        cursor.execute(sql, tuple([today] + params))
 
         return cursor.fetchall()
 
@@ -1260,10 +1267,18 @@ class AttendanceSystem:
     # delegates to the bulk-mark path, which writes the right table and also
     # refuses Sundays, holidays and batches the caller does not own.
 
-    def get_student_count(self):
-        """Get total number of active students"""
+    def get_student_count(self, session=None):
+        """Active students the caller is allowed to see.
+
+        Unscoped this reported every institute's students on a shared
+        deployment — both a leak and simply the wrong number on screen.
+        """
+        where, params = (tenancy.student_filter(self.conn, session)
+                         if session else ("", []))
         cursor = self.conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
+        cursor.execute(
+            'SELECT COUNT(*) FROM students WHERE status = "active"' + where,
+            tuple(params))
         return cursor.fetchone()[0]
            
 
@@ -3053,12 +3068,12 @@ async def get_today_attendance(session: Dict[str, Any] = Depends(require_teacher
     every batch, and it is not batch-scoped. Only the admin page consumes it,
     so a kiosk has no reason to reach it.
     """
-    return attendance_system.get_today_attendance()
+    return attendance_system.get_today_attendance(session)
 
 @app.get("/api/students/count")
 async def get_student_count(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get total number of students"""
-    count = attendance_system.get_student_count()
+    count = attendance_system.get_student_count(session)
     return {"total_students": count}
 
 @app.get("/api/system/status")
@@ -3798,17 +3813,34 @@ async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_ad
 async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)):
     """Clear all student data, attendance records, and face encodings"""
     try:
-        cursor = attendance_system.conn.cursor()
-        
-        # Delete all records from tables in order to avoid foreign key issues
-        cursor.execute('DELETE FROM slot_attendance')
-        cursor.execute('DELETE FROM attendance')
-        cursor.execute('DELETE FROM face_encodings')
-        cursor.execute('DELETE FROM students')
-        cursor.execute('DELETE FROM registration_sessions')
-        cursor.execute('DELETE FROM daily_attendance_summary')
-        
-        attendance_system.conn.commit()
+        conn = attendance_system.conn
+        cursor = conn.cursor()
+
+        # Scope the wipe to the caller's own institute. Unscoped, an admin at
+        # one institute clicking "delete all student data" would take every
+        # other institute's students, attendance and face encodings with it —
+        # the most destructive action in the app, and it did not know tenancy
+        # existed. On a single-institute deployment the filter is empty and
+        # this behaves exactly as before.
+        where, params = tenancy.student_filter(conn, session)
+        ids = [r[0] for r in cursor.execute(
+            "SELECT id FROM students WHERE 1=1" + where, tuple(params)).fetchall()]
+
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            for table in ("slot_attendance", "attendance", "face_encodings"):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE student_id IN ({marks})", tuple(ids))
+            cursor.execute(f"DELETE FROM students WHERE id IN ({marks})", tuple(ids))
+
+        # Neither of these is student-scoped: a registration session has no
+        # student yet, and the daily summary is a derived aggregate. They are
+        # only cleared when the wipe covers the whole deployment.
+        if not where:
+            cursor.execute('DELETE FROM registration_sessions')
+            cursor.execute('DELETE FROM daily_attendance_summary')
+
+        conn.commit()
         
         # Reload face encodings (will be empty)
         attendance_system.load_student_faces()

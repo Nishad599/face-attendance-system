@@ -137,7 +137,9 @@ class TestTodayAttendanceReadsThePrimaryTable:
 
     def _method_source(self):
         src = _source(APP_FILE)
-        start = src.find("def get_today_attendance(self)")
+        # Match the name only: the signature gained an optional `session` so
+        # the query can be scoped to the caller's institute.
+        start = src.find("def get_today_attendance(self")
         assert start != -1, "get_today_attendance() not found"
         end = src.find("\n    def ", start + 10)
         return src[start:end if end != -1 else len(src)]

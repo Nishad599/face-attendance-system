@@ -189,6 +189,31 @@ CREATE TABLE timetable (
     session_type TEXT NOT NULL, subject_id INTEGER, room TEXT, created_at TIMESTAMP
 );
 CREATE UNIQUE INDEX idx_timetable_slot ON timetable (course_id, weekday, session_type);
+-- Needed by clear_all_data, which deletes from each of these in turn.
+CREATE TABLE slot_attendance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL, date DATE NOT NULL, slot_id TEXT NOT NULL,
+    time_marked TEXT, detection_confidence REAL,
+    is_manual BOOLEAN DEFAULT 0, manual_reason TEXT,
+    created_at TEXT, course_id INTEGER,
+    UNIQUE(student_id, date, slot_id)
+);
+CREATE TABLE face_encodings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER, encoding_data BLOB, photo_path TEXT,
+    quality_score REAL, created_at TIMESTAMP
+);
+CREATE TABLE registration_sessions (
+    session_id TEXT PRIMARY KEY, student_data TEXT,
+    photos_uploaded INTEGER DEFAULT 0, status TEXT DEFAULT 'in_progress',
+    created_at TIMESTAMP, expires_at TIMESTAMP
+);
+CREATE TABLE daily_attendance_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date DATE NOT NULL UNIQUE, total_students INTEGER DEFAULT 0,
+    present_morning INTEGER DEFAULT 0, present_afternoon INTEGER DEFAULT 0,
+    total_present INTEGER DEFAULT 0, last_updated TEXT
+);
 CREATE TABLE consent_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL, purpose TEXT NOT NULL DEFAULT 'biometric_attendance',

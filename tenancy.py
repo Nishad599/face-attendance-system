@@ -166,6 +166,27 @@ def visible_course_ids(conn, session: Optional[Dict[str, Any]]) -> Optional[List
     return course_ids_for_institute(conn, institute_id)
 
 
+def student_filter(conn, session, column: str = "course_id"):
+    """(sql_fragment, params) limiting a students query to this session's scope.
+
+    Returns ("", []) when there is nothing to restrict — a superadmin, or a
+    single-institute deployment — so a caller can append it unconditionally and
+    get today's behaviour there.
+
+    `column` names the course column as that query spells it, e.g. "s.course_id"
+    when the table is aliased.
+    """
+    allowed = visible_course_ids(conn, session)
+    if allowed is None:
+        return "", []
+    if not allowed:
+        # Known-restricted but with no batches: match nothing rather than
+        # everything. An empty IN list is a syntax error, hence the subquery.
+        return f" AND {column} IN (SELECT NULL)", []
+    marks = ",".join("?" for _ in allowed)
+    return f" AND {column} IN ({marks})", list(allowed)
+
+
 def course_in_institute(conn, course_id, institute_id) -> bool:
     """Whether a batch belongs to an institute. True when unscoped."""
     if institute_id is None:
