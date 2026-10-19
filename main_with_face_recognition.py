@@ -407,8 +407,60 @@ def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     return [r[0] for r in rows]
 
 
+def assert_student_allowed(session: Dict[str, Any], student_id: int):
+    """403 unless this session may act on that student.
+
+    Every endpoint that takes a student id from the URL needs this. Without
+    it an admin at one institute could read or edit another institute's
+    student simply by guessing the number — the session check passes, because
+    they ARE an admin, just not of that student's institute.
+    """
+    conn = attendance_system.conn
+    row = conn.execute("SELECT course_id FROM students WHERE id = ?",
+                       (student_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Student not found")
+    course_id = row[0]
+    if course_id is None:
+        return          # not in a batch yet; nothing to scope by
+    if not tenancy.session_may_touch_course(conn, session, course_id):
+        raise HTTPException(status_code=403, detail="Not your institute")
+    assert_course_allowed(session, course_id)
+
+
+def assert_staff_allowed(session: Dict[str, Any], user_id: int):
+    """403 unless this session may act on that staff account.
+
+    Same reasoning as assert_student_allowed: an admin editing, deleting or
+    resetting the password of another institute's teacher is a cross-tenant
+    write that the role check alone does not catch.
+    """
+    conn = attendance_system.conn
+    row = conn.execute("SELECT institute_id FROM users WHERE id = ?",
+                       (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if tenancy.is_superadmin(session) or tenancy.is_single_tenant(conn):
+        return
+    mine = tenancy.institute_for_session(session)
+    if row[0] is None or mine is None or int(row[0]) != int(mine):
+        raise HTTPException(status_code=403, detail="Not your institute")
+
+
 def assert_course_allowed(session: Dict[str, Any], course_id: int):
-    """Raise 403 if a teacher tries to act on a batch they aren't assigned to."""
+    """403 unless this session may act on that batch.
+
+    Two separate rules, and both matter:
+      * a teacher may only touch batches they are assigned to;
+      * anyone may only touch batches in their own institute.
+
+    The second was missing. teacher_allowed_course_ids() returns None for an
+    admin meaning "all batches", which was true with one institute and became
+    "every tenant's batches" with two.
+    """
+    if not tenancy.session_may_touch_course(attendance_system.conn, session, course_id):
+        raise HTTPException(status_code=403, detail="Not your institute")
+
     allowed = teacher_allowed_course_ids(session)
     if allowed is None:
         return
@@ -2566,6 +2618,11 @@ async def admin_overview(session: Dict[str, Any] = Depends(require_admin_access)
         conn.execute("SELECT 1 FROM students LIMIT 1").fetchone()
         if not is_postgres() and os.path.exists("attendance.db"):
             db_bytes = os.path.getsize("attendance.db")
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception:
         db_ok = False
 
@@ -3146,8 +3203,14 @@ async def email_test(data: dict = Body(...), session: Dict[str, Any] = Depends(r
 async def get_student_slot_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed slot-based attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_slot_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
     
@@ -3559,8 +3622,14 @@ async def get_dashboard_stats(session: Dict[str, Any] = Depends(require_teacher_
 async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4101,6 +4170,13 @@ async def update_session_configuration(
 ):
     """Update session timing configuration (scoped to a batch when course_id given)."""
     try:
+        # The batch comes from the body, not the URL, which is why the sweep
+        # for id-taking endpoints missed it. Slot timings decide whether a
+        # student can mark at all, so editing another institute's is a real
+        # write across the boundary.
+        if data.get('course_id') is not None:
+            assert_course_allowed(session, data['course_id'])
+
         manager = create_slot_manager_instance()
         success, message = manager.update_session_timing(
             session_type=session_type,
@@ -4113,6 +4189,11 @@ async def update_session_configuration(
             # fallback view keeps the old timings until the next restart.
             attendance_manager.reload_config()
         return {"success": success, "message": message}
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4326,6 +4407,7 @@ async def create_course(data: CourseCreate, session: Dict[str, Any] = Depends(re
 async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
     """Update a batch's details or active status."""
     try:
+        assert_course_allowed(session, course_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -4377,6 +4459,7 @@ async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, A
 async def delete_course(course_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
     """Delete a batch (only if it has no students; otherwise deactivate instead)."""
     try:
+        assert_course_allowed(session, course_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -4494,6 +4577,7 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
 async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
     """Update a teacher: name, active status, password reset, and batch assignments."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         row = cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone()
         if not row:
@@ -4538,6 +4622,7 @@ async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, A
 async def delete_teacher(user_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
     """Delete a teacher account and its batch assignments."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Teacher not found")
@@ -4599,7 +4684,19 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
     """Update student details including joining date"""
     try:
         cursor = attendance_system.conn.cursor()
-        # Batch scope for teachers
+
+        # Institute AND batch scope. The teacher check below runs only when
+        # teacher_allowed_course_ids() returns a list, and it returns None for
+        # an admin meaning "all batches" — so for an admin this whole block
+        # used to be skipped and nothing was checked at all. An admin at one
+        # institute could rename or move another institute's student.
+        assert_student_allowed(session, student_id)
+
+        # Moving a student into a batch is a write to that batch, so the
+        # destination needs the same check as the source.
+        if data.get("course_id") is not None:
+            assert_course_allowed(session, data["course_id"])
+
         allowed = teacher_allowed_course_ids(session)
         if allowed is not None:
             row = cursor.execute("SELECT course_id FROM students WHERE id = ?", (student_id,)).fetchone()
@@ -4624,6 +4721,11 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
         cursor.execute(sql, values)
         attendance_system.conn.commit()
         return {"success": True, "message": "Student updated successfully"}
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4639,6 +4741,12 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
 
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+
+        # Institute scope. The teacher check below is skipped entirely for an
+        # admin (teacher_allowed_course_ids returns None for them), so without
+        # this an admin at one institute could delete another institute's
+        # student outright.
+        assert_student_allowed(session, student_id)
 
         allowed = teacher_allowed_course_ids(session)
         if allowed is not None and student[1] not in allowed:
@@ -4662,6 +4770,11 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
               details=f"student_db_id={student_id}", course_id=student[1])
         return {"success": True, "message": f"Student {student[0]} deleted successfully"}
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": f"Failed to delete student: {str(e)}"}
 
@@ -4695,6 +4808,7 @@ async def reset_teacher_password(user_id: int, data: dict = Body(default={}),
                                  session: Dict[str, Any] = Depends(require_admin_access)):
     """Admin resets a teacher's password (to a provided value or 'teacher@123')."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Teacher not found")
@@ -7048,6 +7162,11 @@ async def bulk_export_attendance(
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
     
@@ -7056,6 +7175,7 @@ async def bulk_export_attendance(
 async def get_student_details(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get individual student details including joining date"""
     try:
+        assert_student_allowed(session, student_id)
         cursor = attendance_system.conn.cursor()
         cursor.execute('''
             SELECT id, student_id, name, email, photo_count, verification_score, 
@@ -7082,6 +7202,11 @@ async def get_student_details(student_id: int, session: Dict[str, Any] = Depends
                 "status": student[8]
             }
         }
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -7173,6 +7298,7 @@ async def student_profile_detail(student_id: int,
 async def export_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Export individual student slot attendance as CSV"""
     try:
+        assert_student_allowed(session, student_id)
         from fastapi.responses import StreamingResponse
         import csv
         import io
@@ -7259,6 +7385,11 @@ async def export_student_attendance(student_id: int, session: Dict[str, Any] = D
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] Export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
@@ -7272,8 +7403,14 @@ async def export_student_attendance(student_id: int, session: Dict[str, Any] = D
 async def get_student_session_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed session-based attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
     
@@ -7353,7 +7490,13 @@ async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None,
 async def get_student_sparkline(student_id: int, days: int = 14, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """14-day per-day attendance sparkline for a single student"""
     try:
+        assert_student_allowed(session, student_id)
         return analytics_manager.get_student_sparkline(student_id=student_id, days=days)
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -7383,6 +7526,11 @@ async def get_live_attendance_count(course_id: Optional[int] = None,
         manager = create_slot_manager_instance()
         count_data = manager.get_live_student_count(course_id=scope_course_id)
         return count_data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in live count: {e}")
         return {
