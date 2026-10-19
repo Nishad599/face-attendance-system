@@ -176,9 +176,11 @@ class TestApprovalsPage:
 class TestDeadEnds:
 
     def test_check_system_calls_an_endpoint_that_exists(self):
-        """admin.html called /api/debug/check_system, which is defined nowhere
-        in the app — the button had always errored."""
-        page = read(os.path.join(TEMPLATES, "admin.html"))
+        """The old /admin page called /api/debug/check_system, which is defined
+        nowhere in the app — the button had always errored. That page is gone
+        (admin.html is deleted, /admin redirects to /settings); the assertion
+        moves to the page that inherited the button."""
+        page = read(os.path.join(TEMPLATES, "settings.html"))
         # The comment above the function still names the old endpoint, which is
         # the point of the comment — assert on what it actually calls.
         fetched = re.findall(r"fetch\('([^']+)'", page)

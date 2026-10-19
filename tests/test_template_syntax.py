@@ -131,3 +131,33 @@ def test_only_classes_that_exist_are_used(name):
         used.update(c for c in attr.split() if c.startswith("app-"))
     missing = sorted(used - defined)
     assert not missing, f"{name} uses undefined classes: {missing}"
+
+
+class TestNoOrphanedTemplates:
+    """A page the app never renders is dead weight that still reads as live.
+
+    admin.html and students.html sat here after /admin became /settings and
+    /students became /people. Both were 400 lines of plausible-looking markup
+    calling endpoints that had moved, and two tests were still pinning fixes
+    inside them — guarding a page nobody could open.
+    """
+
+    @staticmethod
+    def _rendered():
+        with open(os.path.join(ROOT, "main_with_face_recognition.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
+        return set(re.findall(r'TemplateResponse\(\s*"([^"]+\.html)"', src))
+
+    def test_every_page_on_disk_is_reachable(self):
+        orphans = sorted(set(PAGES) - self._rendered())
+        assert not orphans, (
+            "no route renders these; delete them or route them: "
+            + ", ".join(orphans))
+
+    def test_every_rendered_page_exists(self):
+        """The other direction: a typo'd template name is a 500 on a page that
+        was presumably tested by hand once and never again."""
+        on_disk = set(os.listdir(TEMPLATES))
+        missing = sorted(n for n in self._rendered() if n not in on_disk)
+        assert not missing, "rendered but absent: " + ", ".join(missing)

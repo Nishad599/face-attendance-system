@@ -157,14 +157,19 @@ class TestTodayAttendanceReadsThePrimaryTable:
         body = self._method_source()
         assert "first_time" in body
 
-    def test_admin_page_counts_presence_on_first_time(self):
-        """admin.html filtered on record[2] — the email column, never null —
-        so "Present Today" always equalled the total student count."""
-        page = _source(os.path.join(ROOT, "templates", "admin.html"))
-        idx = page.find("const presentToday")
-        assert idx != -1, "presentToday calculation not found in admin.html"
-        snippet = page[idx:idx + 260]
-        assert "record[5]" in snippet, (
-            "presence must be read from first_time (index 5)")
-        assert "record[2]" not in snippet, (
-            "index 2 is email and is never null — it counts everyone present")
+    def test_present_today_counts_students_not_rows(self):
+        """The old /admin page filtered on record[2] — the email column, never
+        null — so "Present Today" always equalled the total student count.
+
+        That page is deleted and the dashboard reads /api/admin/overview
+        instead, where the equivalent mistake is COUNT(*) over `attendance`:
+        one row per student per slot, so four slots in a day would report four
+        times the roster present. The assertion follows the number to where it
+        is now computed.
+        """
+        src = _source(os.path.join(ROOT, "main_with_face_recognition.py"))
+        idx = src.find('        present = count(')
+        assert idx != -1, "the overview no longer computes `present`"
+        stmt = src[idx:idx + 400]
+        assert "COUNT(DISTINCT student_id)" in stmt, (
+            "presence must count distinct students, not attendance rows: " + stmt[:200])
