@@ -2719,6 +2719,8 @@ async def platform_institutes(session: Dict[str, Any] = Depends(require_superadm
                         "AND is_active = 1 AND terminal_pin_hash IS NOT NULL", (iid,))
         staff = one("SELECT COUNT(*) FROM users WHERE institute_id = ? AND is_active = 1",
                     (iid,))
+        admins = one("SELECT COUNT(*) FROM users WHERE institute_id = ? "
+                     "AND role = 'admin' AND is_active = 1", (iid,))
         pending = sum(one(
             f"SELECT COUNT(*) FROM {t} q JOIN courses c ON c.id = q.course_id "
             f"WHERE c.institute_id = ? AND q.status = 'pending'", (iid,))
@@ -2727,6 +2729,10 @@ async def platform_institutes(session: Dict[str, Any] = Depends(require_superadm
 
         # What a platform owner needs to spot without opening the tenant.
         warnings = []
+        # First, because it is the one that makes the institute unusable:
+        # provisioning creates the tenant, not its way in.
+        if not admins:
+            warnings.append("no administrator — nobody can run this institute")
         if batches and not terminals:
             warnings.append("no terminal PIN on any batch")
         if students and not enrolled:
@@ -2739,7 +2745,7 @@ async def platform_institutes(session: Dict[str, Any] = Depends(require_superadm
             "is_active": bool(r[4]), "created_at": str(r[5])[:19] if r[5] else None,
             "batches": batches, "students": students, "face_enrolled": enrolled,
             "marks_today": marks_today, "terminals": terminals, "staff": staff,
-            "pending_approvals": pending, "warnings": warnings,
+            "admins": admins, "pending_approvals": pending, "warnings": warnings,
         })
 
     return {
@@ -2796,6 +2802,85 @@ async def platform_create_institute(data: InstituteCreate,
 
     audit(session, "create_institute", target=name, details=f"slug={slug}")
     return {"success": True, "message": f"Created {name}", "slug": slug}
+
+
+class InstituteAdminCreate(BaseModel):
+    username: str
+    password: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+@app.get("/api/platform/institutes/{institute_id}/admins")
+async def platform_list_admins(institute_id: int,
+                               session: Dict[str, Any] = Depends(require_superadmin)):
+    """Who can administer this institute."""
+    conn = attendance_system.conn
+    try:
+        rows = conn.execute(
+            "SELECT id, username, name, email, is_active, must_change_password "
+            "FROM users WHERE role = 'admin' AND institute_id = ? ORDER BY username",
+            (institute_id,)).fetchall()
+    except Exception as e:
+        return {"success": False, "message": str(e), "admins": []}
+    return {"success": True, "admins": [
+        {"id": r[0], "username": r[1], "name": r[2], "email": r[3],
+         "is_active": bool(r[4]), "must_change_password": bool(r[5])} for r in rows]}
+
+
+@app.post("/api/platform/institutes/{institute_id}/admins")
+async def platform_create_admin(institute_id: int, data: InstituteAdminCreate,
+                                session: Dict[str, Any] = Depends(require_superadmin)):
+    """Give a newly provisioned institute its own administrator.
+
+    Without this a new institute is unusable: provisioning creates the tenant,
+    but the only admin account on the deployment belongs to the first
+    institute, and tenancy quite correctly confines it there. Every institute
+    needs its own.
+
+    The password is supplied by the caller rather than generated, matching how
+    teacher accounts are created, and must_change_password is set so the new
+    administrator replaces it at first login.
+    """
+    conn = attendance_system.conn
+    username = (data.username or "").strip()
+    if not username or not data.password:
+        return {"success": False, "message": "Username and password are required"}
+    if len(data.password) < 8:
+        return {"success": False, "message": "Password must be at least 8 characters"}
+
+    try:
+        inst = conn.execute("SELECT name FROM institutes WHERE id = ?",
+                            (institute_id,)).fetchone()
+        if not inst:
+            raise HTTPException(status_code=404, detail="No such institute")
+
+        # Usernames are unique across the deployment, not per institute: the
+        # login form has no institute field, so two tenants cannot both own
+        # "admin" and still be told apart at sign-in.
+        if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            return {"success": False,
+                    "message": f"Username '{username}' is already taken. Usernames are "
+                               f"shared across institutes, so try '{username}.{inst[0].split()[0].lower()}'"}
+
+        conn.execute(
+            "INSERT INTO users (username, name, email, password_hash, role, is_active, "
+            "must_change_password, institute_id) VALUES (?, ?, ?, ?, 'admin', 1, 1, ?)",
+            (username, (data.name or username).strip(),
+             (data.email or "").strip() or None,
+             hash_password(data.password), institute_id))
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        return {"success": False, "message": str(e)}
+
+    audit(session, "create_institute_admin", target=username,
+          details=f"institute={inst[0]}")
+    return {"success": True,
+            "message": f"'{username}' can now administer {inst[0]}. "
+                       f"They will be asked to change the password at first login."}
 
 
 @app.post("/api/platform/institutes/{institute_id}/active")
@@ -4247,10 +4332,22 @@ async def delete_course(course_id: int, session: Dict[str, Any] = Depends(requir
 async def list_teachers(session: Dict[str, Any] = Depends(require_admin_access)):
     """List teacher accounts with their assigned batches."""
     try:
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
         teachers = []
+
+        # Staff belong to an institute. Unscoped this listed every tenant's
+        # teachers — names and email addresses — to any admin.
+        scope, sparams = "", []
+        iid = tenancy.institute_for_session(session)
+        if iid is not None and not tenancy.is_single_tenant(conn):
+            scope = " AND institute_id = ?"
+            sparams = [iid]
+
         for r in cur.execute(
-            "SELECT id, username, name, is_active, email FROM users WHERE role = 'teacher' ORDER BY username"
+            "SELECT id, username, name, is_active, email FROM users "
+            "WHERE role = 'teacher'" + scope + " ORDER BY username",
+            tuple(sparams),
         ).fetchall():
             batches = cur.execute(
                 "SELECT c.id, c.name FROM teacher_batches tb "
@@ -4274,17 +4371,33 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
         username = (data.username or "").strip()
         if not username or not data.password:
             return {"success": False, "message": "Username and password are required"}
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
         if cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
             return {"success": False, "message": f"Username '{username}' already exists"}
+
+        # Inherit the creating admin's institute. Without this every teacher
+        # was created with institute_id NULL, which tenancy reads as "not
+        # confined" — a teacher who could see across institutes.
+        institute_id = (tenancy.institute_for_session(session)
+                        or tenancy.default_institute_id(conn))
+
         cur.execute(
-            "INSERT INTO users (username, name, email, password_hash, role, is_active, must_change_password) "
-            "VALUES (?, ?, ?, ?, 'teacher', 1, 1)",
+            "INSERT INTO users (username, name, email, password_hash, role, is_active, "
+            "must_change_password, institute_id) "
+            "VALUES (?, ?, ?, ?, 'teacher', 1, 1, ?)",
             (username, (data.name or username).strip(), (data.email or "").strip() or None,
-             hash_password(data.password)),
+             hash_password(data.password), institute_id),
         )
         user_id = cur.lastrowid
+
+        # A batch from another institute would hand this teacher cross-tenant
+        # access by the back door.
         for cid in (data.batch_ids or []):
+            if not tenancy.session_may_touch_course(conn, session, cid):
+                conn.rollback()
+                return {"success": False,
+                        "message": "That batch belongs to a different institute"}
             if is_postgres():
                 cur.execute(
                     "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",

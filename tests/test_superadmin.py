@@ -260,3 +260,143 @@ class TestTheRoleCanActuallyLogIn:
         src = read(script)
         assert "getpass" in src, "a password passed as an argument lands in shell history"
         assert "hash_password" in src
+
+
+@needs_app
+class TestEveryInstituteGetsItsOwnAdmin:
+    """Provisioning creates the tenant, not its way in.
+
+    The first institute's admin is confined to it by tenancy — correctly — so
+    a newly created institute had nobody who could run it. That made the
+    provisioning feature useless on its own.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        original = _app.attendance_system.conn
+        yield
+        _app.attendance_system.conn = original
+
+    def _boss(self):
+        return session_for("superadmin", None)
+
+    def _create_admin(self, db, institute_id, username, password="Temp12345"):
+        _app.attendance_system.conn = db
+        body = _app.InstituteAdminCreate(username=username, password=password)
+        return asyncio.new_event_loop().run_until_complete(
+            _app.platform_create_admin(institute_id, body, self._boss()))
+
+    def test_admin_is_created_for_that_institute(self, db, two_institutes):
+        assert self._create_admin(db, 2, "sp.admin")["success"] is True
+        row = db.execute(
+            "SELECT role, institute_id, must_change_password FROM users "
+            "WHERE username = 'sp.admin'").fetchone()
+        assert row[0] == "admin"
+        assert row[1] == 2
+        assert row[2] == 1, "the new admin should replace the temporary password"
+
+    def test_the_new_admin_is_confined_to_it(self, db, two_institutes):
+        """The whole point. An admin created for institute 2 must not be able
+        to act on institute 1's batches."""
+        import tenancy
+        self._create_admin(db, 2, "sp.admin")
+        row = db.execute(
+            "SELECT id, institute_id FROM users WHERE username = 'sp.admin'").fetchone()
+        sess = {"user_type": "admin",
+                "user_info": {"id": row[0], "role": "admin", "institute_id": row[1]}}
+        assert tenancy.session_may_touch_course(db, sess, 2) is True
+        assert tenancy.session_may_touch_course(db, sess, 1) is False
+
+    def test_username_collisions_are_refused(self, db, two_institutes):
+        """Usernames are deployment-wide: the sign-in form has no institute
+        field, so two tenants cannot both own 'admin'."""
+        self._create_admin(db, 1, "shared.name")
+        d = self._create_admin(db, 2, "shared.name")
+        assert d["success"] is False
+        assert "already taken" in d["message"]
+
+    def test_short_password_is_refused(self, db, two_institutes):
+        assert self._create_admin(db, 2, "x.admin", "short")["success"] is False
+
+    def test_unknown_institute_is_404(self, db, two_institutes):
+        with pytest.raises(_app.HTTPException) as e:
+            self._create_admin(db, 9999, "nobody")
+        assert e.value.status_code == 404
+
+    def test_console_flags_an_institute_with_no_admin(self, db, two_institutes):
+        """A freshly provisioned institute: the fixture's two already have
+        admins, so this makes a third the way the console does."""
+        _app.attendance_system.conn = db
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_app.platform_create_institute(
+            _app.InstituteCreate(name="Pune Academy"), self._boss()))
+
+        by_name = {i["name"]: i for i in
+                   loop.run_until_complete(_app.platform_institutes(self._boss()))["institutes"]}
+        assert by_name["Pune Academy"]["admins"] == 0
+        assert any("administrator" in w for w in by_name["Pune Academy"]["warnings"])
+
+        # And the warning clears once it has one.
+        new_id = db.execute(
+            "SELECT id FROM institutes WHERE slug = 'pune-academy'").fetchone()[0]
+        self._create_admin(db, new_id, "pune.admin")
+        by_name = {i["name"]: i for i in
+                   loop.run_until_complete(_app.platform_institutes(self._boss()))["institutes"]}
+        assert by_name["Pune Academy"]["admins"] == 1
+        assert not any("administrator" in w for w in by_name["Pune Academy"]["warnings"])
+
+    def test_listing_admins_is_per_institute(self, db, two_institutes):
+        self._create_admin(db, 1, "ng.admin")
+        self._create_admin(db, 2, "sp.admin")
+        _app.attendance_system.conn = db
+        loop = asyncio.new_event_loop()
+        # The fixture already seeded ng_admin / sp_admin, so assert the new
+        # one lands in the right institute and the other's does not appear.
+        for iid, mine, theirs in ((1, "ng.admin", "sp.admin"),
+                                  (2, "sp.admin", "ng.admin")):
+            names = [a["username"] for a in loop.run_until_complete(
+                _app.platform_list_admins(iid, self._boss()))["admins"]]
+            assert mine in names
+            assert theirs not in names
+
+
+@needs_app
+class TestTeacherAccountsAreScopedToo:
+    """Found alongside: create_teacher never set institute_id, so every
+    teacher was created unconfined, and list_teachers showed every tenant's
+    staff — names and email addresses — to any admin."""
+
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        original = _app.attendance_system.conn
+        yield
+        _app.attendance_system.conn = original
+
+    def test_new_teacher_inherits_the_creating_admins_institute(self, db, two_institutes):
+        _app.attendance_system.conn = db
+        body = _app.TeacherCreate(username="ng.teach", password="Temp12345")
+        d = asyncio.new_event_loop().run_until_complete(
+            _app.create_teacher(body, session_for("admin", 1)))
+        assert d["success"] is True
+        assert db.execute(
+            "SELECT institute_id FROM users WHERE username = 'ng.teach'"
+        ).fetchone()[0] == 1
+
+    def test_cannot_assign_another_institutes_batch(self, db, two_institutes):
+        _app.attendance_system.conn = db
+        body = _app.TeacherCreate(username="sneaky", password="Temp12345", batch_ids=[2])
+        d = asyncio.new_event_loop().run_until_complete(
+            _app.create_teacher(body, session_for("admin", 1)))
+        assert d["success"] is False, "a cross-institute batch assignment was allowed"
+
+    def test_listing_is_scoped(self, db, two_institutes):
+        for uname, inst in (("ng.teach", 1), ("sp.teach", 2)):
+            db.execute(
+                "INSERT INTO users (username, name, password_hash, role, is_active, "
+                "institute_id) VALUES (?, ?, 'x', 'teacher', 1, ?)", (uname, uname, inst))
+        db.commit()
+        _app.attendance_system.conn = db
+        loop = asyncio.new_event_loop()
+        for inst, expected in ((1, "ng.teach"), (2, "sp.teach")):
+            d = loop.run_until_complete(_app.list_teachers(session_for("admin", inst)))
+            assert [t["username"] for t in d["teachers"]] == [expected]

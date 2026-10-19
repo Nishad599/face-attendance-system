@@ -254,6 +254,53 @@
             <div id="createMsg" style="margin-top:10px;font-size:.88rem;"></div>
         </div>
 
+        <!-- Administrators for one institute. Inline under the table for the
+             same reason as the create form: provisioning is rare, and losing
+             the list behind an overlay is not worth it. -->
+        <div class="sa-card" id="saAdmins" style="display:none;">
+            <div class="d-flex" style="justify-content:space-between;align-items:flex-start;
+                 gap:12px;flex-wrap:wrap;">
+                <div>
+                    <h2 style="margin:0 0 4px;font-size:1.05rem;" id="adminFor">Administrators</h2>
+                    <p class="muted" style="font-size:.88rem;margin:0;">
+                        Each institute needs its own. Tenancy confines an admin to the
+                        institute they belong to, so the first institute's admin cannot
+                        run this one.
+                    </p>
+                </div>
+                <button class="app-btn app-btn-subtle app-btn-sm" onclick="closeAdmins()">Close</button>
+            </div>
+
+            <div id="adminList" style="margin:14px 0;"></div>
+
+            <div class="d-flex gap-8" style="flex-wrap:wrap;align-items:flex-end;
+                 border-top:1px solid var(--border-color);padding-top:14px;">
+                <div class="app-form-group" style="margin:0;min-width:170px;">
+                    <label class="app-form-label" for="adUser">Username</label>
+                    <input type="text" id="adUser" class="app-form-input" autocomplete="off">
+                </div>
+                <div class="app-form-group" style="margin:0;min-width:170px;">
+                    <label class="app-form-label" for="adName">Name</label>
+                    <input type="text" id="adName" class="app-form-input" autocomplete="off">
+                </div>
+                <div class="app-form-group" style="margin:0;min-width:190px;">
+                    <label class="app-form-label" for="adEmail">Email</label>
+                    <input type="email" id="adEmail" class="app-form-input" autocomplete="off">
+                </div>
+                <div class="app-form-group" style="margin:0;min-width:190px;">
+                    <label class="app-form-label" for="adPass">Temporary password</label>
+                    <input type="password" id="adPass" class="app-form-input"
+                           autocomplete="new-password">
+                </div>
+                <button class="app-btn app-btn-primary" onclick="createAdmin()">Create admin</button>
+            </div>
+            <p class="muted" style="font-size:.82rem;margin:10px 0 0;">
+                They are asked to change it at first login. Usernames are shared
+                across institutes, because the sign-in form has no institute field.
+            </p>
+            <div id="adminMsg" style="margin-top:10px;font-size:.88rem;"></div>
+        </div>
+
         <div class="sa-card">
             <div id="saRows">
                 <div class="sa-empty">Loading…</div>
@@ -349,7 +396,12 @@
                 '<td class="r num">' + i.marks_today + '</td>' +
                 '<td class="r num">' + (i.pending_approvals || '—') + '</td>' +
                 '<td>' + health + '</td>' +
-                '<td class="r"><button class="app-btn app-btn-subtle app-btn-sm" ' +
+                '<td class="r" style="white-space:nowrap;">' +
+                '<button class="app-btn ' + (i.admins ? 'app-btn-subtle' : 'app-btn-primary') +
+                ' app-btn-sm" onclick="openAdmins(' + i.id + ',\'' +
+                esc(i.name).replace(/'/g, "\\'") + '\')">' +
+                (i.admins ? 'Admins (' + i.admins + ')' : 'Add admin') + '</button> ' +
+                '<button class="app-btn app-btn-subtle app-btn-sm" ' +
                 'onclick="toggleActive(' + i.id + ',' + (i.is_active ? 'false' : 'true') +
                 ',\'' + esc(i.name).replace(/'/g, "\\'") + '\')">' +
                 (i.is_active ? 'Suspend' : 'Restore') + '</button></td></tr>';
@@ -399,6 +451,85 @@
                 if (!d.success) alert(d.message || 'Failed');
                 load();
             } catch (e) { alert('Connection failed'); }
+        }
+
+        let adminInstitute = null;
+
+        async function openAdmins(id, name) {
+            adminInstitute = id;
+            document.getElementById('saAdmins').style.display = '';
+            document.getElementById('adminFor').textContent = 'Administrators · ' + name;
+            document.getElementById('adminMsg').textContent = '';
+            document.getElementById('adminList').innerHTML = '<div class="sa-empty">Loading…</div>';
+            try {
+                const d = await (await fetch('/api/platform/institutes/' + id + '/admins')).json();
+                const a = d.admins || [];
+                document.getElementById('adminList').innerHTML = a.length
+                    ? '<table class="sa-table"><thead><tr><th>USERNAME</th><th>NAME</th>' +
+                      '<th>EMAIL</th><th>STATUS</th></tr></thead><tbody>' +
+                      a.map(function (x) {
+                          return '<tr><td><strong>' + esc(x.username) + '</strong></td>' +
+                              '<td>' + esc(x.name || '—') + '</td>' +
+                              '<td class="muted">' + esc(x.email || '—') + '</td>' +
+                              '<td>' + (x.is_active
+                                  ? '<span class="sa-chip ok">active</span>'
+                                  : '<span class="sa-chip off">inactive</span>') +
+                              (x.must_change_password
+                                  ? ' <span class="sa-chip warn">password not set yet</span>' : '') +
+                              '</td></tr>';
+                      }).join('') + '</tbody></table>'
+                    : '<div class="sa-chip warn" style="display:inline-flex;">' +
+                      'No administrator — nobody can run this institute</div>';
+            } catch (e) {
+                document.getElementById('adminList').innerHTML =
+                    '<div class="sa-empty">Could not load.</div>';
+            }
+        }
+
+        function closeAdmins() {
+            document.getElementById('saAdmins').style.display = 'none';
+            adminInstitute = null;
+        }
+
+        async function createAdmin() {
+            const msg = document.getElementById('adminMsg');
+            const username = document.getElementById('adUser').value.trim();
+            const password = document.getElementById('adPass').value;
+            if (!username || !password) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Username and password are required.';
+                return;
+            }
+            msg.style.color = 'var(--text-secondary)';
+            msg.textContent = 'Creating…';
+            try {
+                const d = await (await fetch(
+                    '/api/platform/institutes/' + adminInstitute + '/admins', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password,
+                            name: document.getElementById('adName').value.trim(),
+                            email: document.getElementById('adEmail').value.trim()
+                        })
+                    })).json();
+                msg.style.color = d.success
+                    ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                msg.textContent = d.message || (d.success ? 'Created' : 'Failed');
+                if (d.success) {
+                    // Clear the password first: it must not linger on screen.
+                    document.getElementById('adPass').value = '';
+                    document.getElementById('adUser').value = '';
+                    document.getElementById('adName').value = '';
+                    document.getElementById('adEmail').value = '';
+                    openAdmins(adminInstitute,
+                        document.getElementById('adminFor').textContent.replace(/^.*· /, ''));
+                    load();
+                }
+            } catch (e) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Connection failed.';
+            }
         }
 
         async function performLogout() {
