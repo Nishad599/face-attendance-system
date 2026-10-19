@@ -46,7 +46,7 @@
             background: var(--color-primary); border-color: var(--color-primary);
             color: #fff; box-shadow: 0 0 0 4px rgba(0, 82, 204, .15);
         }
-        .step-dot.completed { background: #36B37E; border-color: #36B37E; color: #fff; }
+        .step-dot.completed { background: var(--status-ok-solid); border-color: var(--status-ok-solid); color: #fff; }
 
         /* ---- Steps ---- */
         .step { display: none; }
@@ -77,16 +77,16 @@
 
         /* ---- Instruction panels ---- */
         .instructions {
-            background: #DEEBFF; border-left: 3px solid var(--color-primary);
+            background: var(--status-info-surface); border-left: 3px solid var(--color-primary);
             border-radius: 6px; padding: 16px 18px; margin-bottom: 20px;
         }
-        .instructions h3 { margin: 0 0 10px; font-size: .95rem; color: #0747A6; }
+        .instructions h3 { margin: 0 0 10px; font-size: .95rem; color: var(--status-info-text); }
         .instructions ul, .instructions ol { margin: 0; padding-left: 20px; }
-        .instructions li { margin-bottom: 5px; font-size: .9rem; color: #172B4D; }
+        .instructions li { margin-bottom: 5px; font-size: .9rem; color: var(--text-primary); }
 
         .current-instruction {
             text-align: center; font-size: 1.05rem; font-weight: 600;
-            color: var(--text-primary); background: #FFFAE6;
+            color: var(--text-primary); background: var(--status-warn-surface);
             border: 1px solid #FFC400; border-radius: 8px;
             padding: 14px 18px; margin-bottom: 16px;
         }
@@ -117,15 +117,15 @@
             background: var(--bg-page); border: 2px solid var(--border-color);
             transition: all .25s ease;
         }
-        .progress-dot.completed { background: #36B37E; border-color: #36B37E; transform: scale(1.15); }
+        .progress-dot.completed { background: var(--status-ok-solid); border-color: var(--status-ok-solid); transform: scale(1.15); }
         .progress-dot.active { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(0, 82, 204, .15); }
 
         /* ---- Status messages ---- */
         .status-message { padding: 11px 15px; border-radius: 6px; font-size: .9rem; margin-bottom: 16px; text-align: center; }
-        .status-success { background: #E3FCEF; color: #006644; }
-        .status-error   { background: #FFEBE6; color: #BF2600; }
-        .status-warning { background: #FFFAE6; color: #7A5B00; }
-        .status-info    { background: #DEEBFF; color: #0747A6; }
+        .status-success { background: var(--status-ok-surface); color: var(--status-ok-text); }
+        .status-error   { background: var(--status-bad-surface); color: var(--status-bad-text); }
+        .status-warning { background: var(--status-warn-surface); color: #7A5B00; }
+        .status-info    { background: var(--status-info-surface); color: var(--status-info-text); }
 
         /* ---- Buttons ---- */
         .registration-container .btn {
@@ -136,10 +136,10 @@
         .registration-container .btn:hover:not(:disabled) { filter: brightness(.93); }
         .registration-container .btn:disabled { opacity: .55; cursor: not-allowed; }
         .registration-container .btn-primary   { background: var(--color-primary); color: #fff; }
-        .registration-container .btn-success   { background: #36B37E; color: #fff; }
+        .registration-container .btn-success   { background: var(--status-ok-solid); color: #fff; }
         .registration-container .btn-secondary { background: var(--bg-page); color: var(--text-primary); border: 1px solid var(--border-color); }
         .registration-container .btn-warning   { background: #FFAB00; color: #3a2a00; }
-        .registration-container .btn-danger    { background: #DE350B; color: #fff; }
+        .registration-container .btn-danger    { background: var(--status-bad-solid); color: #fff; }
 
         .button-group, .btn-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 22px; }
 
@@ -532,7 +532,7 @@
                     const msg = result.message || result.detail || 'Unknown error';
                     if (msg.toLowerCase().includes('liveness')) {
                         document.getElementById('capture-instructions').innerHTML =
-                            `<div class="status-error" style="background: #FFEBE6; color: #BF2600; padding: 12px; border-radius: 8px; border-left: 4px solid #DE350B;">
+                            `<div class="status-error" style="background: var(--status-bad-surface); color: var(--status-bad-text); padding: 12px; border-radius: 8px; border-left: 4px solid var(--status-bad-solid);">
                                 <h4><i class="fa-solid fa-skull-crossbones"></i> Spoof Detected!</h4>
                                 <p>${msg}</p>
                                 <p style="margin-top: 8px;">Please use your real face — photos and screens are not accepted.</p>

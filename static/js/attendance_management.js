@@ -560,7 +560,7 @@ function displayHolidays() {
             <div class="card" style="padding: 1.5rem; display: flex; justify-content: space-between; align-items: center; margin: 0;">
                 <div>
                     <strong style="font-size: 1.1rem; color: #1a202c;">${holiday.name}</strong>
-                    <div style="color: #64748b; font-size: 0.875rem; margin-top: 0.25rem;">
+                    <div style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.25rem;">
                         <i class="fa-solid fa-calendar-days"></i> ${date} • ${holiday.type.replace('_', ' ').toUpperCase()}
                     </div>
                 </div>

@@ -45,7 +45,7 @@
             align-items: center;
             text-align: center;
             transition: transform 0.2s;
-            border: 1px solid #f1f5f9;
+            border: 1px solid var(--bg-page);
         }
 
         .stat-card:hover {
@@ -77,7 +77,7 @@
             background: white;
             padding: 1.5rem;
             border-radius: 16px;
-            border: 1px solid #f1f5f9;
+            border: 1px solid var(--bg-page);
         }
 
         .heatmap-grid {
@@ -150,13 +150,13 @@
         }
 
         .sortable:hover {
-            background-color: #f8fafc;
+            background-color: var(--bg-page);
         }
 
         .sortable i {
             font-size: 0.75rem;
             margin-left: 0.25rem;
-            color: #94a3b8;
+            color: var(--text-subtle);
         }
 
         .leader-item {
@@ -174,7 +174,7 @@
         }
 
         .leader-item:hover {
-            background-color: #f1f5f9;
+            background-color: var(--bg-page);
         }
 
         .date-filter-row {
@@ -185,7 +185,7 @@
             padding: 1rem 1.5rem;
             border-radius: 12px;
             margin-bottom: 2rem;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border-color);
         }
 
         /* Calendar tooltip */
@@ -200,7 +200,7 @@
             left: 50%;
             transform: translateX(-50%);
             background: #1e293b;
-            color: #f8fafc;
+            color: var(--bg-page);
             padding: 8px 12px;
             border-radius: 8px;
             font-size: 0.75rem;
@@ -220,7 +220,7 @@
             left: 50%;
             transform: translateX(-50%);
             border: 6px solid transparent;
-            border-top-color: #1e293b;
+            border-top-color: var(--text-primary);
         }
 
         .calendar-day:hover .cal-tooltip {
@@ -333,7 +333,7 @@
                                     <span>Absent</span>
                                 </div>
                                 <div class="legend-item">
-                                    <div class="legend-color" style="background: #f3f4f6;"></div>
+                                    <div class="legend-color" style="background: var(--bg-page);"></div>
                                     <span>Sunday (Weekend)</span>
                                 </div>
                                 <div class="legend-item">
@@ -366,16 +366,16 @@
 
                     <!-- Search and Filter Bar -->
                     <div
-                        style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+                        style="display: flex; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: var(--bg-page); border-radius: 12px; border: 1px solid var(--border-color);">
                         <div style="flex: 1;">
                             <input type="text" id="attendanceSearch"
                                 placeholder="🔍 Search students by name, ID, or email..."
-                                style="width: 100%; padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem;"
+                                style="width: 100%; padding: 0.875rem 1rem; border: 2px solid var(--border-color); border-radius: 10px; font-size: 1rem;"
                                 oninput="filterAttendanceTable()">
                         </div>
                         <div>
                             <select id="statusFilter"
-                                style="padding: 0.875rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; min-width: 140px;"
+                                style="padding: 0.875rem 1rem; border: 2px solid var(--border-color); border-radius: 10px; font-size: 1rem; min-width: 140px;"
                                 onchange="filterAttendanceTable()">
                                 <option value="all"><i class="fa-solid fa-chart-simple"></i> All Students</option>
                                 <option value="present"><i class="fa-solid fa-check text-green-500"></i> Present
@@ -386,7 +386,7 @@
                             </select>
                         </div>
                         <div id="searchResultCount"
-                            style="color: #64748b; font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px; display: flex; align-items: center;">
+                            style="color: var(--text-secondary); font-size: 0.875rem; font-weight: 600; white-space: nowrap; min-width: 120px; display: flex; align-items: center;">
                             <!-- Will show "X of Y students" -->
                         </div>
                     </div>
@@ -540,7 +540,7 @@
                     <input type="checkbox" id="includeHolidays"> Include Holidays
                 </label>
             </div>
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+            <div style="background: var(--bg-page); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
                 <p style="margin: 0; color: #666;">
                     <strong>Preview:</strong> <span id="dateRangePreview">Select dates to see preview</span>
                 </p>

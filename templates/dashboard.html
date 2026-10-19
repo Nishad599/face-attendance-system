@@ -129,29 +129,29 @@
 
         /* Good / needs attention differ in icon and wording as well as hue. */
         .ov-chip.ok {
-            border-color: #ABD9C3;
-            background: #F2FAF6;
+            border-color: var(--status-ok-border);
+            background: var(--status-ok-surface);
         }
 
         .ov-chip.ok .t {
-            color: #0E6B4A;
+            color: var(--status-ok-text);
         }
 
         .ov-chip.ok .v {
-            color: #2F5F4C;
+            color: var(--status-ok-text);
         }
 
         .ov-chip.warn {
-            border: 1.5px solid #E0A458;
-            background: #FDF6EC;
+            border: 1.5px solid var(--status-warn-border);
+            background: var(--status-warn-surface);
         }
 
         .ov-chip.warn .t {
-            color: #8A4B00;
+            color: var(--status-warn-text);
         }
 
         .ov-chip.warn .v {
-            color: #7A4A08;
+            color: var(--status-warn-text);
         }
 
         /* ---- queue ---- */
@@ -185,9 +185,9 @@
         }
 
         .ov-q .n.hot {
-            background: #FDF0E3;
-            border-color: #E0A458;
-            color: #8A4B00;
+            background: var(--status-warn-surface);
+            border-color: var(--status-warn-border);
+            color: var(--status-warn-text);
         }
 
         .ov-q .l {
@@ -202,7 +202,7 @@
         }
 
         .ov-q .note.urgent {
-            color: #B3372E;
+            color: var(--status-bad-text);
             font-weight: 600;
         }
 
@@ -235,11 +235,11 @@
         .ov-bar span {
             display: block;
             height: 100%;
-            background: #17A06A;
+            background: var(--status-ok-solid);
         }
 
         .ov-bar span.low {
-            background: #C98A2E;
+            background: var(--status-warn-solid);
         }
 
         /* ---- tables ---- */
@@ -346,18 +346,18 @@
         }
 
         .active-slot {
-            background: #E3FCEF;
-            color: #006644;
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
         }
 
         .next-slot {
-            background: #DEEBFF;
-            color: #0747A6;
+            background: var(--status-info-surface);
+            color: var(--status-info-text);
         }
 
         .no-slots {
-            background: #FFEBE6;
-            color: #BF2600;
+            background: var(--status-bad-surface);
+            color: var(--status-bad-text);
         }
 
         .muted {
@@ -539,7 +539,7 @@
         }
 
         function rateColour(rate) {
-            return rate < 75 ? '#B3372E' : (rate < 85 ? '#8A4B00' : '#0E6B4A');
+            return rate < 75 ? 'var(--status-bad-text)' : (rate < 85 ? 'var(--status-warn-text)' : 'var(--status-ok-text)');
         }
 
         function duration(seconds) {
@@ -674,7 +674,7 @@
                         '</strong> of ' + b.total + ' · ' + b.pct + '%</span>';
                 }
                 if (!b.has_terminal) {
-                    sub = '<span style="color:#8A4B00;font-weight:600;">no terminal PIN — nobody can punch in</span>';
+                    sub = '<span style="color:var(--status-warn-text);font-weight:600;">no terminal PIN — nobody can punch in</span>';
                 } else if (b.slot) {
                     sub = esc(b.slot.name) + ' · closes ' + esc(b.slot.ends || '') +
                         (b.slot.minutes_left != null ? ' · ' + b.slot.minutes_left + ' min left' : '');
@@ -742,13 +742,17 @@
                     'role="img" aria-label="Attendance rate over the last 30 days, ' +
                     'averaging ' + d.avg_attendance + ' percent">' +
                     '<line x1="0" y1="' + y(75) + '" x2="' + w + '" y2="' + y(75) +
-                    '" stroke="#C98A2E" stroke-width="1.5" stroke-dasharray="4 4"></line>' +
-                    '<polyline points="' + poly + '" fill="none" stroke="#2557D6" stroke-width="2.5" ' +
+                    // var() is not valid in an SVG presentation attribute, so
+                    // the token goes through style instead.
+                    '" style="stroke: var(--status-warn-solid)" stroke-width="1.5" ' +
+                    'stroke-dasharray="4 4"></line>' +
+                    '<polyline points="' + poly + '" fill="none" ' +
+                    'style="stroke: var(--status-info-solid)" stroke-width="2.5" ' +
                     'stroke-linecap="round" stroke-linejoin="round" ' +
                     'vector-effect="non-scaling-stroke"></polyline></svg>' +
                     '<div class="ov-sub" style="margin-top:8px;font-size:.8rem;">' +
-                    '<span style="color:#2557D6;font-weight:600;">—</span> daily rate &nbsp; ' +
-                    '<span style="color:#C98A2E;font-weight:600;">- -</span> 75% floor</div>' +
+                    '<span style="color:var(--status-info-text);font-weight:700;">—</span> daily rate &nbsp; ' +
+                    '<span style="color:var(--status-warn-text);font-weight:700;">- -</span> 75% floor</div>' +
                     '<div class="d-flex gap-8" style="margin-top:14px;">' +
                     '<div class="ov-chip" style="flex:1;"><div class="v">30-day average</div>' +
                     '<div class="num" style="font-size:1.3rem;font-weight:600;">' +
@@ -830,8 +834,8 @@
                 document.getElementById('ovWhen').innerHTML =
                     days[now.getDay()] + ' ' + now.toLocaleDateString() + ' · ' +
                     (d.today.is_working_day
-                        ? '<span style="color:#0E6B4A;font-weight:600;">working day</span>'
-                        : '<span style="color:#8A4B00;font-weight:600;">' +
+                        ? '<span style="color:var(--status-ok-text);font-weight:600;">working day</span>'
+                        : '<span style="color:var(--status-warn-text);font-weight:600;">' +
                           esc(d.today.reason || 'non-working day') + '</span>');
 
                 renderHealth(d.health);
@@ -877,7 +881,7 @@
                     r.batch_count + ' batches · ' + r.total_students + ' students · ' +
                     'average <span style="color:' + rateColour(r.avg_rate) + ';font-weight:600;">' +
                     r.avg_rate + '%</span> · ' +
-                    '<span style="color:#B3372E;font-weight:600;">' + r.at_risk_total +
+                    '<span style="color:var(--status-bad-text);font-weight:600;">' + r.at_risk_total +
                     '</span> below 75%';
 
                 if (!r.batches.length) {

@@ -120,7 +120,7 @@
         }
 
         .pp-table tbody tr.sel {
-            background: #EEF2FD;
+            background: var(--status-info-surface);
         }
 
         .pp-scroll {
@@ -140,13 +140,13 @@
         }
 
         .pp-chip.ok {
-            background: #E6F5EE;
-            color: #0E6B4A;
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
         }
 
         .pp-chip.warn {
-            background: #FDF0E3;
-            color: #8A4B00;
+            background: var(--status-warn-surface);
+            color: var(--status-warn-text);
         }
 
         .pp-chip.off {
@@ -240,11 +240,11 @@
         .pp-bar span {
             display: block;
             height: 100%;
-            background: #17A06A;
+            background: var(--status-ok-solid);
         }
 
         .pp-bar span.low {
-            background: #C3453B;
+            background: var(--status-bad-solid);
         }
 
         .muted {
@@ -370,7 +370,7 @@
         }
 
         function rateColour(r) {
-            return r < 75 ? '#B3372E' : (r < 85 ? '#8A4B00' : '#0E6B4A');
+            return r < 75 ? 'var(--status-bad-text)' : (r < 85 ? 'var(--status-warn-text)' : 'var(--status-ok-text)');
         }
 
         let STUDENTS = [];
@@ -632,7 +632,7 @@
             const input = document.getElementById('bulkFile');
             const msg = document.getElementById('bulkMsg');
             if (!input.files.length) {
-                msg.style.color = '#B3372E';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Choose a file first.';
                 return;
             }
@@ -644,11 +644,11 @@
                 const d = await (await fetch('/api/students/bulk-upload', {
                     method: 'POST', body: fd
                 })).json();
-                msg.style.color = d.success ? '#0E6B4A' : '#B3372E';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 msg.textContent = d.message || (d.success ? 'Done' : 'Failed');
                 if (d.success) { input.value = ''; loadStudents(); }
             } catch (e) {
-                msg.style.color = '#B3372E';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Upload failed.';
             }
         }

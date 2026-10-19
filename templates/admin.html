@@ -327,16 +327,16 @@
                 if (d.recent && d.recent.length) {
                     html += '<div style="max-height:180px;overflow-y:auto;margin-top:10px;font-size:0.85rem;">';
                     d.recent.forEach(e => {
-                        const colour = e.status === 'sent' ? '#00875A' : (e.status === 'failed' ? '#DE350B' : '#6B778C');
+                        const colour = e.status === 'sent' ? 'var(--status-ok-solid)' : (e.status === 'failed' ? 'var(--status-bad-solid)' : 'var(--text-secondary)');
                         html += `<div style="padding:4px 0;border-bottom:1px solid #eee;">
                             <span style="color:${colour};font-weight:600;">${e.status}</span> &middot;
-                            ${e.to} <span style="color:#6B778C;">(${e.kind || '—'}, ${e.sent_at || ''})</span>
-                            ${e.error ? '<br><span style="color:#DE350B;font-size:.8rem;">' + e.error + '</span>' : ''}
+                            ${e.to} <span style="color:var(--text-secondary);">(${e.kind || '—'}, ${e.sent_at || ''})</span>
+                            ${e.error ? '<br><span style="color:var(--status-bad-solid);font-size:.8rem;">' + e.error + '</span>' : ''}
                         </div>`;
                     });
                     html += '</div>';
                 } else {
-                    html += '<p style="color:#6B778C;font-size:.85rem;margin-top:8px;">No emails sent yet.</p>';
+                    html += '<p style="color:var(--text-secondary);font-size:.85rem;margin-top:8px;">No emails sent yet.</p>';
                 }
                 document.getElementById('emailStatus').innerHTML = html;
             } catch (e) {

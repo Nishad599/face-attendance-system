@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teacher Portal — CDAC Attendance</title>
-    <meta name="theme-color" content="#0052CC">
+    <meta name="theme-color" content="var(--color-primary)">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,7 +32,7 @@
         .chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding-top: 10px; }
         .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
         .chart .col .bar { width: 70%; min-height: 2px; background: var(--color-primary); border-radius: 4px 4px 0 0; transition: height .3s; }
-        .chart .col .bar.off { background: #C1C7D0; }
+        .chart .col .bar.off { background: var(--border-color); }
         .chart .col .cap { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; }
         .chart .col .val { font-size: .72rem; font-weight: 600; }
         @media (max-width:820px){ #tab-analytics > div[style*="grid"]{ grid-template-columns:1fr !important; } }
@@ -472,7 +472,7 @@
             tbody.innerHTML = subjects.length ? subjects.map(s => {
                 const st = stats[s.id] || {};
                 const rate = st.rate == null ? '—' : st.rate + '%';
-                const colour = st.at_risk ? '#DE350B' : '#00875A';
+                const colour = st.at_risk ? 'var(--status-bad-solid)' : 'var(--status-ok-solid)';
                 return `<tr${s.is_active ? '' : ' style="opacity:.5;"'}>
                     <td><strong>${esc(s.name)}</strong>${s.is_active ? '' : ' <span class="app-badge app-badge-neutral">inactive</span>'}</td>
                     <td>${esc(s.code || '—')}</td>
@@ -660,7 +660,7 @@
             const s = data.summary;
             document.getElementById('markSummary').innerHTML = `
                 <div class="pill"><div class="n">${s.total}</div><div class="l">Students</div></div>
-                <div class="pill"><div class="n" style="color:#36B37E;">${s.present}</div><div class="l">Present</div></div>
+                <div class="pill"><div class="n" style="color:var(--status-ok-solid);">${s.present}</div><div class="l">Present</div></div>
                 <div class="pill"><div class="n" style="color:#FF5630;">${s.absent}</div><div class="l">Absent</div></div>
                 <div class="pill"><div class="n">${s.rate}%</div><div class="l">Rate</div></div>`;
 
@@ -752,7 +752,7 @@
             const res = await fetch('/api/students/bulk-upload', { method: 'POST', body: fd });
             const data = await res.json();
             document.getElementById('uploadMsg').innerHTML = esc(data.message || '') +
-                (data.errors && data.errors.length ? '<br><span style="color:#BF2600;">' + data.errors.map(esc).join('<br>') + '</span>' : '');
+                (data.errors && data.errors.length ? '<br><span style="color:var(--status-bad-text);">' + data.errors.map(esc).join('<br>') + '</span>' : '');
             if (data.success) { document.getElementById('csvFile').value = ''; loadPending(); }
         }
         // Full batch student list with actions (searchable + paginated)
@@ -834,7 +834,7 @@
             });
             const data = await res.json();
             const msg = document.getElementById('addMsg');
-            msg.style.color = data.success ? '#006644' : '#BF2600';
+            msg.style.color = data.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
             msg.textContent = data.message || '';
             if (data.success) {
                 ['addRoll', 'addName', 'addEmail', 'addDob'].forEach(id => document.getElementById(id).value = '');

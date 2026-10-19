@@ -33,7 +33,7 @@
             align-items: center;
             text-align: center;
             transition: transform 0.2s;
-            border: 1px solid #f1f5f9;
+            border: 1px solid var(--bg-page);
         }
 
         .stat-card:hover {
@@ -65,7 +65,7 @@
             background: white;
             padding: 1.5rem;
             border-radius: 16px;
-            border: 1px solid #f1f5f9;
+            border: 1px solid var(--bg-page);
         }
 
         .heatmap-grid {
@@ -138,13 +138,13 @@
         }
 
         .sortable:hover {
-            background-color: #f8fafc;
+            background-color: var(--bg-page);
         }
 
         .sortable i {
             font-size: 0.75rem;
             margin-left: 0.25rem;
-            color: #94a3b8;
+            color: var(--text-subtle);
         }
 
         .leader-item {
@@ -162,7 +162,7 @@
         }
 
         .leader-item:hover {
-            background-color: #f1f5f9;
+            background-color: var(--bg-page);
         }
 
         .date-filter-row {
@@ -173,7 +173,7 @@
             padding: 1rem 1.5rem;
             border-radius: 12px;
             margin-bottom: 2rem;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border-color);
         }
 
         /* Calendar tooltip */
@@ -188,7 +188,7 @@
             left: 50%;
             transform: translateX(-50%);
             background: #1e293b;
-            color: #f8fafc;
+            color: var(--bg-page);
             padding: 8px 12px;
             border-radius: 8px;
             font-size: 0.75rem;
@@ -208,7 +208,7 @@
             left: 50%;
             transform: translateX(-50%);
             border: 6px solid transparent;
-            border-top-color: #1e293b;
+            border-top-color: var(--text-primary);
         }
 
         .calendar-day:hover .cal-tooltip {
@@ -243,29 +243,29 @@
                             <option value="90">Last 3 months</option>
                         </select>
                     </div>
-                    <div id="loadingIndicator" style="display: none; color: #0052cc;">
+                    <div id="loadingIndicator" style="display: none; color: var(--color-primary);">
                         <i class="fa-solid fa-circle-notch fa-spin"></i> Updating...
                     </div>
                 </div>
 
                 <div class="analytics-grid">
                     <div class="stat-card">
-                        <div class="stat-number" id="avgClassAttendance" style="color: #0052cc;">0%</div>
+                        <div class="stat-number" id="avgClassAttendance" style="color: var(--color-primary);">0%</div>
                         <div class="stat-label">Average Attendance</div>
                         <div class="stat-trend" id="attendanceTrendNum">--</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="totalActiveStudents" style="color: #1e293b;">0</div>
+                        <div class="stat-number" id="totalActiveStudents" style="color: var(--text-primary);">0</div>
                         <div class="stat-label">Active Students</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="atRiskCount" style="color: #DE350B;">0</div>
+                        <div class="stat-number" id="atRiskCount" style="color: var(--status-bad-solid);">0</div>
                         <div class="stat-label">At-Risk Students</div>
                         <div class="stat-trend trend-down"><i class="fa-solid fa-triangle-exclamation"></i> Action
                             Required</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number" id="peakSlotNum" style="color: #00875A;">--</div>
+                        <div class="stat-number" id="peakSlotNum" style="color: var(--status-ok-solid);">--</div>
                         <div class="stat-label">Peak Slot</div>
                     </div>
                 </div>
@@ -310,13 +310,13 @@
                 <div class="leaderboard-row">
                     <div class="card leaderboard-card">
                         <h3><i class="fa-solid fa-ranking-star"></i> Top Performers</h3>
-                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Click student to view trend
+                        <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 1rem;">Click student to view trend
                         </p>
                         <div id="topPerformersList" class="leader-list"></div>
                     </div>
                     <div class="card leaderboard-card">
                         <h3><i class="fa-solid fa-triangle-exclamation"></i> High Absence Streaks</h3>
-                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Students missing multiple
+                        <p style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 1rem;">Students missing multiple
                             consecutive days</p>
                         <div id="atRiskList" class="leader-list"></div>
                     </div>

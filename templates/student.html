@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Attendance — CDAC Attendance</title>
-    <meta name="theme-color" content="#0052CC">
+    <meta name="theme-color" content="var(--color-primary)">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -21,7 +21,7 @@
         .stat-card .big { font-size: 2.2rem; font-weight: 700; line-height: 1; margin: 4px 0; }
         .stat-card .lbl { color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase; letter-spacing: .4px; }
         .ring { --pct: 0; width: 120px; height: 120px; border-radius: 50%;
-            background: conic-gradient(var(--color-primary) calc(var(--pct) * 1%), #E4E7EB 0);
+            background: conic-gradient(var(--color-primary) calc(var(--pct) * 1%), var(--border-color) 0);
             display: flex; align-items: center; justify-content: center; margin: 0 auto; }
         .ring-inner { width: 92px; height: 92px; border-radius: 50%; background: var(--bg-card);
             display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -29,13 +29,13 @@
         .muted { color: var(--text-secondary); }
         .spark { display: flex; gap: 5px; align-items: flex-end; height: 44px; }
         .spark .bar { flex: 1; border-radius: 3px; min-width: 8px; }
-        .spark .p { background: #36B37E; height: 100%; }
+        .spark .p { background: var(--status-ok-solid); height: 100%; }
         .spark .a { background: #FF5630; height: 40%; }
-        .spark .h { background: #C1C7D0; height: 20%; }
+        .spark .h { background: var(--border-color); height: 20%; }
         .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg);
             padding: 24px; box-shadow: var(--shadow-sm); margin-bottom: 24px; }
         .card h2 { margin: 0 0 16px; font-size: 1.1rem; }
-        .banner { background: #FFFAE6; border: 1px solid #FFC400; color: #7A5B00; padding: 14px 18px;
+        .banner { background: var(--status-warn-surface); border: 1px solid #FFC400; color: #7A5B00; padding: 14px 18px;
             border-radius: var(--border-radius); margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
         /* --- attendance calendar --- */
         .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
@@ -49,13 +49,13 @@
         .cal-day.blank { background: transparent; }
         /* Every state is distinguishable without relying on colour alone:
            each also carries a letter/symbol, a tooltip, and a legend entry. */
-        .cal-day.present  { background: #E3FCEF; color: #006644; }
+        .cal-day.present  { background: var(--status-ok-surface); color: var(--status-ok-text); }
         .cal-day.half_day { color: #7A5B00;
-            background-image: linear-gradient(135deg, #E3FCEF 50%, #FFF0B3 50%); }
-        .cal-day.absent   { background: #FFEBE6; color: #BF2600; }
-        .cal-day.leave    { background: #EAE6FF; color: #403294; }
-        .cal-day.holiday  { background: #FFF0B3; color: #7A5B00; }
-        .cal-day.sunday   { background: #EBECF0; color: #6B778C; }
+            background-image: linear-gradient(135deg, var(--status-ok-surface) 50%, var(--status-warn-surface) 50%); }
+        .cal-day.absent   { background: var(--status-bad-surface); color: var(--status-bad-text); }
+        .cal-day.leave    { background: var(--status-info-surface); color: #403294; }
+        .cal-day.holiday  { background: var(--status-warn-surface); color: #7A5B00; }
+        .cal-day.sunday   { background: var(--border-color); color: var(--text-secondary); }
         /* Not "faded present" — these are days that were never part of the
            student's record, so they get a hatch rather than a wash. */
         .cal-day.before_joining {
@@ -184,7 +184,7 @@
                         <canvas id="fcanvas" style="display:none;"></canvas>
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;margin-top:12px;">
-                        <div style="flex:1;height:8px;background:#E4E7EB;border-radius:4px;overflow:hidden;">
+                        <div style="flex:1;height:8px;background:var(--border-color);border-radius:4px;overflow:hidden;">
                             <div id="fbar" style="height:100%;width:0;background:var(--color-primary);transition:width .3s;"></div>
                         </div>
                         <span class="muted" id="fcount">0 / 5</span>
@@ -205,8 +205,8 @@
 
         <!-- Biometric consent (DPDP Act 2023). Shown until the student has
              answered for the current policy version. -->
-        <div id="consentBanner" class="banner" style="display:none;background:#DEEBFF;
-             border-color:#4C9AFF;color:#0747A6;">
+        <div id="consentBanner" class="banner" style="display:none;background:var(--status-info-surface);
+             border-color:#4C9AFF;color:var(--status-info-text);">
             <i class="fa-solid fa-shield-halved"></i>
             <div style="flex:1;">
                 <div><strong>Your consent is needed for face-based attendance.</strong></div>
@@ -247,9 +247,9 @@
             <h2>Last 14 days</h2>
             <div class="spark" id="spark"></div>
             <p class="muted" style="margin:12px 0 0;font-size:.85rem;">
-                <span style="color:#36B37E;">■</span> Present &nbsp;
+                <span style="color:var(--status-ok-solid);">■</span> Present &nbsp;
                 <span style="color:#FF5630;">■</span> Absent &nbsp;
-                <span style="color:#C1C7D0;">■</span> Holiday / Sunday
+                <span style="color:var(--border-color);">■</span> Holiday / Sunday
             </p>
         </div>
 
@@ -508,13 +508,13 @@
             const session_type = document.getElementById('grSession').value || null;
             const reason = document.getElementById('grReason').value.trim();
             const msg = document.getElementById('grMsg');
-            if (!date || !reason) { msg.style.color = '#BF2600'; msg.textContent = 'Date and reason are required.'; return; }
+            if (!date || !reason) { msg.style.color = 'var(--status-bad-text)'; msg.textContent = 'Date and reason are required.'; return; }
             const res = await fetch('/api/student/grievance', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date, session_type, reason })
             });
             const data = await res.json();
-            msg.style.color = data.success ? '#006644' : '#BF2600';
+            msg.style.color = data.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
             msg.textContent = data.message || '';
             if (data.success) { document.getElementById('grReason').value = ''; loadGrievances(); }
         }
@@ -554,16 +554,16 @@
         // Nothing relies on colour alone, and nothing appears on the grid
         // without a matching legend entry.
         const CAL_STATES = {
-            present:        { sw: '#E3FCEF', label: 'Present',           mark: '' },
+            present:        { sw: 'var(--status-ok-surface)', label: 'Present',           mark: '' },
             // Same split fill as the cell — a flat amber swatch is
             // indistinguishable from Holiday in the legend.
-            half_day:       { sw: 'linear-gradient(135deg,#E3FCEF 50%,#FFF0B3 50%)',
+            half_day:       { sw: 'linear-gradient(135deg,var(--status-ok-surface) 50%,var(--status-warn-surface) 50%)',
                               label: 'Half day',          mark: '½' },
-            absent:         { sw: '#FFEBE6', label: 'Absent',            mark: '' },
-            leave:          { sw: '#EAE6FF', label: 'Approved leave',    mark: 'L' },
-            holiday:        { sw: '#FFF0B3', label: 'Holiday',           mark: 'H' },
-            sunday:         { sw: '#EBECF0', label: 'Sunday',            mark: '' },
-            before_joining: { sw: '#F4F5F7', label: 'Before you joined', mark: '' },
+            absent:         { sw: 'var(--status-bad-surface)', label: 'Absent',            mark: '' },
+            leave:          { sw: 'var(--status-info-surface)', label: 'Approved leave',    mark: 'L' },
+            holiday:        { sw: 'var(--status-warn-surface)', label: 'Holiday',           mark: 'H' },
+            sunday:         { sw: 'var(--border-color)', label: 'Sunday',            mark: '' },
+            before_joining: { sw: 'var(--bg-page)', label: 'Before you joined', mark: '' },
             future:         { sw: '#FFFFFF', label: 'Not yet',           mark: '' }
         };
         const SLOT_NAMES = {
@@ -633,7 +633,7 @@
             document.getElementById('calDetail').style.display = 'none';
 
             const s = d.summary || {};
-            const colour = s.rate < 75 ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
+            const colour = s.rate < 75 ? 'var(--status-bad-solid)' : (s.rate < 85 ? 'var(--status-warn-solid)' : 'var(--status-ok-solid)');
             const bits = [s.present + ' present', s.absent + ' absent'];
             if (s.leave) bits.push(s.leave + ' on approved leave');
             bits.push(s.working_days + ' working days');
@@ -682,14 +682,14 @@
 
         // ---------- Course calendar ----------
         const KIND_STYLE = {
-            module:    { icon: 'fa-book',              colour: '#0052CC', label: 'Module' },
-            exam:      { icon: 'fa-file-pen',          colour: '#DE350B', label: 'Exam' },
-            revision:  { icon: 'fa-rotate-left',       colour: '#FF8B00', label: 'Revision' },
+            module:    { icon: 'fa-book',              colour: 'var(--color-primary)', label: 'Module' },
+            exam:      { icon: 'fa-file-pen',          colour: 'var(--status-bad-solid)', label: 'Exam' },
+            revision:  { icon: 'fa-rotate-left',       colour: 'var(--status-warn-solid)', label: 'Revision' },
             interview: { icon: 'fa-user-tie',          colour: '#6554C0', label: 'Interview' },
-            placement: { icon: 'fa-briefcase',         colour: '#00875A', label: 'Placement' },
+            placement: { icon: 'fa-briefcase',         colour: 'var(--status-ok-solid)', label: 'Placement' },
             induction: { icon: 'fa-graduation-cap',    colour: '#0065FF', label: 'Ceremony' },
-            activity:  { icon: 'fa-people-group',      colour: '#36B37E', label: 'Activity' },
-            event:     { icon: 'fa-calendar-day',      colour: '#6B778C', label: 'Event' }
+            activity:  { icon: 'fa-people-group',      colour: 'var(--status-ok-solid)', label: 'Activity' },
+            event:     { icon: 'fa-calendar-day',      colour: 'var(--text-secondary)', label: 'Event' }
         };
 
         let _schedItems = [], _schedShowAll = false;
@@ -800,7 +800,7 @@
                 }
                 empty.style.display = 'none'; table.style.display = '';
                 document.getElementById('subjectRows').innerHTML = rows.map(function (s) {
-                    const colour = s.at_risk ? '#DE350B' : (s.rate < 85 ? '#FF8B00' : '#00875A');
+                    const colour = s.at_risk ? 'var(--status-bad-solid)' : (s.rate < 85 ? 'var(--status-warn-solid)' : 'var(--status-ok-solid)');
                     const flag = s.at_risk
                         ? ' <span class="app-badge app-badge-danger">below ' +
                           s.min_attendance + '%</span>' : '';
@@ -922,7 +922,7 @@
             const reason = document.getElementById('lvReason').value.trim();
             const msg = document.getElementById('lvMsg');
             if (!start_date || !reason) {
-                msg.style.color = '#BF2600';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Pick a start date and give a reason.';
                 return;
             }
@@ -932,11 +932,11 @@
                     body: JSON.stringify({ start_date, end_date, reason })
                 });
                 const d = await res.json();
-                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 msg.textContent = d.message || '';
                 if (d.success) { document.getElementById('lvReason').value = ''; loadLeaves(); }
             } catch (e) {
-                msg.style.color = '#BF2600';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Connection failed. Try again.';
             }
         }
@@ -947,7 +947,7 @@
                 const res = await fetch('/api/student/leave/' + id + '/cancel', { method: 'POST' });
                 const d = await res.json();
                 const msg = document.getElementById('lvMsg');
-                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 msg.textContent = d.message || '';
                 loadLeaves();
             } catch (e) { /* the list reload below will show the real state */ }
@@ -1002,7 +1002,7 @@
                 await v.play().catch(() => { });
             } catch (e) {
                 fmsg('Camera unavailable: ' + (e && e.name ? e.name : 'error') +
-                     '. Allow camera access and reopen.', '#BF2600');
+                     '. Allow camera access and reopen.', 'var(--status-bad-text)');
             }
         }
 
@@ -1013,7 +1013,7 @@
 
         async function captureFace() {
             const v = document.getElementById('fvideo');
-            if (!v.videoWidth) { fmsg('Camera not ready yet…', '#BF2600'); return; }
+            if (!v.videoWidth) { fmsg('Camera not ready yet…', 'var(--status-bad-text)'); return; }
             const c = document.getElementById('fcanvas');
             c.width = v.videoWidth; c.height = v.videoHeight;
             c.getContext('2d').drawImage(v, 0, 0);
@@ -1033,16 +1033,16 @@
                     document.getElementById('fbar').style.width = Math.min(100, fShots / FACE_PHOTOS_NEEDED * 100) + '%';
                     fmsg(`Photo ${fShots} captured. ` +
                          (fShots < FACE_PHOTOS_NEEDED ? 'Turn your head slightly and capture again.' : 'All done — submit now.'),
-                         '#006644');
+                         'var(--status-ok-text)');
                     if (fShots >= FACE_PHOTOS_NEEDED) {
                         document.getElementById('fcapture').style.display = 'none';
                         document.getElementById('fsubmit').style.display = '';
                     }
                 } else {
-                    fmsg(d.message || 'Photo rejected. Try again.', '#BF2600');
+                    fmsg(d.message || 'Photo rejected. Try again.', 'var(--status-bad-text)');
                 }
             } catch (e) {
-                fmsg('Upload failed. Try again.', '#BF2600');
+                fmsg('Upload failed. Try again.', 'var(--status-bad-text)');
             } finally {
                 btn.disabled = false;
             }
@@ -1062,10 +1062,10 @@
                     alert(d.message || 'Submitted for approval.');
                     refreshFaceStatus();
                 } else {
-                    fmsg(d.message || 'Could not submit', '#BF2600');
+                    fmsg(d.message || 'Could not submit', 'var(--status-bad-text)');
                 }
             } catch (e) {
-                fmsg('Submit failed. Try again.', '#BF2600');
+                fmsg('Submit failed. Try again.', 'var(--status-bad-text)');
             } finally {
                 btn.disabled = false; btn.innerHTML = 'Submit for approval';
             }
@@ -1120,7 +1120,7 @@
 
             const msg = document.getElementById('pcMsg');
             if (!Object.keys(changes).length) {
-                msg.style.color = '#BF2600';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Nothing changed - edit a field first.';
                 return;
             }
@@ -1141,11 +1141,11 @@
                     })
                 });
                 const d = await res.json();
-                msg.style.color = d.success ? '#006644' : '#BF2600';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 msg.textContent = d.message || '';
                 if (d.success) loadProfile();
             } catch (e) {
-                msg.style.color = '#BF2600';
+                msg.style.color = 'var(--status-bad-text)';
                 msg.textContent = 'Connection failed. Try again.';
             } finally {
                 btn.disabled = false;

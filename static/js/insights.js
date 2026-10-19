@@ -106,7 +106,7 @@ function renderTrendChart(trendData) {
             datasets: [{
                 label: 'Attendance %',
                 data: trendData.map(d => d.pct),
-                borderColor: '#0052CC',
+                borderColor: 'var(--color-primary)',
                 backgroundColor: 'rgba(0, 82, 204, 0.05)',
                 fill: true,
                 tension: 0.4,
@@ -143,7 +143,7 @@ function renderDistributionChart(trendData) {
             labels: ['High (>95%)', 'Medium (50-95%)', 'Low (<50%)'],
             datasets: [{
                 data: [fullDays, partialDays, lowDays],
-                backgroundColor: ['#00875A', '#FFAB00', '#DE350B'],
+                backgroundColor: ['var(--status-ok-solid)', '#FFAB00', 'var(--status-bad-solid)'],
                 borderWidth: 0
             }]
         },
@@ -195,7 +195,7 @@ function renderSlotChart(slotData) {
             labels: labels,
             datasets: [{
                 data: values,
-                backgroundColor: ['#0052CC', '#0065FF', '#00875A', '#36B37E'],
+                backgroundColor: ['var(--color-primary)', '#0065FF', 'var(--status-ok-solid)', 'var(--status-ok-solid)'],
                 borderRadius: 6
             }]
         },
@@ -219,7 +219,7 @@ function renderHeatmap(data) {
         cell.className = 'heatmap-cell';
 
         // Color mapping: 0-100%
-        let color = '#f1f5f9'; // Empty
+        let color = 'var(--bg-page)'; // Empty
         if (d.pct > 90) color = '#15803d';
         else if (d.pct > 70) color = '#22c55e';
         else if (d.pct > 50) color = '#86efac';
@@ -249,7 +249,7 @@ function renderLeaderboard(elementId, list, color) {
         div.style.padding = '0.75rem 1rem';
         div.style.borderRadius = '8px';
         div.style.marginBottom = '0.5rem';
-        div.style.border = '1px solid #f1f5f9';
+        div.style.border = '1px solid var(--bg-page)';
 
         // Find student ID from global data if possible to enable click
         const student = allStudentsData.find(s => s[0] === item.name);
@@ -260,10 +260,10 @@ function renderLeaderboard(elementId, list, color) {
 
         div.innerHTML = `
             <div style="display: flex; align-items: center; gap: 1rem;">
-                <span style="font-weight: 600; color: #94a3b8;">${index + 1}</span>
+                <span style="font-weight: 600; color: var(--text-subtle);">${index + 1}</span>
                 <span style="font-weight: 500;">${item.name}</span>
             </div>
-            <span style="font-weight: 700; color: ${color === 'green' ? '#00875A' : '#DE350B'}">${item.pct}%</span>
+            <span style="font-weight: 700; color: ${color === 'green' ? 'var(--status-ok-solid)' : 'var(--status-bad-solid)'}">${item.pct}%</span>
         `;
         container.appendChild(div);
     });
@@ -274,7 +274,7 @@ function renderAtRiskList(list) {
     container.innerHTML = '';
 
     if (list.length === 0) {
-        container.innerHTML = '<p style="padding: 1rem; color: #64748b; text-align: center;">No high-risk students found</p>';
+        container.innerHTML = '<p style="padding: 1rem; color: var(--text-secondary); text-align: center;">No high-risk students found</p>';
         return;
     }
 
@@ -293,13 +293,13 @@ function renderAtRiskList(list) {
         div.innerHTML = `
             <div>
                 <div style="font-weight: 600;">${item.name}</div>
-                <div style="font-size: 0.75rem; color: #DE350B;">
+                <div style="font-size: 0.75rem; color: var(--status-bad-solid);">
                     ${item.streak} days streak absence
                 </div>
             </div>
             <div style="text-align: right;">
-                <div style="font-weight: 700; color: #DE350B;">${item.pct}%</div>
-                <div style="font-size: 0.75rem; color: #94a3b8;">30-day avg</div>
+                <div style="font-weight: 700; color: var(--status-bad-solid);">${item.pct}%</div>
+                <div style="font-size: 0.75rem; color: var(--text-subtle);">30-day avg</div>
             </div>
         `;
         container.appendChild(div);
@@ -326,11 +326,11 @@ async function showStudentSparkline(id, name) {
             document.getElementById('sparklineStats').innerHTML = `
                 <div class="stat-card" style="padding: 1rem;">
                     <div style="font-size: 1.25rem; font-weight: 700;">${avgSlots}</div>
-                    <div style="font-size: 0.75rem; color: #64748b;">Avg Slots/Day</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Avg Slots/Day</div>
                 </div>
                 <div class="stat-card" style="padding: 1rem;">
                     <div style="font-size: 1.25rem; font-weight: 700;">${fullDays}</div>
-                    <div style="font-size: 0.75rem; color: #64748b;">Full Days (14d)</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary);">Full Days (14d)</div>
                 </div>
             `;
         }

@@ -86,13 +86,13 @@
         }
 
         .st-chip.ok {
-            background: #E6F5EE;
-            color: #0E6B4A;
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
         }
 
         .st-chip.warn {
-            background: #FDF0E3;
-            color: #8A4B00;
+            background: var(--status-warn-surface);
+            color: var(--status-warn-text);
         }
 
         .st-chip.off {
@@ -103,16 +103,16 @@
         /* Destructive actions are visually separated and last on the page, so
            nobody reaches them while looking for something else. */
         .st-danger {
-            border: 1.5px solid #D98A84;
-            background: #FDF3F2;
+            border: 1.5px solid var(--status-bad-border);
+            background: var(--status-bad-surface);
         }
 
         .st-danger h2 {
-            color: #8E2C24;
+            color: var(--status-bad-text);
         }
 
         .st-danger p.sub {
-            color: #8E2C24;
+            color: var(--status-bad-text);
         }
 
         .st-log {
@@ -302,11 +302,11 @@
                     })
                 })).json();
                 msg.textContent = d.message || (d.success ? 'Saved' : 'Failed');
-                msg.style.color = d.success ? '#0E6B4A' : '#B3372E';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 if (d.success) loadInstitute();
             } catch (e) {
                 msg.textContent = 'Connection failed';
-                msg.style.color = '#B3372E';
+                msg.style.color = 'var(--status-bad-text)';
             }
         }
 
@@ -364,7 +364,7 @@
                     ? (d.recent || []).slice(0, 8).map(function (r) {
                         return '<div><span class="num muted">' + esc(r.sent_at || '') + '</span> · ' +
                             esc(r.status) + ' · ' + esc(r.kind || '') + ' → ' + esc(r.to) +
-                            (r.error ? ' <span style="color:#B3372E;">' + esc(r.error) + '</span>' : '') +
+                            (r.error ? ' <span style="color:var(--status-bad-text);">' + esc(r.error) + '</span>' : '') +
                             '</div>';
                     }).join('')
                     : '<div class="muted">Nothing sent yet.</div>';
@@ -376,7 +376,7 @@
         async function sendTest() {
             const to = document.getElementById('testTo').value.trim();
             const msg = document.getElementById('testMsg');
-            if (!to) { msg.textContent = 'Enter an address.'; msg.style.color = '#B3372E'; return; }
+            if (!to) { msg.textContent = 'Enter an address.'; msg.style.color = 'var(--status-bad-text)'; return; }
             msg.textContent = 'Sending…';
             msg.style.color = 'var(--text-secondary)';
             try {
@@ -385,11 +385,11 @@
                     body: JSON.stringify({ to: to })
                 })).json();
                 msg.textContent = d.message || (d.success ? 'Sent' : 'Failed');
-                msg.style.color = d.success ? '#0E6B4A' : '#B3372E';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 loadEmail();
             } catch (e) {
                 msg.textContent = 'Connection failed';
-                msg.style.color = '#B3372E';
+                msg.style.color = 'var(--status-bad-text)';
             }
         }
 
@@ -411,11 +411,11 @@
             try {
                 const d = await (await fetch('/api/admin/clear_all_data', { method: 'POST' })).json();
                 msg.textContent = d.message || (d.success ? 'Done' : 'Failed');
-                msg.style.color = d.success ? '#0E6B4A' : '#B3372E';
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
                 if (d.success) loadInstitute();
             } catch (e) {
                 msg.textContent = 'Connection failed';
-                msg.style.color = '#B3372E';
+                msg.style.color = 'var(--status-bad-text)';
             }
         }
 

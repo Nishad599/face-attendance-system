@@ -54,7 +54,7 @@
         install.type = 'button';
         install.textContent = 'Add';
         install.style.cssText =
-            'background:#fff;color:#172B4D;border:0;border-radius:6px;' +
+            'background:#fff;color:var(--text-primary);border:0;border-radius:6px;' +
             'padding:9px 14px;font-weight:600;cursor:pointer;min-height:38px;';
 
         var close = document.createElement('button');
