@@ -214,19 +214,13 @@ def course_calendar(conn, course_id, today=None):
 
 
 def _holiday_dates(conn, course_id):
-    out = set()
-    try:
-        rows = conn.execute(
-            "SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?",
-            (course_id,),
-        ).fetchall()
-    except Exception:
-        return out
-    for r in rows:
-        d = _as_date(r[0])
-        if d:
-            out.add(d)
-    return out
+    """Holidays for this batch — see working_days.holiday_dates for the rule.
+
+    Kept as a thin wrapper rather than inlined, so that the institute scoping
+    added in Phase 10 is defined in exactly one place.
+    """
+    import working_days
+    return working_days.holiday_dates(conn, course_id)
 
 
 def subject_attendance(conn, course_id, student_db_id=None, upto=None):

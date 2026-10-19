@@ -143,6 +143,17 @@ photo or a face on a phone screen can mark attendance. The crop bug that caused
 the over-rejection is fixed, but the threshold has never been validated against
 real hardware.
 
+Check at any time without reading `.env` on the server — `/api/system/status`
+reports it:
+
+```bash
+curl -sk https://127.0.0.1:8000/api/system/status | python3 -m json.tool
+```
+
+`"liveness_active": false` comes with a `liveness_warning` spelling out what is
+and is not being enforced. Once a validated threshold is in place the field
+flips to `true` and reports the threshold in use.
+
 This has to happen on the VM: the sandbox falls back to a Haar cascade because
 `buffalo_l` isn't installed there, so its bounding boxes — and therefore its
 scores — are not the ones production will see.
@@ -188,8 +199,23 @@ the restart, so a red run means something genuinely broke. To check by hand:
 cd $HOME/student && ./status.sh && ./venv/bin/python check_db.py && journalctl -u attendance -n 30 --no-pager
 ```
 
-`check_db.py` verifies every table and column the app expects. It is also run
-non-fatally at the end of each deploy.
+`check_db.py` verifies every table, column **and index** the app expects. It is
+also run non-fatally at the end of each deploy.
+
+One of those indexes carries correctness, not just speed:
+`idx_attendance_unique_slot` (added by `migrate_phase9.py`) is what makes the
+`INSERT OR IGNORE` in the two camera paths actually refuse a duplicate. If
+`check_db.py` reports it missing, attendance can be double-counted — run the
+migration rather than ignoring it:
+
+```bash
+./venv/bin/python migrate_phase9.py --dry-run   # report duplicates, change nothing
+./venv/bin/python migrate_phase9.py             # dedupe, then add the index
+```
+
+The dry run lists every duplicated (student, date, slot) group it found. The
+real run keeps the **earliest** mark in each group — the one reflecting when the
+student actually arrived — and deletes the rest, after backing up the database.
 
 ---
 

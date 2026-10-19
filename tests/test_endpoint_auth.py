@@ -89,6 +89,40 @@ def test_public_surface_has_not_grown():
     assert not unexpected, f"new unauthenticated endpoint(s): {sorted(unexpected)}"
 
 
+def test_every_route_lives_in_the_app_file():
+    """No other module may register routes, because this guard cannot see them.
+
+    How 9 unauthenticated endpoints survived every run of this file:
+    phase1_integration.add_phase1_api_endpoints(app, …) took the app object and
+    declared `@app.get(...)` handlers inside a nested function in ANOTHER
+    module. The parser above only ever reads main_with_face_recognition.py, so
+    those routes were invisible here — among them an unauthenticated attendance
+    write (POST /api/attendance/enhanced), an unauthenticated read of any
+    student's history (/api/attendance/student/{id}/enhanced-v2) and an
+    unauthenticated schema mutation (POST /api/system/initialize-phase1).
+
+    Keeping every route in the app file is what makes the checks in this file
+    meaningful. If routes ever need to be split across modules, teach
+    parse_routes() about them in the same commit — do not delete this test.
+    """
+    offenders = {}
+    for name in sorted(os.listdir(ROOT)):
+        if not name.endswith(".py") or name == os.path.basename(APP_FILE):
+            continue
+        with open(os.path.join(ROOT, name), encoding="utf-8") as f:
+            hits = [
+                n for n, line in enumerate(f.read().split("\n"), 1)
+                if re.search(r'@app\.(get|post|put|delete|patch)\s*\(', line)
+            ]
+        if hits:
+            offenders[name] = hits
+
+    assert not offenders, (
+        "route decorators found outside the app file, where the auth checks in "
+        f"this file cannot see them: {offenders}"
+    )
+
+
 class TestCriticalEndpointsGuarded:
     """Named checks for the endpoints whose exposure mattered most."""
 

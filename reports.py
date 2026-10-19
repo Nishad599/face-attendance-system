@@ -37,14 +37,14 @@ def previous_month(today: date = None):
 
 
 def _holiday_dates(cur, course_id):
-    out = set()
-    cur.execute("SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?", (course_id,))
-    for row in cur.fetchall():
-        try:
-            out.add(datetime.strptime(str(row[0])[:10], "%Y-%m-%d").date())
-        except (ValueError, TypeError):
-            continue
-    return out
+    """Holidays for this batch — see working_days.holiday_dates for the rule.
+
+    Every report figure a student or a teacher is shown depends on this set, so
+    the institute scoping added in Phase 10 is defined once and shared rather
+    than re-expressed here.
+    """
+    import working_days
+    return working_days.holiday_dates(cur, course_id)
 
 
 def _working_days(start, end, holidays):

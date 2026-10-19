@@ -4,174 +4,909 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard — CDAC Attendance</title>
+    <title>Overview — CDAC Attendance</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/theme.js"></script>
-</head>
+    <style>
+        /* ================================================================
+           ADMIN OVERVIEW
+           The dashboard used to show four counters, five navigation cards and
+           a monthly table. It called five endpoints while the app has 126, so
+           an admin could not tell from this page whether anything was broken,
+           what was waiting on them, or which batch was in trouble without
+           visiting four other screens.
 
-<body>
-    <!-- Navbar -->
-    {% include "_navbar.html" %}
+           It is organised around those three questions now, in that order:
+           SYSTEM (is anything broken) -> WAITING ON YOU (what needs a
+           decision) -> TODAY (what is happening) -> attention and trend.
+           ================================================================ */
 
-    <!-- Page Content -->
-    <div class="app-page">
-        <!-- Page Header -->
-        <div class="app-page-header">
-            <h1>Dashboard</h1>
-            <p>
-                <span id="currentDate"></span> · <span id="currentDay"></span> · <span id="currentTime"></span>
-                <span id="workingDayStatus"></span>
-            </p>
-        </div>
-
-        <!-- Sunday Notice -->
-        <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
-            <i class="fa-solid fa-calendar-xmark"></i>
-            Today is Sunday — a non-working day. Attendance cannot be marked today.
-        </div>
-
-        <!-- Stats Row -->
-        <div class="app-grid app-grid-4 mb-24">
-            <div class="app-stat">
-                <div class="app-stat-value blue" id="totalStudents">0</div>
-                <div class="app-stat-label">Total Students</div>
-            </div>
-            <div class="app-stat">
-                <div class="app-stat-value green" id="presentToday">0</div>
-                <div class="app-stat-label">Present Today</div>
-            </div>
-            <div class="app-stat">
-                <div class="app-stat-value red" id="absentToday">0</div>
-                <div class="app-stat-label">Absent Today</div>
-            </div>
-            <div class="app-stat">
-                <div class="app-stat-value" id="attendanceRate">0%</div>
-                <div class="app-stat-label">Attendance Rate</div>
-            </div>
-        </div>
-
-        <!-- Quick Actions Grid -->
-        <h2 class="mb-16">Quick Actions</h2>
-        <div class="app-grid mb-24">
-            <a href="/register" class="app-nav-card">
-                <div class="app-nav-card-icon blue"><i class="fa-solid fa-user-plus"></i></div>
-                <h3>Register Student</h3>
-                <p>Add new students with face recognition</p>
-            </a>
-            <a href="/attendance" class="app-nav-card">
-                <div class="app-nav-card-icon green"><i class="fa-solid fa-camera"></i></div>
-                <h3>Live Attendance</h3>
-                <p>Real-time face recognition attendance</p>
-            </a>
-            <a href="/attendance-management" class="app-nav-card">
-                <div class="app-nav-card-icon purple"><i class="fa-solid fa-chart-simple"></i></div>
-                <h3>Reports</h3>
-                <p>Comprehensive tracking & reports</p>
-            </a>
-            <a href="/students" class="app-nav-card">
-                <div class="app-nav-card-icon orange"><i class="fa-solid fa-clipboard-user"></i></div>
-                <h3>Manage Students</h3>
-                <p>Edit student info and data</p>
-            </a>
-            <a href="/admin/batches" class="app-nav-card">
-                <div class="app-nav-card-icon blue"><i class="fa-solid fa-layer-group"></i></div>
-                <h3>Batches &amp; Teachers</h3>
-                <p>Create batches, set dates, assign teachers, terminal PIN</p>
-            </a>
-        </div>
-
-        <!-- Slot Configuration (admin only) -->
-        <div id="adminZone" style="display:none;">
-            <!-- Institute-wide roll-up. Teachers can export their own batch;
-                 this is the only place every batch is visible side by side. -->
-            <div class="app-card mb-24">
-                <div class="app-card-header">
-                    <h3><i class="fa-solid fa-building-columns"></i> All Batches</h3>
-                    <div class="d-flex gap-8">
-                        <input type="month" id="instMonth" class="app-form-input" style="max-width:170px;"
-                               onchange="loadInstitute()">
-                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadInstitute()">
-                            <i class="fa-solid fa-arrows-rotate"></i> Refresh
-                        </button>
-                        <button class="app-btn app-btn-primary app-btn-sm" onclick="exportInstitute()">
-                            <i class="fa-solid fa-file-csv"></i> Export CSV
-                        </button>
-                    </div>
-                </div>
-                <div id="instSummary" class="muted" style="margin:12px 0;">Loading…</div>
-                <div class="app-table-wrapper">
-                    <table class="app-table">
-                        <thead>
-                            <tr><th>Batch</th><th>Students</th><th>Working Days</th>
-                                <th>Average</th><th>Below 75%</th></tr>
-                        </thead>
-                        <tbody id="instRows"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="app-card">
-                <div class="app-card-header">
-                    <h3><i class="fa-solid fa-gear"></i> Attendance Slot Config</h3>
-                    <div class="d-flex gap-8">
-                        <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadSessionConfig()">
-                            <i class="fa-solid fa-arrows-rotate"></i> Refresh
-                        </button>
-                        <button class="app-btn app-btn-primary app-btn-sm" onclick="testCurrentSlot()">
-                            <i class="fa-regular fa-clock"></i> Check Current
-                        </button>
-                    </div>
-                </div>
-                <div class="app-form-group" style="max-width:280px;margin:12px 0;">
-                    <label class="app-form-label">Batch</label>
-                    <select id="slotBatchSelect" class="app-form-input" onchange="onSlotBatchChange()"></select>
-                </div>
-                <div id="currentSlotStatus"></div>
-                <div id="sessionConfigContainer"></div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        function checkSundayStatus() {
-            const today = new Date();
-            const isSunday = today.getDay() === 0;
-            const sundayNotice = document.getElementById('sundayNotice');
-            if (isSunday && sundayNotice) sundayNotice.style.display = 'flex';
-            else if (sundayNotice) sundayNotice.style.display = 'none';
-            return isSunday;
+        .num {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
         }
 
-        function updateDateTime() {
-            const now = new Date();
-            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-            document.getElementById('currentDate').textContent = now.toLocaleDateString();
-            document.getElementById('currentTime').textContent = now.toLocaleTimeString();
-            document.getElementById('currentDay').textContent = days[now.getDay()];
-            const ws = document.getElementById('workingDayStatus');
-            if (now.getDay() === 0) {
-                ws.textContent = ' · Non-Working Day';
-                ws.style.color = 'var(--color-warning)';
-            } else {
-                ws.textContent = ' · Working Day';
-                ws.style.color = 'var(--color-success)';
+        .ov-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .ov-head h1 {
+            margin: 0;
+            font-size: 1.7rem;
+        }
+
+        .ov-sub {
+            color: var(--text-secondary);
+            font-size: 0.93rem;
+            margin-top: 5px;
+        }
+
+        .ov-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+
+        .ov-section h2 {
+            font-size: 1.05rem;
+            margin: 0;
+        }
+
+        .ov-section-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .ov-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .ov-grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .ov-span-2 {
+            grid-column: span 2;
+        }
+
+        @media (max-width: 1000px) {
+
+            .ov-grid-2,
+            .ov-grid-3 {
+                grid-template-columns: 1fr;
+            }
+
+            .ov-span-2 {
+                grid-column: auto;
             }
         }
 
-        async function loadDashboardStats() {
-            try {
-                const r = await fetch('/api/dashboard/stats');
-                const d = await r.json();
-                if (d.success) {
-                    document.getElementById('totalStudents').textContent = d.stats.total_students;
-                    document.getElementById('presentToday').textContent = d.stats.present_today;
-                    document.getElementById('absentToday').textContent = d.stats.absent_today;
-                    document.getElementById('attendanceRate').textContent = d.stats.attendance_rate + '%';
-                }
-            } catch (e) { console.error('Stats error:', e); }
+        /* ---- health strip ---- */
+        .ov-health {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+            gap: 10px;
         }
+
+        .ov-chip {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 11px 13px;
+            background: var(--bg-page);
+        }
+
+        .ov-chip .t {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .ov-chip .v {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+        }
+
+        /* Good / needs attention differ in icon and wording as well as hue. */
+        .ov-chip.ok {
+            border-color: #ABD9C3;
+            background: #F2FAF6;
+        }
+
+        .ov-chip.ok .t {
+            color: #0E6B4A;
+        }
+
+        .ov-chip.ok .v {
+            color: #2F5F4C;
+        }
+
+        .ov-chip.warn {
+            border: 1.5px solid #E0A458;
+            background: #FDF6EC;
+        }
+
+        .ov-chip.warn .t {
+            color: #8A4B00;
+        }
+
+        .ov-chip.warn .v {
+            color: #7A4A08;
+        }
+
+        /* ---- queue ---- */
+        .ov-q {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 9px 10px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .ov-q:hover {
+            background: var(--bg-page);
+        }
+
+        .ov-q .n {
+            flex: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 7px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ov-q .n.hot {
+            background: #FDF0E3;
+            border-color: #E0A458;
+            color: #8A4B00;
+        }
+
+        .ov-q .l {
+            flex-grow: 1;
+            font-size: 0.93rem;
+            font-weight: 500;
+        }
+
+        .ov-q .note {
+            font-size: 0.79rem;
+            color: var(--text-secondary);
+        }
+
+        .ov-q .note.urgent {
+            color: #B3372E;
+            font-weight: 600;
+        }
+
+        /* ---- today ---- */
+        .ov-batch {
+            margin-bottom: 13px;
+        }
+
+        .ov-batch:last-child {
+            margin-bottom: 0;
+        }
+
+        .ov-batch-top {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .ov-bar {
+            height: 9px;
+            border-radius: 999px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .ov-bar span {
+            display: block;
+            height: 100%;
+            background: #17A06A;
+        }
+
+        .ov-bar span.low {
+            background: #C98A2E;
+        }
+
+        /* ---- tables ---- */
+        .ov-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .ov-table th {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            font-weight: 700;
+        }
+
+        .ov-table td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .ov-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .ov-table .r {
+            text-align: right;
+        }
+
+        .ov-scroll {
+            overflow-x: auto;
+        }
+
+        .ov-empty {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 10px 0;
+        }
+
+        .ov-muted {
+            color: var(--text-secondary);
+        }
+
+        /* Session config keeps its original look; it is still the only place
+           slot timings can be edited. */
+        .session-config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 14px;
+        }
+
+        .session-config-item {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px;
+            background: var(--bg-page);
+        }
+
+        .session-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .session-header h4 {
+            margin: 0;
+            font-size: 0.93rem;
+        }
+
+        .current-timing {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .time-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .btn-update {
+            margin-top: 10px;
+        }
+
+        .inactive-message {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        .active-slot,
+        .next-slot,
+        .no-slots {
+            padding: 9px 13px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+
+        .active-slot {
+            background: #E3FCEF;
+            color: #006644;
+        }
+
+        .next-slot {
+            background: #DEEBFF;
+            color: #0747A6;
+        }
+
+        .no-slots {
+            background: #FFEBE6;
+            color: #BF2600;
+        }
+
+        .muted {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="app-page">
+
+        <div class="ov-head">
+            <div>
+                <h1 id="ovTitle">Overview</h1>
+                <div class="ov-sub" id="ovWhen">Loading…</div>
+            </div>
+            <div class="d-flex gap-8" style="flex-wrap:wrap;">
+                <button class="app-btn app-btn-subtle" onclick="loadAll()">
+                    <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                </button>
+                <button class="app-btn app-btn-subtle" onclick="exportInstitute()">
+                    <i class="fa-solid fa-file-csv"></i> Export month
+                </button>
+                <!-- /register is in no navbar menu; the old dashboard's quick-action
+                     cards were its only route in, so it is linked here. -->
+                <a class="app-btn app-btn-subtle" href="/register">
+                    <i class="fa-solid fa-camera"></i> Register a face
+                </a>
+                <a class="app-btn app-btn-primary" href="/people">
+                    <i class="fa-solid fa-users"></i> People
+                </a>
+            </div>
+        </div>
+
+        <!-- 1. Is anything broken? -->
+        <section class="ov-section">
+            <div class="ov-section-head">
+                <h2>System</h2>
+                <span id="ovHealthFlag" class="ov-muted" style="font-size:.84rem;"></span>
+            </div>
+            <div class="ov-health" id="ovHealth">
+                <div class="ov-empty">Checking…</div>
+            </div>
+            <div id="ovHealthWarning" style="display:none;margin-top:12px;"></div>
+        </section>
+
+        <!-- 2. What is waiting on me?  3. What is happening today? -->
+        <div class="ov-grid-3">
+            <section class="ov-section">
+                <div class="ov-section-head">
+                    <h2>Waiting on you</h2>
+                    <span class="num" id="ovQueueTotal" style="font-size:1.25rem;font-weight:600;"></span>
+                </div>
+                <p class="ov-sub" style="margin:-8px 0 12px;">Across every batch — nothing moves until
+                    someone decides.</p>
+                <div id="ovQueues">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+
+            <section class="ov-section ov-span-2">
+                <div class="ov-section-head">
+                    <h2>Today</h2>
+                    <span class="ov-muted" style="font-size:.84rem;" id="ovTodayNote"></span>
+                </div>
+                <div id="ovToday">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 4. Who needs attention, and where is it heading -->
+        <div class="ov-grid-3">
+            <section class="ov-section ov-span-2">
+                <div class="ov-section-head">
+                    <h2>Below 75%</h2>
+                    <a href="/attendance-management" style="font-size:.86rem;font-weight:600;">Open reports</a>
+                </div>
+                <p class="ov-sub" style="margin:-8px 0 12px;">Course-to-date, excluding Sundays, holidays
+                    and approved leave.</p>
+                <div class="ov-scroll" id="ovRisk">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+
+            <section class="ov-section">
+                <div class="ov-section-head">
+                    <h2>30-day trend</h2>
+                </div>
+                <div id="ovTrend">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 5. Batches -->
+        <section class="ov-section">
+            <div class="ov-section-head">
+                <h2>Batches</h2>
+                <div class="d-flex gap-8" style="align-items:center;">
+                    <label for="instMonth" class="ov-muted" style="font-size:.86rem;">Month</label>
+                    <input type="month" id="instMonth" class="app-form-input" style="width:170px;"
+                           onchange="loadInstitute()">
+                </div>
+            </div>
+            <div id="instSummary" class="ov-sub" style="margin:-8px 0 12px;"></div>
+            <div class="ov-scroll">
+                <table class="ov-table">
+                    <thead>
+                        <tr>
+                            <th>BATCH</th>
+                            <th class="r">STUDENTS</th>
+                            <th class="r">WORKING DAYS</th>
+                            <th class="r">AVERAGE</th>
+                            <th class="r">BELOW 75%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instRows">
+                        <tr>
+                            <td colspan="5" class="muted">Loading…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 6. Compliance and activity -->
+        <div class="ov-grid-2">
+            <section class="ov-section">
+                <div class="ov-section-head">
+                    <h2>Biometric consent</h2>
+                </div>
+                <p class="ov-sub" style="margin:-8px 0 12px;" id="ovConsentSub">DPDP Act 2023.</p>
+                <div id="ovConsent">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+
+            <section class="ov-section">
+                <div class="ov-section-head">
+                    <h2>Recent activity</h2>
+                    <span class="ov-muted" style="font-size:.84rem;">audit log</span>
+                </div>
+                <div id="ovAudit">
+                    <div class="ov-empty">Loading…</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 7. Slot timings — still the only place these can be edited -->
+        <section class="ov-section">
+            <div class="ov-section-head">
+                <h2>Attendance slot timings</h2>
+                <div class="d-flex gap-8">
+                    <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadSessionConfig()">
+                        <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                    </button>
+                    <button class="app-btn app-btn-primary app-btn-sm" onclick="testCurrentSlot()">
+                        <i class="fa-regular fa-clock"></i> Check current
+                    </button>
+                </div>
+            </div>
+            <div class="app-form-group" style="max-width:280px;margin:0 0 12px;">
+                <label class="app-form-label" for="slotBatchSelect">Batch</label>
+                <select id="slotBatchSelect" class="app-form-input" onchange="onSlotBatchChange()"></select>
+            </div>
+            <div id="currentSlotStatus"></div>
+            <div id="sessionConfigContainer"></div>
+        </section>
+    </div>
+
+    <script>
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function rateColour(rate) {
+            return rate < 75 ? '#B3372E' : (rate < 85 ? '#8A4B00' : '#0E6B4A');
+        }
+
+        function duration(seconds) {
+            if (seconds == null) return '—';
+            const d = Math.floor(seconds / 86400), h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d) return d + ' d ' + h + ' h';
+            if (h) return h + ' h ' + m + ' m';
+            return m + ' m';
+        }
+
+        function bytes(n) {
+            if (!n) return '—';
+            return n > 1048576 ? (n / 1048576).toFixed(0) + ' MB' : (n / 1024).toFixed(0) + ' KB';
+        }
+
+        function ago(iso) {
+            if (!iso) return 'never';
+            const then = new Date(iso), mins = Math.round((Date.now() - then) / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return mins + ' min ago';
+            if (mins < 1440) return Math.round(mins / 60) + ' h ago';
+            return Math.round(mins / 1440) + ' d ago';
+        }
+
+        /* ---------- 1. System ---------- */
+
+        function chip(ok, label, value) {
+            const icon = ok
+                ? '<i class="fa-solid fa-circle-check"></i>'
+                : '<i class="fa-solid fa-triangle-exclamation"></i>';
+            return '<div class="ov-chip ' + (ok ? 'ok' : 'warn') + '">' +
+                '<div class="t">' + icon + '<span>' + esc(label) + '</span></div>' +
+                '<div class="v">' + value + '</div></div>';
+        }
+
+        function renderHealth(h) {
+            const parts = [];
+            parts.push(chip(h.service.ok, 'Service', 'Up · ' + duration(h.service.uptime_seconds)));
+            parts.push(chip(h.database.ok, 'Database',
+                esc(h.database.backend) + (h.database.bytes ? ' · ' + bytes(h.database.bytes) : '')));
+            parts.push(chip(h.face_model.ok, 'Face model',
+                h.face_model.ok ? h.face_model.faces_loaded + ' faces loaded' : 'not available'));
+            parts.push(chip(h.liveness.ok, h.liveness.ok ? 'Liveness' : 'Liveness OFF',
+                h.liveness.ok ? 'threshold ' + h.liveness.threshold : 'a photo can mark attendance'));
+
+            let emailValue;
+            if (!h.email.configured) {
+                emailValue = 'not configured · ' + h.email.skipped + ' skipped';
+            } else if (h.email.failed) {
+                emailValue = h.email.sent + ' sent · ' + h.email.failed + ' failed';
+            } else {
+                emailValue = h.email.sent + ' sent';
+            }
+            parts.push(chip(h.email.ok, 'Email', emailValue));
+
+            parts.push(chip(h.backup.ok, 'Backup',
+                h.backup.last ? ago(h.backup.last) : 'none found'));
+
+            document.getElementById('ovHealth').innerHTML = parts.join('');
+
+            const n = (h.attention || []).length;
+            document.getElementById('ovHealthFlag').textContent =
+                n ? n + ' need' + (n === 1 ? 's' : '') + ' attention' : 'all good';
+
+            const warn = document.getElementById('ovHealthWarning');
+            if (h.liveness && h.liveness.warning) {
+                warn.style.display = '';
+                warn.className = 'app-alert app-alert-warning';
+                warn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><div>' +
+                    esc(h.liveness.warning) +
+                    ' Validate a threshold on the server with <code>test_antispoof.py --camera</code>' +
+                    ' then <code>--suggest</code>, set <code>ANTISPOOF_THRESHOLD</code> and remove' +
+                    ' <code>ANTISPOOF_DISABLED</code>.</div>';
+            } else {
+                warn.style.display = 'none';
+            }
+        }
+
+        /* ---------- 2. Waiting on you ---------- */
+
+        function renderQueues(q) {
+            const rows = [
+                ['Leave requests', q.leave, '/teacher',
+                    q.leave_starting_soon ? q.leave_starting_soon + ' start within 2 days' : ''],
+                ['Attendance disputes', q.grievances, '/teacher', ''],
+                ['Face registrations', q.face_requests, '/teacher', ''],
+                ['Detail changes', q.profile_requests, '/teacher', ''],
+                // Links to /register, not /students: enrolling the face is the
+                // action that clears this row.
+                ['No face enrolled yet', q.no_face, '/register', 'cannot be marked'],
+            ];
+            const html = rows.map(function (r) {
+                const label = r[0], n = r[1] || 0, href = r[2], note = r[3];
+                const hot = n > 0 && (label === 'No face enrolled yet' || note.indexOf('start') === 0);
+                return '<a class="ov-q" href="' + href + '">' +
+                    '<span class="n num' + (hot ? ' hot' : '') + '">' + n + '</span>' +
+                    '<span class="l">' + esc(label) + '</span>' +
+                    (n && note
+                        ? '<span class="note' + (hot ? ' urgent' : '') + '">' + esc(note) + '</span>'
+                        : '<span class="note">—</span>') +
+                    '</a>';
+            }).join('');
+            document.getElementById('ovQueues').innerHTML = html;
+            document.getElementById('ovQueueTotal').textContent = q.total || 0;
+        }
+
+        /* ---------- 3. Today ---------- */
+
+        function renderToday(t) {
+            const note = document.getElementById('ovTodayNote');
+            if (!t.is_working_day) {
+                note.textContent = t.reason || 'not a working day';
+            } else {
+                note.textContent = 'live · refreshes every 30 s';
+            }
+
+            if (!t.batches.length) {
+                document.getElementById('ovToday').innerHTML =
+                    '<div class="ov-empty">No active batches yet. ' +
+                    '<a href="/admin/batches">Create one</a>.</div>';
+                return;
+            }
+
+            document.getElementById('ovToday').innerHTML = t.batches.map(function (b) {
+                let right, sub;
+                if (!b.total) {
+                    right = '<span class="ov-muted">no students</span>';
+                } else {
+                    right = '<span class="ov-muted"><strong class="num" ' +
+                        'style="font-size:1rem;color:var(--text-primary);">' + b.present +
+                        '</strong> of ' + b.total + ' · ' + b.pct + '%</span>';
+                }
+                if (!b.has_terminal) {
+                    sub = '<span style="color:#8A4B00;font-weight:600;">no terminal PIN — nobody can punch in</span>';
+                } else if (b.slot) {
+                    sub = esc(b.slot.name) + ' · closes ' + esc(b.slot.ends || '') +
+                        (b.slot.minutes_left != null ? ' · ' + b.slot.minutes_left + ' min left' : '');
+                } else {
+                    sub = 'no session open right now';
+                }
+                const low = b.pct < 75 ? ' class="low"' : '';
+                return '<div class="ov-batch">' +
+                    '<div class="ov-batch-top"><span style="font-weight:600;">' + esc(b.batch) +
+                    '</span>' + right + '</div>' +
+                    '<div class="ov-bar"><span' + low + ' style="width:' + (b.pct || 0) + '%"></span></div>' +
+                    '<div class="ov-sub" style="margin-top:5px;font-size:.8rem;">' + sub + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        /* ---------- 4. At risk + trend ---------- */
+
+        async function loadRisk() {
+            const box = document.getElementById('ovRisk');
+            try {
+                const d = await (await fetch('/api/analytics/at-risk?threshold=75')).json();
+                if (!d.success || !d.at_risk || !d.at_risk.length) {
+                    box.innerHTML = '<div class="ov-empty">Nobody is below 75%.</div>';
+                    return;
+                }
+                const rows = d.at_risk.slice(0, 6).map(function (s) {
+                    return '<tr><td style="font-weight:600;">' + esc(s.name) + '</td>' +
+                        '<td class="ov-muted num">' + esc(s.student_id) + '</td>' +
+                        '<td class="r num" style="font-weight:600;color:' + rateColour(s.pct) + ';">' +
+                        s.pct + '%</td>' +
+                        '<td class="r ov-muted num">' + (s.streak || 0) + ' d</td></tr>';
+                }).join('');
+                box.innerHTML = '<table class="ov-table"><thead><tr>' +
+                    '<th>STUDENT</th><th>ROLL</th><th class="r">RATE</th>' +
+                    '<th class="r">ABSENT RUN</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+                    (d.count > 6 ? '<div class="ov-sub" style="margin-top:10px;">and ' +
+                        (d.count - 6) + ' more</div>' : '');
+            } catch (e) {
+                box.innerHTML = '<div class="ov-empty">Could not load.</div>';
+            }
+        }
+
+        async function loadTrend() {
+            const box = document.getElementById('ovTrend');
+            try {
+                const d = await (await fetch('/api/attendance/analytics/class?days=30')).json();
+                if (!d.success || !d.trend || d.trend.length < 2) {
+                    box.innerHTML = '<div class="ov-empty">Not enough data yet.</div>';
+                    return;
+                }
+                const pts = d.trend.map(function (p) { return p.pct; });
+                // Pad the plot area: a run at 0% (or 100%) would otherwise sit
+                // exactly on the viewBox edge and be clipped to a half-stroke,
+                // which reads as "chart is broken" rather than "rate is zero".
+                const w = 300, h = 110, pad = 6, span = h - pad * 2, max = 100;
+                const y = function (pct) { return pad + (1 - pct / max) * span; };
+                const step = pts.length > 1 ? w / (pts.length - 1) : w;
+                const poly = pts.map(function (p, i) {
+                    return (i * step).toFixed(1) + ',' + y(p).toFixed(1);
+                }).join(' ');
+
+                box.innerHTML =
+                    '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="110" ' +
+                    'role="img" aria-label="Attendance rate over the last 30 days, ' +
+                    'averaging ' + d.avg_attendance + ' percent">' +
+                    '<line x1="0" y1="' + y(75) + '" x2="' + w + '" y2="' + y(75) +
+                    '" stroke="#C98A2E" stroke-width="1.5" stroke-dasharray="4 4"></line>' +
+                    '<polyline points="' + poly + '" fill="none" stroke="#2557D6" stroke-width="2.5" ' +
+                    'stroke-linecap="round" stroke-linejoin="round" ' +
+                    'vector-effect="non-scaling-stroke"></polyline></svg>' +
+                    '<div class="ov-sub" style="margin-top:8px;font-size:.8rem;">' +
+                    '<span style="color:#2557D6;font-weight:600;">—</span> daily rate &nbsp; ' +
+                    '<span style="color:#C98A2E;font-weight:600;">- -</span> 75% floor</div>' +
+                    '<div class="d-flex gap-8" style="margin-top:14px;">' +
+                    '<div class="ov-chip" style="flex:1;"><div class="v">30-day average</div>' +
+                    '<div class="num" style="font-size:1.3rem;font-weight:600;">' +
+                    d.avg_attendance + '%</div></div>' +
+                    '<div class="ov-chip" style="flex:1;"><div class="v">busiest slot</div>' +
+                    '<div style="font-size:1rem;font-weight:600;">' + esc(d.peak_slot || '—') +
+                    '</div></div></div>';
+            } catch (e) {
+                box.innerHTML = '<div class="ov-empty">Could not load.</div>';
+            }
+        }
+
+        /* ---------- 6. Consent + audit ---------- */
+
+        function renderConsent(c) {
+            document.getElementById('ovConsentSub').textContent =
+                'DPDP Act 2023 · policy v' + (c.policy_version || '1.0') +
+                ' · face data is deleted after the retention period.';
+            if (!c.total) {
+                document.getElementById('ovConsent').innerHTML =
+                    '<div class="ov-empty">No students yet.</div>';
+                return;
+            }
+            const pct = Math.round(c.consented / c.total * 100);
+            document.getElementById('ovConsent').innerHTML =
+                '<div class="d-flex gap-8" style="align-items:flex-end;flex-wrap:wrap;">' +
+                '<div><div class="num" style="font-size:1.9rem;font-weight:600;line-height:1;">' +
+                c.consented + '</div><div class="ov-sub" style="font-size:.8rem;">of ' + c.total +
+                ' consented</div></div>' +
+                '<div style="flex:1;min-width:160px;">' +
+                '<div class="ov-bar"><span style="width:' + pct + '%"></span></div>' +
+                '<div class="ov-sub" style="margin-top:6px;font-size:.8rem;">' +
+                (c.pending
+                    ? c.pending + ' have not responded — their face data cannot be processed'
+                    : 'everyone has consented') +
+                '</div></div></div>';
+        }
+
+        async function loadAudit() {
+            const box = document.getElementById('ovAudit');
+            try {
+                const d = await (await fetch('/api/admin/audit-log?limit=6')).json();
+                const entries = d.entries || [];
+                if (!d.success || !entries.length) {
+                    box.innerHTML = '<div class="ov-empty">Nothing recorded yet.</div>';
+                    return;
+                }
+                box.innerHTML = entries.slice(0, 6).map(function (e) {
+                    // `at` is "YYYY-MM-DD HH:MM:SS"; show the clock for today,
+                    // the date for anything older.
+                    const stamp = String(e.at || '');
+                    const sameDay = stamp.slice(0, 10) === new Date().toISOString().slice(0, 10);
+                    const when = sameDay ? stamp.slice(11, 16) : stamp.slice(5, 10);
+                    const who = e.actor_name || e.actor_type || 'system';
+                    const what = [e.action, e.target].filter(Boolean).join(' · ');
+                    return '<div class="d-flex gap-8" style="align-items:baseline;margin-bottom:8px;">' +
+                        '<span class="num ov-muted" style="font-size:.78rem;width:42px;flex:none;">' +
+                        esc(when) + '</span>' +
+                        '<span style="font-size:.9rem;"><strong>' + esc(who) + '</strong> ' +
+                        esc(what) + '</span></div>';
+                }).join('');
+            } catch (e) {
+                box.innerHTML = '<div class="ov-empty">Could not load.</div>';
+            }
+        }
+
+        /* ---------- overview fetch ---------- */
+
+        async function loadOverview() {
+            try {
+                const d = await (await fetch('/api/admin/overview')).json();
+                if (!d.success) return;
+
+                if (d.institute && d.institute.name) {
+                    document.getElementById('ovTitle').textContent = d.institute.name;
+                }
+                const now = new Date();
+                const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                document.getElementById('ovWhen').innerHTML =
+                    days[now.getDay()] + ' ' + now.toLocaleDateString() + ' · ' +
+                    (d.today.is_working_day
+                        ? '<span style="color:#0E6B4A;font-weight:600;">working day</span>'
+                        : '<span style="color:#8A4B00;font-weight:600;">' +
+                          esc(d.today.reason || 'non-working day') + '</span>');
+
+                renderHealth(d.health);
+                renderQueues(d.queues);
+                renderToday(d.today);
+                renderConsent(d.consent);
+            } catch (e) {
+                console.error('overview failed', e);
+            }
+        }
+
+        function loadAll() {
+            loadOverview();
+            loadRisk();
+            loadTrend();
+            loadAudit();
+            loadInstitute();
+        }
+
+        /* ---------- Batches table (unchanged behaviour) ---------- */
+
+        function instMonthValue() {
+            const el = document.getElementById('instMonth');
+            if (!el.value) el.value = new Date().toISOString().slice(0, 7);
+            return el.value;
+        }
+
+        async function loadInstitute() {
+            const rows = document.getElementById('instRows');
+            const summary = document.getElementById('instSummary');
+            rows.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
+            try {
+                const res = await fetch('/api/admin/institute-report?month=' + instMonthValue());
+                const d = await res.json();
+                if (!d.success) {
+                    summary.textContent = d.message || 'Could not load the report.';
+                    rows.innerHTML = '<tr><td colspan="5" class="muted">No data.</td></tr>';
+                    return;
+                }
+                const r = d.report;
+                summary.innerHTML =
+                    '<strong>' + esc(r.month_label) + '</strong> · ' +
+                    r.batch_count + ' batches · ' + r.total_students + ' students · ' +
+                    'average <span style="color:' + rateColour(r.avg_rate) + ';font-weight:600;">' +
+                    r.avg_rate + '%</span> · ' +
+                    '<span style="color:#B3372E;font-weight:600;">' + r.at_risk_total +
+                    '</span> below 75%';
+
+                if (!r.batches.length) {
+                    rows.innerHTML = '<tr><td colspan="5" class="muted">No active batches.</td></tr>';
+                    return;
+                }
+                rows.innerHTML = r.batches.map(function (b) {
+                    return '<tr>' +
+                        '<td><strong>' + esc(b.batch) + '</strong></td>' +
+                        '<td class="r num">' + b.students + '</td>' +
+                        '<td class="r num">' + b.working_days + '</td>' +
+                        '<td class="r num" style="color:' + rateColour(b.avg_rate) + ';font-weight:600;">' +
+                        b.avg_rate + '%</td>' +
+                        '<td class="r">' + (b.at_risk_count
+                            ? '<span class="app-badge app-badge-danger">' + b.at_risk_count + '</span>'
+                            : '<span class="muted">0</span>') + '</td>' +
+                        '</tr>';
+                }).join('');
+            } catch (e) {
+                summary.textContent = 'Could not load the report.';
+                rows.innerHTML = '<tr><td colspan="5" class="muted">Connection failed.</td></tr>';
+            }
+        }
+
+        function exportInstitute() {
+            window.location.href = '/api/admin/institute-export?month=' + instMonthValue();
+        }
+
+        /* ---------- Slot timings (unchanged behaviour) ---------- */
 
         let slotCourseId = null;
 
@@ -182,7 +917,7 @@
                 const r = await fetch('/api/courses');
                 const d = await r.json();
                 const batches = (d.courses || []).filter(b => b.is_active);
-                sel.innerHTML = batches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+                sel.innerHTML = batches.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
                 if (batches.length) slotCourseId = batches[0].id;
             } catch (e) { }
         }
@@ -195,11 +930,16 @@
         async function loadSessionConfig() {
             try {
                 await ensureSlotBatches();
-                const url = slotCourseId ? `/api/admin/session-config?course_id=${slotCourseId}` : '/api/admin/session-config';
+                const url = slotCourseId
+                    ? `/api/admin/session-config?course_id=${slotCourseId}`
+                    : '/api/admin/session-config';
                 const r = await fetch(url);
                 const d = await r.json();
                 if (d.success) {
-                    if (d.course_id) { slotCourseId = d.course_id; document.getElementById('slotBatchSelect').value = d.course_id; }
+                    if (d.course_id) {
+                        slotCourseId = d.course_id;
+                        document.getElementById('slotBatchSelect').value = d.course_id;
+                    }
                     displaySessionConfig(d.config);
                     await loadCurrentSlotStatus();
                 }
@@ -218,29 +958,37 @@
             const el = document.getElementById('currentSlotStatus');
             const cs = data.current_slot, ns = data.next_slot;
             if (cs) {
-                el.innerHTML = `<div class="active-slot"><i class="fa-solid fa-circle-check"></i> <strong>ACTIVE:</strong> ${cs.slot_info.name} <span class="time-info">(${cs.time_remaining} min remaining)</span></div>`;
+                el.innerHTML = `<div class="active-slot"><i class="fa-solid fa-circle-check"></i> <strong>ACTIVE:</strong> ${esc(cs.slot_info.name)} <span class="muted">(${cs.time_remaining} min remaining)</span></div>`;
             } else if (ns) {
                 const h = Math.floor(ns.wait_minutes / 60), m = ns.wait_minutes % 60;
-                el.innerHTML = `<div class="next-slot"><i class="fa-regular fa-clock"></i> <strong>NEXT:</strong> ${ns.slot_info.name} <span class="time-info">(in ${h}h ${m}m)</span></div>`;
+                el.innerHTML = `<div class="next-slot"><i class="fa-regular fa-clock"></i> <strong>NEXT:</strong> ${esc(ns.slot_info.name)} <span class="muted">(in ${h}h ${m}m)</span></div>`;
             } else {
-                el.innerHTML = `<div class="no-slots"><i class="fa-solid fa-circle-xmark"></i> <strong>NO ACTIVE SLOTS</strong> <span class="time-info">(Outside attendance hours)</span></div>`;
+                el.innerHTML = `<div class="no-slots"><i class="fa-solid fa-circle-xmark"></i> <strong>NO ACTIVE SLOTS</strong> <span class="muted">(outside attendance hours)</span></div>`;
             }
         }
 
         function displaySessionConfig(config) {
             const container = document.getElementById('sessionConfigContainer');
+            // Readable slot names, the same ones the terminal and the student
+            // timetable use — not the raw database key.
+            const LABELS = {
+                morning_1: 'Morning 1', morning_2: 'Morning 2',
+                afternoon_1: 'Afternoon 1', afternoon_2: 'Afternoon 2'
+            };
             let html = '<div class="session-config-grid">';
             config.forEach(session => {
                 const st = session.start_time.substring(0, 5);
                 const et = session.end_time.substring(0, 5);
                 const active = session.is_active;
+                const label = LABELS[session.session_type] ||
+                    session.session_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                 html += `
                     <div class="session-config-item ${active ? 'active' : 'inactive'}">
                         <div class="session-header">
-                            <h4>${session.session_type.toUpperCase()} Session</h4>
+                            <h4>${esc(label)}</h4>
                             <span class="app-badge ${active ? 'app-badge-success' : 'app-badge-neutral'}">${active ? 'Active' : 'Inactive'}</span>
                         </div>
-                        <div class="current-timing"><strong>Current:</strong> ${st} - ${et}</div>
+                        <div class="current-timing"><strong>Current:</strong> ${st} – ${et}</div>
                         <div class="time-inputs">
                             <div class="app-form-group">
                                 <label class="app-form-label">Start</label>
@@ -296,7 +1044,7 @@
         function showNotification(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `app-toast app-toast-${type}`;
-            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            toast.innerHTML = `<span>${esc(message)}</span><button onclick="this.parentElement.remove()">×</button>`;
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 5000);
         }
@@ -320,93 +1068,18 @@
         }
 
         document.addEventListener('DOMContentLoaded', function () {
-            checkSundayStatus();
-            updateDateTime();
-            loadDashboardStats();
+            instMonthValue();
+            loadAll();
+            loadSessionConfig();
 
-            // Show admin zone if admin
-            fetch('/api/session/status').then(r => r.json()).then(d => {
-                if (d.user_type === 'admin') {
-                    document.getElementById('adminZone').style.display = 'block';
-                    loadSessionConfig();
-                    loadInstitute();
-                } else if (d.authenticated) {
-                    // Nav link visibility is handled centrally by static/js/navbar.js.
-                }
-            });
-
-            setInterval(updateDateTime, 1000);
-            setInterval(loadDashboardStats, 30000);
+            // Today's numbers move; the monthly roll-up and the audit tail do not.
+            setInterval(loadOverview, 30000);
             setInterval(checkSession, 5 * 60 * 1000);
         });
 
         document.addEventListener('visibilitychange', function () {
-            if (!document.hidden) { checkSession(); checkSundayStatus(); }
+            if (!document.hidden) { checkSession(); loadOverview(); }
         });
-
-        // ---------- Institute-wide report (admin only) ----------
-        function instEsc(s) {
-            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
-                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
-            });
-        }
-
-        function instMonthValue() {
-            const el = document.getElementById('instMonth');
-            if (!el.value) el.value = new Date().toISOString().slice(0, 7);
-            return el.value;
-        }
-
-        function rateColour(rate) {
-            return rate < 75 ? '#DE350B' : (rate < 85 ? '#FF8B00' : '#00875A');
-        }
-
-        async function loadInstitute() {
-            const rows = document.getElementById('instRows');
-            const summary = document.getElementById('instSummary');
-            rows.innerHTML = '<tr><td colspan="5" class="muted">Loading…</td></tr>';
-            try {
-                const res = await fetch('/api/admin/institute-report?month=' + instMonthValue());
-                const d = await res.json();
-                if (!d.success) {
-                    summary.textContent = d.message || 'Could not load the report.';
-                    rows.innerHTML = '<tr><td colspan="5" class="muted">No data.</td></tr>';
-                    return;
-                }
-                const r = d.report;
-                summary.innerHTML =
-                    '<strong>' + instEsc(r.month_label) + '</strong> · ' +
-                    r.batch_count + ' batches · ' + r.total_students + ' students · ' +
-                    'average <span style="color:' + rateColour(r.avg_rate) + ';font-weight:600;">' +
-                    r.avg_rate + '%</span> · ' +
-                    '<span style="color:#DE350B;font-weight:600;">' + r.at_risk_total +
-                    '</span> below 75%';
-
-                if (!r.batches.length) {
-                    rows.innerHTML = '<tr><td colspan="5" class="muted">No active batches.</td></tr>';
-                    return;
-                }
-                rows.innerHTML = r.batches.map(function (b) {
-                    return '<tr>' +
-                        '<td><strong>' + instEsc(b.batch) + '</strong></td>' +
-                        '<td>' + b.students + '</td>' +
-                        '<td>' + b.working_days + '</td>' +
-                        '<td style="color:' + rateColour(b.avg_rate) + ';font-weight:600;">' +
-                            b.avg_rate + '%</td>' +
-                        '<td>' + (b.at_risk_count
-                            ? '<span class="app-badge app-badge-danger">' + b.at_risk_count + '</span>'
-                            : '<span class="muted">0</span>') + '</td>' +
-                        '</tr>';
-                }).join('');
-            } catch (e) {
-                summary.textContent = 'Could not load the report.';
-                rows.innerHTML = '<tr><td colspan="5" class="muted">Connection failed.</td></tr>';
-            }
-        }
-
-        function exportInstitute() {
-            window.location.href = '/api/admin/institute-export?month=' + instMonthValue();
-        }
     </script>
 </body>
 

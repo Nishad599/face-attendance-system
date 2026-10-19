@@ -185,6 +185,27 @@ p {
     text-decoration: none;
 }
 
+/* Count of decisions waiting, on the Approvals link. navbar.js fills it and
+   unhides it; `hidden` keeps it out of the layout when there is nothing to
+   report, so the link does not jump once the count arrives. */
+.nav-badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.nav-badge[hidden] {
+    display: none;
+}
+
 .app-navbar-links a.active {
     background: #DEEBFF;
     color: var(--color-primary);

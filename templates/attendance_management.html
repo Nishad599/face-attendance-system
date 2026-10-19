@@ -244,9 +244,12 @@
                 <button class="nav-tab" onclick="switchTab('today')">
                     <i class="fa-solid fa-calendar-check"></i> Live View
                 </button>
-                <button class="nav-tab active" onclick="switchTab('overview')">
-                    <i class="fa-solid fa-gauge-high"></i> Dashboard
-                </button>
+                <!-- The Dashboard tab's charts moved to /insights: analytics was
+                     drawn three different ways on three pages. This page keeps
+                     the records — the register, the live view and the calendar. -->
+                <a class="nav-tab" href="/insights">
+                    <i class="fa-solid fa-chart-line"></i> Insights
+                </a>
                 <button class="nav-tab" onclick="switchTab('holidays')">
                     <i class="fa-solid fa-calendar-xmark"></i> Calendar
                 </button>
@@ -418,100 +421,6 @@
             </div>
 
             <!-- Class Overview Tab -->
-            <div id="overview-tab" class="tab-content active">
-                <div class="date-filter-row">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <label style="font-weight: 500; font-size: 0.875rem;">Batch:</label>
-                        <select id="analyticsBatch" class="app-select" onchange="loadClassAnalytics()">
-                            <option value="">All batches</option>
-                        </select>
-                        <label style="font-weight: 500; font-size: 0.875rem; margin-left: 0.75rem;">Range:</label>
-                        <select id="overviewDateRange" class="app-select" onchange="loadClassAnalytics()">
-                            <option value="7">Last 7 Days</option>
-                            <option value="14" selected>Last 14 Days</option>
-                            <option value="30">Last 30 Days</option>
-                            <option value="90">Last 3 months</option>
-                        </select>
-                    </div>
-                    <div id="loadingIndicator" style="display: none; color: #0052cc;">
-                        <i class="fa-solid fa-circle-notch fa-spin"></i> Updating...
-                    </div>
-                </div>
-
-                <div class="analytics-grid">
-                    <div class="stat-card">
-                        <div class="stat-number" id="avgClassAttendance" style="color: #0052cc;">0%</div>
-                        <div class="stat-label">Average Attendance</div>
-                        <div class="stat-trend" id="attendanceTrendNum">--</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalActiveStudents" style="color: #1e293b;">0</div>
-                        <div class="stat-label">Active Students</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="atRiskCount" style="color: #DE350B;">0</div>
-                        <div class="stat-label">At-Risk Students</div>
-                        <div class="stat-trend trend-down"><i class="fa-solid fa-triangle-exclamation"></i> Action
-                            Required</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="peakSlotNum" style="color: #00875A;">--</div>
-                        <div class="stat-label">Peak Slot</div>
-                    </div>
-                </div>
-
-                <div class="charts-grid">
-                    <div class="chart-container card">
-                        <div class="chart-header">
-                            <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend</h3>
-                        </div>
-                        <canvas id="attendanceTrendChart"></canvas>
-                    </div>
-                    <div class="chart-container card">
-                        <div class="chart-header">
-                            <h3><i class="fa-solid fa-chart-pie"></i> Distribution</h3>
-                        </div>
-                        <canvas id="distributionDoughnutChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="charts-grid">
-                    <div class="chart-container card">
-                        <div class="chart-header">
-                            <h3><i class="fa-solid fa-calendar-day"></i> Weekday Performance</h3>
-                        </div>
-                        <canvas id="dayOfWeekChart"></canvas>
-                    </div>
-                    <div class="chart-container card">
-                        <div class="chart-header">
-                            <h3><i class="fa-solid fa-chart-column"></i> Slot-wise Totals</h3>
-                        </div>
-                        <canvas id="slotComparisonChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="heatmap-container">
-                    <h3><i class="fa-solid fa-th"></i> Attendance Heatmap (Last 90 Days)</h3>
-                    <div id="attendanceHeatmap" class="heatmap-grid" style="margin-top: 1rem;">
-                        <!-- Generated via JS -->
-                    </div>
-                </div>
-
-                <div class="leaderboard-row">
-                    <div class="card leaderboard-card">
-                        <h3><i class="fa-solid fa-ranking-star"></i> Top Performers</h3>
-                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Click student to view trend
-                        </p>
-                        <div id="topPerformersList" class="leader-list"></div>
-                    </div>
-                    <div class="card leaderboard-card">
-                        <h3><i class="fa-solid fa-triangle-exclamation"></i> High Absence Streaks</h3>
-                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Students missing multiple
-                            consecutive days</p>
-                        <div id="atRiskList" class="leader-list"></div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Holiday Management Tab -->
             <div id="holidays-tab" class="tab-content">
@@ -533,21 +442,6 @@
     </div>
 
     <!-- Sparkline Modal -->
-    <div id="sparklineModal" class="sparkline-modal">
-        <div class="sparkline-content">
-            <div class="modal-header">
-                <h3 id="sparklineStudentName">Student Trend</h3>
-                <button class="close" onclick="closeSparklineModal()">&times;</button>
-            </div>
-            <div style="height: 250px; margin-top: 1.5rem;">
-                <canvas id="studentSparklineChart"></canvas>
-            </div>
-            <div id="sparklineStats"
-                style="margin-top: 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                <!-- Populated by JS -->
-            </div>
-        </div>
-    </div>
     <div id="manualAttendanceModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -659,8 +553,6 @@
     </div>
 
     <script src="/static/js/attendance_management.js"></script>
-    </div>
-
 </body>
 
 </html>

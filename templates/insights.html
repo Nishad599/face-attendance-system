@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insights — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/static/js/theme.js"></script>
+    <style>
+/* Lifted with the markup from the reports page's Overview tab, so the charts
+   render exactly as they did there. Analytics was previously drawn three
+   different ways on three pages; this is the single home. */
+
+        /* Interactive reports specific styles */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            transition: transform 0.2s;
+            border: 1px solid #f1f5f9;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-trend {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        .trend-up {
+            color: #10b981;
+        }
+
+        .trend-down {
+            color: #ef4444;
+        }
+
+        .heatmap-container {
+            margin: 2rem 0;
+            overflow-x: auto;
+            background: white;
+            padding: 1.5rem;
+            border-radius: 16px;
+            border: 1px solid #f1f5f9;
+        }
+
+        .heatmap-grid {
+            display: grid;
+            grid-template-columns: repeat(14, 1fr);
+            gap: 4px;
+            min-width: 800px;
+        }
+
+        .heatmap-cell {
+            aspect-ratio: 1;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .heatmap-cell:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .sparkline-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        .sparkline-content {
+            background-color: white;
+            margin: 10% auto;
+            padding: 2rem;
+            border-radius: 20px;
+            width: 80%;
+            max-width: 600px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .sortable {
+            cursor: pointer;
+        }
+
+        .sortable:hover {
+            background-color: #f8fafc;
+        }
+
+        .sortable i {
+            font-size: 0.75rem;
+            margin-left: 0.25rem;
+            color: #94a3b8;
+        }
+
+        .leader-item {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .clickable-row {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .clickable-row:hover {
+            background: rgba(0, 82, 204, 0.05);
+        }
+
+        .leader-item:hover {
+            background-color: #f1f5f9;
+        }
+
+        .date-filter-row {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* Calendar tooltip */
+        .calendar-day {
+            position: relative;
+        }
+
+        .calendar-day .cal-tooltip {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            color: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            white-space: pre-line;
+            z-index: 100;
+            min-width: 160px;
+            text-align: left;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+            line-height: 1.6;
+        }
+
+        .calendar-day .cal-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: #1e293b;
+        }
+
+        .calendar-day:hover .cal-tooltip {
+            display: block;
+        }
+    
+    </style>
+</head>
+
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="app-page">
+        <div class="app-page-header">
+            <h1>Insights</h1>
+            <p class="muted">Attendance trends, slots, weekdays and who needs attention.
+                Scoped to the batches you can see.</p>
+        </div>
+
+            <div id="overview-tab">
+                <div class="date-filter-row">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <label style="font-weight: 500; font-size: 0.875rem;">Batch:</label>
+                        <select id="analyticsBatch" class="app-select" onchange="loadClassAnalytics()">
+                            <option value="">All batches</option>
+                        </select>
+                        <label style="font-weight: 500; font-size: 0.875rem; margin-left: 0.75rem;">Range:</label>
+                        <select id="overviewDateRange" class="app-select" onchange="loadClassAnalytics()">
+                            <option value="7">Last 7 Days</option>
+                            <option value="14" selected>Last 14 Days</option>
+                            <option value="30">Last 30 Days</option>
+                            <option value="90">Last 3 months</option>
+                        </select>
+                    </div>
+                    <div id="loadingIndicator" style="display: none; color: #0052cc;">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> Updating...
+                    </div>
+                </div>
+
+                <div class="analytics-grid">
+                    <div class="stat-card">
+                        <div class="stat-number" id="avgClassAttendance" style="color: #0052cc;">0%</div>
+                        <div class="stat-label">Average Attendance</div>
+                        <div class="stat-trend" id="attendanceTrendNum">--</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="totalActiveStudents" style="color: #1e293b;">0</div>
+                        <div class="stat-label">Active Students</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="atRiskCount" style="color: #DE350B;">0</div>
+                        <div class="stat-label">At-Risk Students</div>
+                        <div class="stat-trend trend-down"><i class="fa-solid fa-triangle-exclamation"></i> Action
+                            Required</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="peakSlotNum" style="color: #00875A;">--</div>
+                        <div class="stat-label">Peak Slot</div>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-line"></i> Attendance Trend</h3>
+                        </div>
+                        <canvas id="attendanceTrendChart"></canvas>
+                    </div>
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-pie"></i> Distribution</h3>
+                        </div>
+                        <canvas id="distributionDoughnutChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="charts-grid">
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-calendar-day"></i> Weekday Performance</h3>
+                        </div>
+                        <canvas id="dayOfWeekChart"></canvas>
+                    </div>
+                    <div class="chart-container card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-column"></i> Slot-wise Totals</h3>
+                        </div>
+                        <canvas id="slotComparisonChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="heatmap-container">
+                    <h3><i class="fa-solid fa-th"></i> Attendance Heatmap (Last 90 Days)</h3>
+                    <div id="attendanceHeatmap" class="heatmap-grid" style="margin-top: 1rem;">
+                        <!-- Generated via JS -->
+                    </div>
+                </div>
+
+                <div class="leaderboard-row">
+                    <div class="card leaderboard-card">
+                        <h3><i class="fa-solid fa-ranking-star"></i> Top Performers</h3>
+                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Click student to view trend
+                        </p>
+                        <div id="topPerformersList" class="leader-list"></div>
+                    </div>
+                    <div class="card leaderboard-card">
+                        <h3><i class="fa-solid fa-triangle-exclamation"></i> High Absence Streaks</h3>
+                        <p style="font-size: 0.75rem; color: #64748b; margin-bottom: 1rem;">Students missing multiple
+                            consecutive days</p>
+                        <div id="atRiskList" class="leader-list"></div>
+                    </div>
+                </div>
+            </div>
+    </div>
+
+    <script src="/static/js/insights.js"></script>
+</body>
+
+</html>

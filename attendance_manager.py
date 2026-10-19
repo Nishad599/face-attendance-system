@@ -30,6 +30,28 @@ IST = pytz.timezone('Asia/Kolkata')
 _SLOT_CACHE = {}
 _SLOT_CACHE_TTL_SECONDS = 20
 
+# Readable names for the slot keys stored in session_configs.session_type.
+# Kept in step with timetable.SLOT_LABELS, which drives the student timetable;
+# imported from there so the two can never drift apart.
+try:
+    from timetable import SLOT_LABELS as SLOT_DISPLAY_NAMES
+except ImportError:          # pragma: no cover - timetable is always present
+    SLOT_DISPLAY_NAMES = {
+        "morning_1": "Morning 1",
+        "morning_2": "Morning 2",
+        "afternoon_1": "Afternoon 1",
+        "afternoon_2": "Afternoon 2",
+    }
+
+
+def _humanise_slot(slot_id):
+    """Fallback label for a slot key that isn't one of the four known ones.
+
+    An admin can add any session_type, so this has to degrade to something
+    readable rather than leaking the raw key: 'evening_1' -> 'Evening 1'.
+    """
+    return " ".join(part.capitalize() for part in str(slot_id).split("_") if part)
+
 
 def invalidate_slot_cache(course_id=None):
     """Drop cached timings so the next read hits the database.
@@ -160,7 +182,25 @@ class AttendanceSlotManager:
         self.conn.commit()
         logger.info("Slot attendance tables initialized")
     
-    def load_session_configs(self, course_id: Optional[int] = None):
+    def _institute_scope_sql(self, institute_id=None):
+        """(sql, params) limiting session_configs to one institute's batches.
+
+        Empty on a single-institute deployment, so the merged all-batches view
+        behaves exactly as it always has there.
+        """
+        try:
+            import tenancy
+            if tenancy.is_single_tenant(self.conn):
+                return "", []
+            if institute_id is None:
+                return "", []
+            return (" AND course_id IN (SELECT id FROM courses WHERE institute_id = ?)",
+                    [int(institute_id)])
+        except Exception:
+            return "", []
+
+    def load_session_configs(self, course_id: Optional[int] = None,
+                             institute_id: Optional[int] = None):
         """Load slot configuration from the session_configs table.
 
         session_configs is per-batch. Loading every batch at once collapses
@@ -176,12 +216,17 @@ class AttendanceSlotManager:
         """
         cursor = self.conn.cursor()
         if course_id is None:
+            # The all-batches view. It is only ever a fallback for a batch with
+            # no rows of its own, but on a multi-institute deployment reading
+            # every batch's timings means one customer's slot hours can govern
+            # another's students, so it is scoped to the institute when there
+            # is more than one.
+            scope_sql, scope_params = self._institute_scope_sql(institute_id)
             cursor.execute('''
                 SELECT session_type, start_time, end_time
                 FROM session_configs
                 WHERE is_active = 1
-                ORDER BY start_time
-            ''')
+            ''' + scope_sql + ' ORDER BY start_time', scope_params)
         else:
             cursor.execute('''
                 SELECT session_type, start_time, end_time
@@ -202,9 +247,13 @@ class AttendanceSlotManager:
                 start_time = datetime.strptime(start_time_str, '%H:%M').time()
                 end_time = datetime.strptime(end_time_str, '%H:%M').time()
             
-            # Map session_type to slot_id and create display name
+            # Map session_type to slot_id and create display name.
+            # `f"{session_type.title()} Session"` turned the raw database key
+            # into "Morning_1 Session", underscore and all, and that string is
+            # what the terminal, the staff banner and every slot message showed.
+            # timetable.SLOT_LABELS already holds the readable names.
             slot_id = session_type.lower()
-            name = f"{session_type.title()} Session"
+            name = SLOT_DISPLAY_NAMES.get(slot_id, _humanise_slot(slot_id))
             
             slots[slot_id] = {
                 'name': name,
@@ -303,7 +352,18 @@ class AttendanceSlotManager:
 
         slots = self.load_session_configs(key)
         if not slots:
-            slots = self.attendance_slots
+            # Fall back to the batch's own INSTITUTE, not to every batch on the
+            # deployment. self.attendance_slots was loaded unscoped at startup,
+            # so using it here would let another customer's timings decide
+            # whether this student is inside their slot.
+            institute_id = None
+            try:
+                import tenancy
+                institute_id = tenancy.institute_of_course(self.conn, key)
+            except Exception:
+                institute_id = None
+            slots = self.load_session_configs(None, institute_id=institute_id) \
+                or self.attendance_slots
         _SLOT_CACHE[key] = (now, slots)
         return slots
 

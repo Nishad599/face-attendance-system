@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approvals — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        /* ================================================================
+           APPROVALS INBOX
+           These four queues were four tabs inside the teacher portal. That
+           was the wrong altitude — approving a leave request is the work, not
+           a sub-view of a profile page — and navbar.js renders the portal link
+           for teachers only, so an admin had no route to any of it.
+
+           An inbox shows everything at once rather than hiding three queues
+           behind tabs: the question is "what is waiting on me", and a tab you
+           have to click is a queue you forget exists.
+           ================================================================ */
+
+        .num {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .ap-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .ap-head h1 {
+            margin: 0;
+            font-size: 1.7rem;
+        }
+
+        /* Jump bar: counts double as navigation to each queue. */
+        .ap-jump {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+        }
+
+        .ap-pill {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            text-decoration: none;
+            color: inherit;
+            font-size: 0.9rem;
+            font-weight: 500;
+            min-height: 44px;
+            box-sizing: border-box;
+        }
+
+        .ap-pill:hover {
+            border-color: var(--color-primary);
+        }
+
+        .ap-pill .c {
+            font-weight: 700;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        .ap-pill.zero {
+            color: var(--text-secondary);
+        }
+
+        .ap-pill.has {
+            border-color: var(--color-primary);
+        }
+
+        .ap-pill.urgent {
+            border-color: #E0A458;
+            background: #FDF6EC;
+            color: #8A4B00;
+        }
+
+        .ap-q {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+
+        .ap-q-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+        }
+
+        .ap-q-head h2 {
+            margin: 0;
+            font-size: 1.05rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ap-q-head .n {
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 2px 9px;
+            border-radius: 999px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .ap-q-head .n.has {
+            background: #EEF2FD;
+            border-color: #AFC4F5;
+            color: #1B3FA0;
+        }
+
+        .ap-sub {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            margin: 0 0 14px;
+        }
+
+        .ap-bulk {
+            display: none;
+            gap: 8px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .ap-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .ap-table th {
+            text-align: left;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .ap-table td {
+            padding: 11px 10px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        .ap-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .ap-scroll {
+            overflow-x: auto;
+        }
+
+        .ap-empty {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 14px 0;
+        }
+
+        .ap-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        /* A request for a Sunday or a holiday is almost always a mistake, and
+           approving it silently writes attendance on a day no report counts. */
+        .ap-flag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #8A4B00;
+            background: #FDF6EC;
+            border: 1px solid #E0A458;
+            border-radius: 6px;
+            padding: 1px 7px;
+            margin-top: 4px;
+        }
+
+        .ap-when {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .ap-diff {
+            font-size: 0.82rem;
+            line-height: 1.6;
+        }
+
+        .ap-diff .f {
+            color: var(--text-secondary);
+        }
+
+        .ap-diff .to {
+            font-weight: 600;
+        }
+
+        .muted {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="app-page">
+
+        <div class="ap-head">
+            <div>
+                <h1>Approvals</h1>
+                <div class="muted" style="font-size:.93rem;margin-top:5px;" id="apScope">
+                    Everything waiting on a decision.
+                </div>
+            </div>
+            <button class="app-btn app-btn-subtle" onclick="loadAll()">
+                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+            </button>
+        </div>
+
+        <nav class="ap-jump" id="apJump" aria-label="Jump to a queue"></nav>
+
+        <!-- Leave first: it is the only queue with a deadline. -->
+        <section class="ap-q" id="q-leave">
+            <div class="ap-q-head">
+                <h2>Leave requests <span class="n" id="nLeave">—</span></h2>
+                <div class="ap-bulk" id="bulkLeave">
+                    <button class="app-btn app-btn-success app-btn-sm" onclick="act('leave','approve',true)">
+                        <i class="fa-solid fa-check"></i> Approve selected
+                    </button>
+                    <button class="app-btn app-btn-danger app-btn-sm" onclick="act('leave','reject',true)">
+                        <i class="fa-solid fa-xmark"></i> Reject selected
+                    </button>
+                </div>
+            </div>
+            <p class="ap-sub">Planned absence. Approved days are excluded from the student's
+                attendance percentage.</p>
+            <div class="ap-scroll" id="rowsLeave">
+                <div class="ap-empty">Loading…</div>
+            </div>
+        </section>
+
+        <section class="ap-q" id="q-grievances">
+            <div class="ap-q-head">
+                <h2>Attendance disputes <span class="n" id="nGrievances">—</span></h2>
+                <div class="ap-bulk" id="bulkGrievances">
+                    <button class="app-btn app-btn-success app-btn-sm" onclick="act('grievances','approve',true)">
+                        <i class="fa-solid fa-check"></i> Approve selected
+                    </button>
+                    <button class="app-btn app-btn-danger app-btn-sm" onclick="act('grievances','reject',true)">
+                        <i class="fa-solid fa-xmark"></i> Reject selected
+                    </button>
+                </div>
+            </div>
+            <p class="ap-sub">A student says they were present and were not marked.
+                Approving writes the attendance.</p>
+            <div class="ap-scroll" id="rowsGrievances">
+                <div class="ap-empty">Loading…</div>
+            </div>
+        </section>
+
+        <section class="ap-q" id="q-face">
+            <div class="ap-q-head">
+                <h2>Face registrations <span class="n" id="nFace">—</span></h2>
+                <div class="ap-bulk" id="bulkFace">
+                    <button class="app-btn app-btn-success app-btn-sm" onclick="act('face','approve',true)">
+                        <i class="fa-solid fa-check"></i> Approve selected
+                    </button>
+                    <button class="app-btn app-btn-danger app-btn-sm" onclick="act('face','reject',true)">
+                        <i class="fa-solid fa-xmark"></i> Reject selected
+                    </button>
+                </div>
+            </div>
+            <p class="ap-sub">Students who enrolled their own face. Until you approve, the
+                terminal cannot recognise them.</p>
+            <div class="ap-scroll" id="rowsFace">
+                <div class="ap-empty">Loading…</div>
+            </div>
+        </section>
+
+        <section class="ap-q" id="q-profile">
+            <div class="ap-q-head">
+                <h2>Detail changes <span class="n" id="nProfile">—</span></h2>
+                <div class="ap-bulk" id="bulkProfile">
+                    <button class="app-btn app-btn-success app-btn-sm" onclick="act('profile','approve',true)">
+                        <i class="fa-solid fa-check"></i> Approve selected
+                    </button>
+                    <button class="app-btn app-btn-danger app-btn-sm" onclick="act('profile','reject',true)">
+                        <i class="fa-solid fa-xmark"></i> Reject selected
+                    </button>
+                </div>
+            </div>
+            <p class="ap-sub">Students proposing edits to their own record. Nothing changes
+                until you approve.</p>
+            <div class="ap-scroll" id="rowsProfile">
+                <div class="ap-empty">Loading…</div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function toast(message, type) {
+            const t = document.createElement('div');
+            t.className = 'app-toast app-toast-' + (type || 'info');
+            t.innerHTML = '<span>' + esc(message) + '</span>' +
+                '<button onclick="this.parentElement.remove()">×</button>';
+            document.body.appendChild(t);
+            setTimeout(function () { t.remove(); }, 5000);
+        }
+
+        /* Each queue differs only in its endpoints, the key its rows arrive
+           under, and how a row is drawn. Keeping that in one table means the
+           four queues cannot drift apart the way four tabs did. */
+        const QUEUES = {
+            leave: {
+                list: '/api/teacher/leaves?status=pending', act: '/api/teacher/leaves/action',
+                key: 'leaves', rows: 'rowsLeave', bulk: 'bulkLeave', count: 'nLeave',
+                cols: ['Roll No', 'Student', 'Batch', 'Dates', 'Working days', 'Reason', 'Action'],
+                empty: 'No leave requests waiting.'
+            },
+            grievances: {
+                list: '/api/teacher/grievances?status=pending', act: '/api/teacher/grievances/action',
+                key: 'grievances', rows: 'rowsGrievances', bulk: 'bulkGrievances', count: 'nGrievances',
+                cols: ['Roll No', 'Student', 'Batch', 'Date', 'Session', 'Reason', 'Action'],
+                empty: 'No disputes waiting.'
+            },
+            face: {
+                list: '/api/teacher/face-requests?status=pending', act: '/api/teacher/face-requests/action',
+                key: 'requests', rows: 'rowsFace', bulk: 'bulkFace', count: 'nFace',
+                cols: ['Roll No', 'Student', 'Batch', 'Photos', 'Submitted', 'Action'],
+                empty: 'No face registrations waiting.'
+            },
+            profile: {
+                list: '/api/teacher/profile-requests?status=pending', act: '/api/teacher/profile-requests/action',
+                key: 'requests', rows: 'rowsProfile', bulk: 'bulkProfile', count: 'nProfile',
+                cols: ['Roll No', 'Student', 'Batch', 'Proposed change', 'Reason', 'Action'],
+                empty: 'No detail changes waiting.'
+            }
+        };
+
+        function actionCell(kind, id) {
+            return '<div class="ap-actions">' +
+                '<button class="app-btn app-btn-success app-btn-sm" ' +
+                'onclick="act(\'' + kind + '\',\'approve\',false,' + id + ')">Approve</button>' +
+                '<button class="app-btn app-btn-danger app-btn-sm" ' +
+                'onclick="act(\'' + kind + '\',\'reject\',false,' + id + ')">Reject</button></div>';
+        }
+
+        function checkCell(kind, id) {
+            return '<td style="width:34px;"><input type="checkbox" class="chk-' + kind +
+                '" value="' + id + '" aria-label="Select request ' + id + '"></td>';
+        }
+
+        /* A date that is a Sunday or a holiday is the thing a reviewer most
+           often misses — the endpoints already compute it, so show it. */
+        /* The grievance endpoint returns the raw slot key, so a dispute showed
+           "morning_1". Same readable names the terminal, the timetable and the
+           dashboard use. */
+        const SLOT_LABELS = {
+            morning_1: 'Morning 1', morning_2: 'Morning 2',
+            afternoon_1: 'Afternoon 1', afternoon_2: 'Afternoon 2'
+        };
+
+        function slotLabel(v) {
+            if (!v) return 'Whole day';
+            const key = String(v).trim().toLowerCase();
+            if (SLOT_LABELS[key]) return SLOT_LABELS[key];
+            if (key === 'whole day') return 'Whole day';
+            return String(v).replace(/_/g, ' ').replace(/\b\w/g, function (c) {
+                return c.toUpperCase();
+            });
+        }
+
+        function dayFlag(r) {
+            if (r.is_working_day === false) {
+                return '<div class="ap-flag"><i class="fa-solid fa-triangle-exclamation"></i>' +
+                    esc(r.non_working_reason || 'not a working day') + '</div>';
+            }
+            return '';
+        }
+
+        function drawRow(kind, r) {
+            const common = checkCell(kind, r.id) +
+                '<td><strong class="num">' + esc(r.roll_no) + '</strong></td>' +
+                '<td>' + esc(r.student_name) + '</td>' +
+                '<td><span class="app-badge app-badge-info">' + esc(r.batch) + '</span></td>';
+
+            if (kind === 'leave') {
+                const urgent = r.upcoming
+                    ? '<div class="ap-flag"><i class="fa-regular fa-clock"></i>starts ' +
+                      esc(r.start_date) + '</div>' : '';
+                return '<tr>' + common +
+                    '<td><span class="num">' + esc(r.start_date) + '</span> → <span class="num">' +
+                    esc(r.end_date) + '</span><div class="ap-when">' + esc(r.start_day || '') +
+                    ' – ' + esc(r.end_day || '') + '</div>' + urgent + '</td>' +
+                    '<td class="num">' + (r.working_days != null ? r.working_days : r.days) + '</td>' +
+                    '<td>' + esc(r.reason || '—') + '</td>' +
+                    '<td>' + actionCell(kind, r.id) + '</td></tr>';
+            }
+            if (kind === 'grievances') {
+                return '<tr>' + common +
+                    '<td><span class="num">' + esc(r.date) + '</span>' +
+                    '<div class="ap-when">' + esc(r.day_name || '') + '</div>' + dayFlag(r) + '</td>' +
+                    '<td>' + esc(slotLabel(r.session_type)) + '</td>' +
+                    '<td>' + esc(r.reason || '—') + '</td>' +
+                    '<td>' + actionCell(kind, r.id) + '</td></tr>';
+            }
+            if (kind === 'face') {
+                return '<tr>' + common +
+                    '<td class="num">' + (r.photo_count != null ? r.photo_count : '—') + '</td>' +
+                    '<td class="ap-when">' + esc(r.created_at || '') + '</td>' +
+                    '<td>' + actionCell(kind, r.id) + '</td></tr>';
+            }
+            // profile
+            const diff = (r.diff || []).map(function (d) {
+                return '<div><span class="f">' + esc(d.label) + ':</span> ' +
+                    esc(d.from) + ' → <span class="to">' + esc(d.to) + '</span></div>';
+            }).join('') || '<span class="muted">—</span>';
+            return '<tr>' + common +
+                '<td class="ap-diff">' + diff + '</td>' +
+                '<td>' + esc(r.reason || '—') + '</td>' +
+                '<td>' + actionCell(kind, r.id) + '</td></tr>';
+        }
+
+        async function loadQueue(kind) {
+            const q = QUEUES[kind];
+            const box = document.getElementById(q.rows);
+            try {
+                const d = await (await fetch(q.list)).json();
+                const rows = d[q.key] || [];
+                document.getElementById(q.count).textContent = rows.length;
+                document.getElementById(q.count).className = 'n' + (rows.length ? ' has' : '');
+                document.getElementById(q.bulk).style.display = rows.length ? 'flex' : 'none';
+
+                if (!rows.length) {
+                    box.innerHTML = '<div class="ap-empty">' + esc(q.empty) + '</div>';
+                    return;
+                }
+                box.innerHTML = '<table class="ap-table"><thead><tr>' +
+                    '<th style="width:34px;"><input type="checkbox" ' +
+                    'onchange="toggleAll(\'' + kind + '\', this)" ' +
+                    'aria-label="Select all"></th>' +
+                    q.cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+                    '</tr></thead><tbody>' +
+                    rows.map(function (r) { return drawRow(kind, r); }).join('') +
+                    '</tbody></table>';
+            } catch (e) {
+                box.innerHTML = '<div class="ap-empty">Could not load this queue.</div>';
+            }
+        }
+
+        function toggleAll(kind, cb) {
+            document.querySelectorAll('.chk-' + kind).forEach(function (c) { c.checked = cb.checked; });
+        }
+
+        async function act(kind, action, selectedOnly, singleId) {
+            const q = QUEUES[kind];
+            let ids;
+            if (singleId) {
+                ids = [singleId];
+            } else {
+                ids = Array.from(document.querySelectorAll('.chk-' + kind + ':checked'))
+                    .map(function (c) { return parseInt(c.value); });
+                if (!ids.length) { toast('Nothing selected', 'error'); return; }
+            }
+
+            let note = null;
+            if (action === 'reject') {
+                note = prompt('Reason for rejecting (shown to the student, optional):') || null;
+            } else if (!confirm('Approve ' + ids.length + ' request(s)?')) {
+                return;
+            }
+
+            try {
+                const d = await (await fetch(q.act, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: ids, action: action, note: note })
+                })).json();
+                toast(d.message || (d.success ? 'Done' : 'Failed'), d.success ? 'success' : 'error');
+                if (d.success) { loadQueue(kind); loadSummary(); }
+            } catch (e) {
+                toast('Connection failed', 'error');
+            }
+        }
+
+        async function loadSummary() {
+            try {
+                const d = await (await fetch('/api/approvals/summary')).json();
+                if (!d.success) return;
+                const c = d.counts;
+                const pills = [
+                    ['#q-leave', 'Leave', c.leave, c.leave_urgent],
+                    ['#q-grievances', 'Disputes', c.grievances, 0],
+                    ['#q-face', 'Face', c.face_requests, 0],
+                    ['#q-profile', 'Details', c.profile_requests, 0],
+                ];
+                document.getElementById('apJump').innerHTML = pills.map(function (p) {
+                    const href = p[0], label = p[1], n = p[2] || 0, urgent = p[3] || 0;
+                    const cls = urgent ? 'urgent' : (n ? 'has' : 'zero');
+                    return '<a class="ap-pill ' + cls + '" href="' + href + '">' +
+                        '<span class="c num">' + n + '</span><span>' + label + '</span>' +
+                        (urgent ? '<span style="font-size:.78rem;font-weight:600;">· ' +
+                            urgent + ' starting soon</span>' : '') + '</a>';
+                }).join('');
+
+                document.getElementById('apScope').textContent = c.total
+                    ? c.total + ' waiting on a decision.'
+                    : 'Nothing is waiting. You are all caught up.';
+            } catch (e) { }
+        }
+
+        function loadAll() {
+            loadSummary();
+            Object.keys(QUEUES).forEach(loadQueue);
+        }
+
+        async function performLogout() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadAll);
+    </script>
+</body>
+
+</html>
