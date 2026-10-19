@@ -2636,6 +2636,107 @@ async def admin_overview(session: Dict[str, Any] = Depends(require_admin_access)
     }
 
 
+@app.get("/api/admin/institute")
+async def get_institute(session: Dict[str, Any] = Depends(require_admin_access)):
+    """This institute's own profile, plus the policy values it runs under.
+
+    The policy numbers come from environment variables and are read-only here
+    on purpose: changing them needs a restart, and silently editing a field
+    that does not take effect is worse than showing it as fixed.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session) or tenancy.default_institute_id(conn)
+    institute = None
+    if iid:
+        try:
+            r = conn.execute(
+                "SELECT id, name, slug, contact_email, is_active, created_at "
+                "FROM institutes WHERE id = ?", (iid,)).fetchone()
+            if r:
+                institute = {"id": r[0], "name": r[1], "slug": r[2],
+                             "contact_email": r[3], "is_active": bool(r[4]),
+                             "created_at": str(r[5])[:19] if r[5] else None}
+        except Exception:
+            institute = None
+
+    def count(sql):
+        try:
+            return int(conn.execute(sql).fetchone()[0])
+        except Exception:
+            return 0
+
+    return {
+        "success": True,
+        "institute": institute,
+        "is_multi_tenant": not tenancy.is_single_tenant(conn),
+        "totals": {
+            "batches": count("SELECT COUNT(*) FROM courses WHERE is_active = 1"),
+            "students": count("SELECT COUNT(*) FROM students "
+                              "WHERE status IN ('active','pending_registration')"),
+            "staff": count("SELECT COUNT(*) FROM users WHERE is_active = 1"),
+        },
+        "policy": {
+            "late_grace_minutes": LATE_GRACE_MINUTES,
+            "leave_max_days": int(os.getenv("LEAVE_MAX_DAYS", "30") or 30),
+            "login_max_attempts": login_throttle.MAX_ATTEMPTS,
+            "login_lockout_minutes": login_throttle.LOCKOUT_MINUTES,
+            "consent_policy_version": CONSENT_POLICY_VERSION,
+            "biometric_retention_days": int(
+                os.getenv("BIOMETRIC_RETENTION_DAYS", "90") or 90),
+            "cookie_secure": os.getenv("COOKIE_SECURE", "1") != "0",
+            "database": "postgresql" if is_postgres() else "sqlite",
+        },
+    }
+
+
+@app.put("/api/admin/institute")
+async def update_institute(data: dict = Body(...),
+                           session: Dict[str, Any] = Depends(require_admin_access)):
+    """Rename this institute, or set its contact address.
+
+    The name is what students and staff see at the top of every page and in
+    every report heading, so a deployment sold to another institute is renamed
+    here rather than by editing templates.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session) or tenancy.default_institute_id(conn)
+    if not iid:
+        return {"success": False, "message": "No institute exists yet — run migrate_phase10.py"}
+
+    name = (data.get("name") or "").strip()
+    email = (data.get("contact_email") or "").strip() or None
+    if not name:
+        return {"success": False, "message": "Name is required"}
+    if len(name) > 120:
+        return {"success": False, "message": "Name is too long"}
+    if email and "@" not in email:
+        return {"success": False, "message": "That does not look like an email address"}
+
+    try:
+        conn.execute(
+            "UPDATE institutes SET name = ?, contact_email = ? WHERE id = ?",
+            (name, email, iid))
+        conn.commit()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    audit(session, "update_institute", target=name,
+          details=f"contact={email or '-'}")
+    return {"success": True, "message": "Saved"}
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request,
+                        session: Dict[str, Any] = Depends(require_admin_access)):
+    """Institute profile, system health, email and the destructive actions.
+
+    Replaces /admin, which was a grab-bag named after a role rather than a
+    task, carried a button calling an endpoint that did not exist, and had no
+    way to change the one thing a new customer must change first: their name.
+    """
+    return templates.TemplateResponse("settings.html", {"request": request})
+
+
 @app.get("/api/admin/audit-log")
 async def get_audit_log(limit: int = 100, action: Optional[str] = None,
                         session: Dict[str, Any] = Depends(require_admin_access)):
@@ -2697,8 +2798,13 @@ async def get_student_slot_attendance(student_id: int, session: Dict[str, Any] =
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
-    """Admin dashboard page"""
-    return templates.TemplateResponse("admin.html", {"request": request})
+    """Kept as a redirect: /settings replaced this page.
+
+    It was named after a role rather than a task and mixed a bulk-upload form
+    in with a database wipe. Bookmarks and old links land on the new page
+    rather than a 404.
+    """
+    return RedirectResponse(url="/settings", status_code=307)
 
 @app.get("/insights", response_class=HTMLResponse)
 async def insights_page(request: Request,

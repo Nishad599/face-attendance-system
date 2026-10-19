@@ -304,6 +304,31 @@
                 <span class="pp-count" id="count"></span>
             </div>
 
+            <!-- Bulk upload lived on /admin, next to a database wipe, and in
+                 the teacher portal. It belongs with the people it creates. -->
+            <details class="pp-card" style="padding:14px 16px;margin-bottom:16px;">
+                <summary style="cursor:pointer;font-weight:600;font-size:.93rem;">
+                    <i class="fa-solid fa-file-arrow-up"></i> Add several students from a file
+                </summary>
+                <p class="muted" style="font-size:.86rem;margin:10px 0;">
+                    Download the template, fill one row per student, upload it. Existing
+                    roll numbers are skipped, not overwritten.
+                </p>
+                <div class="d-flex gap-8" style="flex-wrap:wrap;align-items:center;">
+                    <a class="app-btn app-btn-subtle app-btn-sm"
+                       href="/api/students/bulk-upload/template">
+                        <i class="fa-solid fa-download"></i> Template
+                    </a>
+                    <input type="file" id="bulkFile" accept=".csv,.xlsx,.xls"
+                           class="app-form-input" style="max-width:280px;"
+                           aria-label="Student file">
+                    <button class="app-btn app-btn-primary app-btn-sm" onclick="uploadBulk()">
+                        <i class="fa-solid fa-upload"></i> Upload
+                    </button>
+                </div>
+                <div id="bulkMsg" style="margin-top:10px;font-size:.88rem;"></div>
+            </details>
+
             <div class="pp-wrap" id="wrap">
                 <div class="pp-card">
                     <div class="pp-scroll" id="studentRows">
@@ -600,6 +625,31 @@
                     }).join('') + '</tbody></table>';
             } catch (e) {
                 box.innerHTML = '<div class="pp-empty">Could not load.</div>';
+            }
+        }
+
+        async function uploadBulk() {
+            const input = document.getElementById('bulkFile');
+            const msg = document.getElementById('bulkMsg');
+            if (!input.files.length) {
+                msg.style.color = '#B3372E';
+                msg.textContent = 'Choose a file first.';
+                return;
+            }
+            msg.style.color = 'var(--text-secondary)';
+            msg.textContent = 'Uploading…';
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            try {
+                const d = await (await fetch('/api/students/bulk-upload', {
+                    method: 'POST', body: fd
+                })).json();
+                msg.style.color = d.success ? '#0E6B4A' : '#B3372E';
+                msg.textContent = d.message || (d.success ? 'Done' : 'Failed');
+                if (d.success) { input.value = ''; loadStudents(); }
+            } catch (e) {
+                msg.style.color = '#B3372E';
+                msg.textContent = 'Upload failed.';
             }
         }
 
