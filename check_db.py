@@ -21,6 +21,9 @@ REQUIRED_COLUMNS = {
     # phase 11: without this the audit log is read unscoped, and one
     # institute's admin sees every platform-level action a superadmin took.
     "audit_log": ["course_id", "institute_id"],
+    # phase 12: /about renders from these. Without them the route falls back
+    # to the institute's name alone, which is survivable but wrong.
+    "institutes": ["tagline", "about", "address", "phone", "website"],
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",

@@ -2245,25 +2245,58 @@ async def web_manifest():
 
 
 @app.get("/about", response_class=HTMLResponse)
-async def about_page():
-    """About Us page"""
-    try:
-        # Fixed path: files are in templates/ folder
-        with open('templates/about.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="About page not found in templates folder")
+async def about_page(request: Request, institute: Optional[str] = None,
+                     session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Who this deployment belongs to, from the institute's own record.
 
-@app.get("/contact", response_class=HTMLResponse) 
+    This page and /contact used to be hardcoded marketing for one institute —
+    its campus, its programmes, its achievements, and on the contact page a
+    named individual with direct phone numbers. They were also read straight
+    off disk rather than rendered, so they COULD not show anything else. Every
+    institute onboarded would have seen them.
+
+    Which institute: the signed-in one, else ?institute=<slug>, else the only
+    one. With several and no way to tell, it names them rather than guessing —
+    institute names are already public at the login screen.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session)
+    if iid is None and institute:
+        iid = tenancy.institute_by_slug(conn, institute)
+    if iid is None and tenancy.is_single_tenant(conn):
+        iid = tenancy.default_institute_id(conn)
+
+    record, others = None, []
+    if iid:
+        try:
+            r = conn.execute(
+                "SELECT name, slug, tagline, about, address, phone, website, "
+                "contact_email FROM institutes WHERE id = ? AND is_active = 1",
+                (iid,)).fetchone()
+            if r:
+                record = {"name": r[0], "slug": r[1], "tagline": r[2], "about": r[3],
+                          "address": r[4], "phone": r[5], "website": r[6],
+                          "contact_email": r[7]}
+        except Exception:
+            record = None
+    if record is None:
+        others = tenancy.list_institutes(conn)
+
+    return templates.TemplateResponse("about.html", {
+        "request": request, "institute": record, "others": others,
+    })
+
+
+@app.get("/contact", response_class=HTMLResponse)
 async def contact_page():
-    """Contact Us page"""
-    try:
-        # Fixed path: files are in templates/ folder
-        with open('templates/contact.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Contact page not found in templates folder")
-    
+    """Merged into /about, which now carries the contact details too.
+
+    It was linked from nowhere in the entire app, and held a personal profile
+    with direct phone numbers that would have shipped to every customer.
+    """
+    return RedirectResponse(url="/about", status_code=307)
+
+
 
 @app.get("/register", response_class=HTMLResponse)
 async def registration_page(request: Request, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -3033,12 +3066,15 @@ async def get_institute(session: Dict[str, Any] = Depends(require_admin_access))
     if iid:
         try:
             r = conn.execute(
-                "SELECT id, name, slug, contact_email, is_active, created_at "
+                "SELECT id, name, slug, contact_email, is_active, created_at, "
+                "tagline, about, address, phone, website "
                 "FROM institutes WHERE id = ?", (iid,)).fetchone()
             if r:
                 institute = {"id": r[0], "name": r[1], "slug": r[2],
                              "contact_email": r[3], "is_active": bool(r[4]),
-                             "created_at": str(r[5])[:19] if r[5] else None}
+                             "created_at": str(r[5])[:19] if r[5] else None,
+                             "tagline": r[6], "about": r[7], "address": r[8],
+                             "phone": r[9], "website": r[10]}
         except Exception:
             institute = None
 
@@ -3087,24 +3123,49 @@ async def update_institute(data: dict = Body(...),
         return {"success": False, "message": "No institute exists yet — run migrate_phase10.py"}
 
     name = (data.get("name") or "").strip()
-    email = (data.get("contact_email") or "").strip() or None
     if not name:
         return {"success": False, "message": "Name is required"}
     if len(name) > 120:
         return {"success": False, "message": "Name is too long"}
-    if email and "@" not in email:
-        return {"success": False, "message": "That does not look like an email address"}
+
+    # Everything except the name is per-field: a key that is absent is left
+    # alone, a key that is present and empty is cleared. contact_email used to
+    # be written unconditionally alongside the name, so any caller sending
+    # {name, tagline} silently wiped the institute's email address.
+    # The rest of these render on the public /about page, so an institute
+    # controls what its own students and staff see rather than inheriting
+    # someone else's.
+    sets, values = [], []
+    for field, limit in (("contact_email", 160), ("tagline", 160),
+                         ("about", 4000), ("address", 400),
+                         ("phone", 60), ("website", 200)):
+        if field not in data:
+            continue
+        val = (data.get(field) or "").strip()
+        if len(val) > limit:
+            return {"success": False,
+                    "message": f"{field.replace('_', ' ').capitalize()} "
+                               f"is too long (max {limit})"}
+        if field == "contact_email" and val and "@" not in val:
+            return {"success": False,
+                    "message": "That does not look like an email address"}
+        sets.append(f"{field} = ?")
+        values.append(val or None)
 
     try:
         conn.execute(
-            "UPDATE institutes SET name = ?, contact_email = ? WHERE id = ?",
-            (name, email, iid))
+            "UPDATE institutes SET name = ?"
+            + ("".join(", " + s for s in sets)) + " WHERE id = ?",
+            tuple([name] + values + [iid]))
         conn.commit()
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+    # Name the fields rather than their values: `about` is 4000 characters and
+    # the log is read as a list.
+    touched = [s.split(" =")[0] for s in sets]
     audit(session, "update_institute", target=name,
-          details=f"contact={email or '-'}")
+          details="fields=" + (", ".join(["name"] + touched)))
     return {"success": True, "message": "Saved"}
 
 

@@ -157,6 +157,44 @@
                         <input type="email" id="instEmail" class="app-form-input"
                                placeholder="office@example.edu">
                     </div>
+
+                    <!-- These render on the public /about page, which used to be
+                         hardcoded marketing for one institute. -->
+                    <details style="margin-bottom:14px;">
+                        <summary style="cursor:pointer;font-weight:600;font-size:.93rem;">
+                            Public page details
+                        </summary>
+                        <p class="muted" style="font-size:.84rem;margin:8px 0 12px;">
+                            Shown on <a href="/about">/about</a> to anyone, signed in or
+                            not. Leave a field empty and it simply does not appear.
+                        </p>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instTagline">Tagline</label>
+                            <input type="text" id="instTagline" class="app-form-input"
+                                   maxlength="160">
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instAbout">About</label>
+                            <textarea id="instAbout" class="app-form-input" rows="4"
+                                      maxlength="4000"></textarea>
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instAddress">Address</label>
+                            <textarea id="instAddress" class="app-form-input" rows="2"
+                                      maxlength="400"></textarea>
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instPhone">Phone</label>
+                            <input type="text" id="instPhone" class="app-form-input"
+                                   maxlength="60">
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instWebsite">Website</label>
+                            <input type="url" id="instWebsite" class="app-form-input"
+                                   maxlength="200" placeholder="https://example.edu">
+                        </div>
+                    </details>
+
                     <button class="app-btn app-btn-primary" onclick="saveInstitute()">
                         <i class="fa-solid fa-floppy-disk"></i> Save
                     </button>
@@ -267,6 +305,11 @@
                 const i = d.institute || {};
                 document.getElementById('instName').value = i.name || '';
                 document.getElementById('instEmail').value = i.contact_email || '';
+                ['tagline', 'about', 'address', 'phone', 'website'].forEach(function (f) {
+                    const el = document.getElementById(
+                        'inst' + f.charAt(0).toUpperCase() + f.slice(1));
+                    if (el) el.value = i[f] || '';
+                });
                 document.getElementById('instSlug').textContent = i.slug || '—';
                 document.getElementById('totBatches').textContent = d.totals.batches;
                 document.getElementById('totStudents').textContent = d.totals.students;
@@ -298,7 +341,12 @@
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name: document.getElementById('instName').value,
-                        contact_email: document.getElementById('instEmail').value
+                        contact_email: document.getElementById('instEmail').value,
+                        tagline: document.getElementById('instTagline').value,
+                        about: document.getElementById('instAbout').value,
+                        address: document.getElementById('instAddress').value,
+                        phone: document.getElementById('instPhone').value,
+                        website: document.getElementById('instWebsite').value
                     })
                 })).json();
                 msg.textContent = d.message || (d.success ? 'Saved' : 'Failed');

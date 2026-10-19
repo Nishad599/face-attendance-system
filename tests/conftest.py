@@ -44,7 +44,14 @@ CREATE TABLE institutes (
     slug TEXT NOT NULL UNIQUE,
     contact_email TEXT,
     is_active BOOLEAN DEFAULT 1,
-    created_at TIMESTAMP
+    created_at TIMESTAMP,
+    -- migrate_phase12: what /about renders. Optional; an institute that fills
+    -- in nothing gets its name and nothing else.
+    tagline TEXT,
+    about TEXT,
+    address TEXT,
+    phone TEXT,
+    website TEXT
 );
 CREATE TABLE courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
