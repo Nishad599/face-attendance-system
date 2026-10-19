@@ -143,7 +143,10 @@ CREATE TABLE audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     actor_type TEXT, actor_id INTEGER, actor_name TEXT,
     action TEXT NOT NULL, target TEXT, details TEXT,
-    course_id INTEGER, created_at TIMESTAMP
+    course_id INTEGER, created_at TIMESTAMP,
+    -- migrate_phase11: a number is the institute the action belongs to, NULL
+    -- is platform level and only a superadmin may read it.
+    institute_id INTEGER
 );
 CREATE TABLE session_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

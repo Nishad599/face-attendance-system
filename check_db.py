@@ -18,6 +18,9 @@ REQUIRED_COLUMNS = {
     # institute-wide holiday has no course_id to resolve from.
     "courses": ["terminal_pin_hash", "half_day_enabled", "institute_id"],
     "holidays": ["course_id", "institute_id"],
+    # phase 11: without this the audit log is read unscoped, and one
+    # institute's admin sees every platform-level action a superadmin took.
+    "audit_log": ["course_id", "institute_id"],
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",

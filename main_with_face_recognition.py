@@ -127,6 +127,11 @@ class SessionAttendance(BaseModel):
     session_type: str
     arrival_time: Optional[str] = None
 
+# Distinguishes "caller said institute_id=None, meaning platform level" from
+# "caller said nothing, infer it". None is a meaningful value here, so it
+# cannot double as the default.
+_UNSET = object()
+
 app = FastAPI(title="Face Recognition Attendance System", version="2.0.0")
 
 # When this process started, for the dashboard's uptime reading. Module scope,
@@ -1598,19 +1603,53 @@ async def simple_login_page(request: Request):
     """Simple dual login page"""
     return templates.TemplateResponse("simple_login.html", {"request": request})
 
-def audit(session, action, target=None, details=None, course_id=None):
-    """Record a sensitive action (who did what). Best-effort: never raises."""
+def audit(session, action, target=None, details=None, course_id=None,
+          institute_id=_UNSET):
+    """Record a sensitive action (who did what). Best-effort: never raises.
+
+    `institute_id` decides who may later read the entry:
+
+        a number  the institute it belongs to; its admins see it
+        None      platform level; only a superadmin sees it
+
+    Left unset it is inferred — the batch's institute if there is one, else
+    the actor's. A superadmin acting with no batch in play therefore records
+    a platform-level entry, which is what stopped one customer's dashboard
+    showing that another customer had just been created.
+    """
     try:
         info = (session or {}).get("user_info", {}) or {}
-        attendance_system.conn.execute(
-            "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, target, details, course_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ((session or {}).get("user_type"), info.get("id"),
-             info.get("name") or info.get("username"),
-             action, str(target) if target is not None else None,
-             str(details) if details is not None else None, course_id),
-        )
-        attendance_system.conn.commit()
+        conn = attendance_system.conn
+
+        if institute_id is _UNSET:
+            institute_id = None
+            if course_id is not None:
+                institute_id = tenancy.institute_of_course(conn, course_id)
+            if institute_id is None:
+                institute_id = tenancy.institute_for_session(session)
+
+        try:
+            conn.execute(
+                "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, "
+                "target, details, course_id, institute_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ((session or {}).get("user_type"), info.get("id"),
+                 info.get("name") or info.get("username"),
+                 action, str(target) if target is not None else None,
+                 str(details) if details is not None else None, course_id,
+                 institute_id),
+            )
+        except Exception:
+            # Pre-migrate_phase11 database: no institute_id column yet.
+            conn.execute(
+                "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, "
+                "target, details, course_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ((session or {}).get("user_type"), info.get("id"),
+                 info.get("name") or info.get("username"),
+                 action, str(target) if target is not None else None,
+                 str(details) if details is not None else None, course_id),
+            )
+        conn.commit()
     except Exception as e:
         print(f"[WARN] audit log skipped ({action}): {e}")
 
@@ -2800,7 +2839,9 @@ async def platform_create_institute(data: InstituteCreate,
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-    audit(session, "create_institute", target=name, details=f"slug={slug}")
+    # Platform level: that a new customer exists is nobody else's business.
+    audit(session, "create_institute", target=name, details=f"slug={slug}",
+          institute_id=None)
     return {"success": True, "message": f"Created {name}", "slug": slug}
 
 
@@ -2876,8 +2917,11 @@ async def platform_create_admin(institute_id: int, data: InstituteAdminCreate,
         conn.rollback()
         return {"success": False, "message": str(e)}
 
+    # Attributed to the institute, not the platform: that institute's own
+    # admins should be able to see how their account came to exist. It reveals
+    # nothing about any other customer.
     audit(session, "create_institute_admin", target=username,
-          details=f"institute={inst[0]}")
+          details=f"institute={inst[0]}", institute_id=institute_id)
     return {"success": True,
             "message": f"'{username}' can now administer {inst[0]}. "
                        f"They will be asked to change the password at first login."}
@@ -2903,7 +2947,7 @@ async def platform_set_active(institute_id: int, data: dict = Body(...),
         return {"success": False, "message": str(e)}
 
     audit(session, "suspend_institute" if not active else "restore_institute",
-          target=row[0])
+          target=row[0], institute_id=None)
     return {"success": True,
             "message": f"{row[0]} {'restored' if active else 'suspended'}"}
 
@@ -3022,20 +3066,51 @@ async def settings_page(request: Request,
 @app.get("/api/admin/audit-log")
 async def get_audit_log(limit: int = 100, action: Optional[str] = None,
                         session: Dict[str, Any] = Depends(require_admin_access)):
-    """Recent sensitive actions: who marked/deleted/approved what."""
+    """Recent sensitive actions: who marked/deleted/approved what.
+
+    Scoped to the caller's institute. Unscoped, an institute admin saw every
+    platform-level action a superadmin had taken — including that another
+    institute had just been created, and the username of its administrator.
+    Platform-level rows (institute_id NULL) are for the superadmin alone.
+    """
     try:
         limit = max(1, min(int(limit or 100), 500))
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
+
+        where, params = [], []
         if action:
+            where.append("action = ?")
+            params.append(action)
+
+        if not tenancy.is_superadmin(session):
+            iid = tenancy.institute_for_session(session)
+            if iid is None and not tenancy.is_single_tenant(conn):
+                # Multi-tenant but the session predates tenancy: show nothing
+                # rather than guess, the same rule the rest of the app follows.
+                return {"success": True, "entries": []}
+            if iid is not None:
+                where.append("institute_id = ?")
+                params.append(iid)
+            else:
+                # Single institute: everything except platform-level rows,
+                # which are the superadmin's own business.
+                where.append("institute_id IS NOT NULL OR actor_type <> 'superadmin'")
+
+        clause = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        try:
             rows = cur.execute(
                 "SELECT actor_type, actor_name, action, target, details, created_at "
-                "FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT ?", (action, limit)
-            ).fetchall()
-        else:
+                "FROM audit_log" + clause + " ORDER BY id DESC LIMIT ?",
+                tuple(params + [limit])).fetchall()
+        except Exception:
+            # Pre-migrate_phase11: no institute_id column. Fall back to the
+            # unscoped read rather than failing the page, but keep platform
+            # rows out of it.
             rows = cur.execute(
                 "SELECT actor_type, actor_name, action, target, details, created_at "
-                "FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+                "FROM audit_log WHERE actor_type <> 'superadmin' "
+                "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return {"success": True, "entries": [{
             "actor_type": r[0], "actor_name": r[1], "action": r[2],
             "target": r[3], "details": r[4], "at": str(r[5])[:19],
