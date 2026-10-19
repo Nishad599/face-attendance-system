@@ -496,6 +496,12 @@
                 <div id="ovConsent">
                     <div class="ov-empty">Loading…</div>
                 </div>
+                <!-- "4 have not responded" is only actionable once you know
+                     which four. The register endpoint existed and nothing
+                     called it. -->
+                <div id="ovConsentNames" hidden
+                     style="margin-top:12px;border-top:1px solid var(--border-color);
+                            padding-top:12px;"></div>
             </section>
 
             <section class="ov-section">
@@ -788,7 +794,56 @@
                 (c.pending
                     ? c.pending + ' have not responded — their face data cannot be processed'
                     : 'everyone has consented') +
-                '</div></div></div>';
+                '</div></div></div>' +
+                (c.pending
+                    ? '<button class="app-btn app-btn-sm app-btn-subtle" ' +
+                      'style="margin-top:12px;" id="ovConsentBtn" ' +
+                      'onclick="toggleConsentNames()">Who has not?</button>'
+                    : '');
+        }
+
+        let consentNames = null;
+
+        async function toggleConsentNames() {
+            const box = document.getElementById('ovConsentNames');
+            const btn = document.getElementById('ovConsentBtn');
+            if (!box.hidden) {
+                box.hidden = true;
+                btn.textContent = 'Who has not?';
+                return;
+            }
+            box.hidden = false;
+            btn.textContent = 'Hide';
+            if (consentNames) return;             // fetched once per page load
+            box.innerHTML = '<div class="ov-empty">Loading…</div>';
+            try {
+                const d = await (await fetch('/api/admin/consent-status')).json();
+                if (!d.success) throw new Error(d.message || 'failed');
+                consentNames = (d.students || []).filter(function (s) {
+                    return !s.consented;
+                });
+                if (!consentNames.length) {
+                    box.innerHTML = '<div class="ov-empty">Everyone has responded.</div>';
+                    return;
+                }
+                // A student with no consent but face data on file is the case
+                // that actually needs doing something about, so flag it.
+                box.innerHTML = consentNames.map(function (s) {
+                    return '<div class="d-flex gap-8" style="justify-content:space-between;' +
+                        'padding:6px 0;font-size:.9rem;align-items:center;">' +
+                        '<a href="/people?student=' + encodeURIComponent(s.student_db_id) + '">' +
+                        esc(s.name) + '</a>' +
+                        '<span class="ov-muted" style="font-size:.82rem;">' +
+                        esc(s.roll_no) + ' · ' + esc(s.batch) +
+                        (s.has_face_data
+                            ? ' · <span class="app-badge app-badge-warning">face data on file</span>'
+                            : '') +
+                        '</span></div>';
+                }).join('');
+            } catch (e) {
+                box.innerHTML = '<div class="ov-empty">Could not load the register.</div>';
+                consentNames = null;
+            }
         }
 
         async function loadAudit() {
@@ -838,12 +893,30 @@
                         : '<span style="color:var(--status-warn-text);font-weight:600;">' +
                           esc(d.today.reason || 'non-working day') + '</span>');
 
-                renderHealth(d.health);
-                renderQueues(d.queues);
-                renderToday(d.today);
-                renderConsent(d.consent);
+                // One section at a time. These used to be four bare calls
+                // inside the single try above, so anything unexpected in, say,
+                // the health payload threw before renderConsent ran and the
+                // whole page — today's numbers included — sat on "Loading…".
+                // This is the first screen an admin opens; losing one card to
+                // one bad key is tolerable, losing all of them is not.
+                section('ovHealth', function () { renderHealth(d.health); });
+                section('ovQueues', function () { renderQueues(d.queues); });
+                section('ovToday', function () { renderToday(d.today); });
+                section('ovConsent', function () { renderConsent(d.consent); });
             } catch (e) {
                 console.error('overview failed', e);
+            }
+        }
+
+        function section(id, render) {
+            try {
+                render();
+            } catch (e) {
+                console.error(id + ' failed', e);
+                const box = document.getElementById(id);
+                // Say which part is missing rather than leaving "Loading…" up,
+                // which reads as "still working" and never resolves.
+                if (box) box.innerHTML = '<div class="ov-empty">Unavailable.</div>';
             }
         }
 

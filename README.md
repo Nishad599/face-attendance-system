@@ -81,7 +81,16 @@ Sessions are **database-backed** (`sessions` table), so a restart or a deploy no
 | **terminal** | a batch's numeric PIN | The live attendance screen for that batch (or several, with every PIN) |
 | ~~user~~ | — | Legacy role, still accepted by `require_user_or_admin_access` |
 
-Face login (`POST /api/face-login`) is also available as a sign-in route.
+There is deliberately **no face login**. `POST /api/face-login` existed — it
+took a base64 image and returned a signed-in student session — and was removed:
+an HTTP endpoint cannot tell a live face from a photograph of one, nothing
+attests the bytes came from a camera, and no page in the app ever called it. A
+student's photo lifted off social media was their account.
+
+The attendance terminal matches faces and that is fine, because the difference
+is what a match buys you. There a face is an attendance signal — a staff-set
+kiosk, a per-batch PIN, in the room, liveness checked, and a wrong mark is
+correctable. A credential is not.
 
 ---
 
@@ -335,7 +344,7 @@ A representative selection:
 
 | Area | Examples |
 |------|----------|
-| **Auth** | `POST /api/admin-login` · `/api/user-login` · `/api/face-login` · `/api/terminal-login` · `GET /api/terminal/batches` · `POST /api/logout` · `/api/change-password` · `/api/forgot-password` · `/api/reset-password-otp` |
+| **Auth** | `POST /api/admin-login` · `/api/user-login` · `/api/terminal-login` · `GET /api/terminal/batches` · `POST /api/logout` · `/api/change-password` · `/api/forgot-password` · `/api/reset-password-otp` |
 | **Capture** | `POST /api/detect_attendance` · `/api/detect_attendance_slots` · `/api/attendance/manual/session` · `/api/attendance/bulk-mark` |
 | **Registration** | `POST /api/start_registration` · `/api/upload_face_photo` · `/api/complete_registration` |
 | **Students (admin)** | `GET /api/students/list` · `POST /api/students/add` · `/api/students/bulk-upload` · `GET /api/students/bulk-upload/template` · `PUT/DELETE /api/students/{id}` · `POST /api/students/{id}/reset-password` · `/api/students/{id}/send-welcome` |
@@ -369,6 +378,7 @@ All runtime configuration is environment variables, read from `.env` (gitignored
 | `ANTISPOOF_DISABLED` | *(unset)* | `1` turns liveness off everywhere. See below. |
 | `ANTISPOOF_THRESHOLD` | `0.45` | Minimum "real" score to pass liveness. Lower = more lenient. |
 | `ANTISPOOF_ON_REGISTRATION` | *(off)* | `1` enforces liveness during enrolment too (off by default — enrolment is staff-supervised) |
+| `FACE_MATCH_THRESHOLD` | `0.60` | Cosine similarity needed to call a face a known student. Lower = more students recognised *and* more mix-ups. Shown on Settings so you can confirm it took. |
 | `LATE_GRACE_MINUTES` | `10` | Minutes past a slot's start before a mark counts as late |
 | `COOKIE_SECURE` | `1` | Session cookies are Secure. Only set `0` for deliberate plain HTTP. |
 | `LOGIN_MAX_ATTEMPTS` | `8` | Failed logins before lockout — staff, students and terminal PINs alike |

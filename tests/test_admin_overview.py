@@ -205,3 +205,49 @@ class TestOverviewEndpoint:
         assert c["total"] == 1
         assert 0 <= c["consented"] <= c["total"]
         assert c["pending"] == c["total"] - c["consented"]
+
+
+class TestOneBadCardDoesNotBlankThePage:
+    """The four renderers were four bare calls inside one try/catch, so an
+    unexpected key in the health payload threw before renderConsent ran and
+    the whole overview — today's numbers included — sat on "Loading…" forever.
+
+    Reproduced by deleting health.service from the payload: before, all four
+    cards stayed blank; now the health card reads "Unavailable." and the other
+    three render.
+    """
+
+    @staticmethod
+    def _page():
+        with open(os.path.join(ROOT, "templates", "dashboard.html"),
+                  encoding="utf-8") as f:
+            return f.read()
+
+    @pytest.mark.parametrize("renderer", [
+        "renderHealth", "renderQueues", "renderToday", "renderConsent"])
+    def test_each_card_renders_inside_its_own_guard(self, renderer):
+        page = self._page()
+        calls = [ln.strip() for ln in page.splitlines()
+                 if renderer + "(d." in ln]
+        assert calls, f"{renderer} is no longer called from loadOverview"
+        for call in calls:
+            assert call.startswith("section("), (
+                f"{renderer} is called unguarded: {call}")
+
+    def test_the_guard_replaces_the_loading_text(self):
+        """Leaving "Loading…" up reads as "still working" and never resolves,
+        which is worse than saying it failed."""
+        page = self._page()
+        start = page.index("function section(")
+        body = page[start:start + 600]
+        assert "innerHTML" in body
+        assert "Unavailable" in body
+
+    def test_the_consent_card_reports_the_real_policy_version(self):
+        """renderConsent does `c.policy_version || '1.0'`, and the payload
+        never carried the key — so bumping CONSENT_POLICY_VERSION, which
+        re-asks every student, left the card still claiming v1.0."""
+        with open(os.path.join(ROOT, "main_with_face_recognition.py"),
+                  encoding="utf-8") as f:
+            src = f.read()
+        assert 'consent["policy_version"] = CONSENT_POLICY_VERSION' in src

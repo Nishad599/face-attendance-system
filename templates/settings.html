@@ -325,6 +325,9 @@
                     row('Lockout', p.login_max_attempts + ' tries · ' +
                         p.login_lockout_minutes + ' min') +
                     row('Consent policy', 'v' + esc(p.consent_policy_version)) +
+                    row('Face match threshold',
+                        '<span class="num">' + p.face_match_threshold.toFixed(2) +
+                        '</span> cosine similarity') +
                     row('Face data retention', p.biometric_retention_days + ' days after a course ends') +
                     row('Secure cookies', p.cookie_secure
                         ? chip(true, 'on') : chip(false, 'OFF — plain HTTP')) +

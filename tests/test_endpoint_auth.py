@@ -134,7 +134,12 @@ class TestCriticalEndpointsGuarded:
     @pytest.mark.parametrize("path", [
         "/api/students/list",              # every student's name + email
         "/api/students/count",
-        "/api/dashboard/stats",
+        # /api/dashboard/stats used to be here. It is deleted, not merely
+        # unguarded: it was unscoped by institute and counted attendance rows
+        # rather than distinct students, so "present today" could exceed the
+        # roster. /api/admin/overview replaced it.
+        "/api/admin/overview",
+        "/api/admin/consent-status",       # a roll-by-roll consent register
         "/api/attendance/today",
         "/api/attendance/bulk-export",
         "/api/analytics/at-risk",

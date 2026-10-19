@@ -164,6 +164,22 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 SESSION_SECRET_KEY = secrets.token_urlsafe(32)
 SESSION_TIMEOUT_HOURS = 24
 
+# How close a face has to be to count as the same person: cosine similarity
+# between 512-D buffalo_l embeddings, so 1.0 is identical and 0.0 unrelated.
+#
+# This was written out as a local `RECOGNITION_THRESHOLD = 0.60` inside each
+# handler that matches a face, and once more as a class attribute, which is
+# the kind of duplication that gets tuned in one place and silently disagrees
+# in the others. Raising it in the terminal but not in the staff camera would
+# mean the same student is recognised at one and not the other.
+#
+# Tunable without a code change, because the right value depends on the
+# cameras and the lighting: too low and two students get confused for one
+# another, too high and a legitimate student is told to try again. Validate a
+# change against real captures (test_antispoof.py --camera) rather than by
+# feel, and remember it is the floor for marking somebody present.
+FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.60") or 0.60)
+
 # Dedicated connection for session storage (persistent across restarts).
 _session_conn = get_connection(dict_rows=True)
 _session_conn.execute(
@@ -639,7 +655,10 @@ class AttendanceSystem:
         self.conn.commit()
         return session_id, "Registration session started"
     
-    DUPLICATE_FACE_THRESHOLD = 0.60
+    # Same threshold as recognition, and deliberately so: "these two
+    # embeddings are the same person" is one question, asked here to
+    # block a second registration and at the camera to mark attendance.
+    DUPLICATE_FACE_THRESHOLD = FACE_MATCH_THRESHOLD
 
     def find_matching_student(self, encoding, exclude_student_code=None, exclude_db_id=None):
         """Return (student_name, similarity) if `encoding` already belongs to a
@@ -1547,13 +1566,10 @@ class SimpleAdminLogin(BaseModel):
     username: str
     password: str
 
-class SimpleFaceLogin(BaseModel):
-    image_data: str
-    # Which institute's students to match against. Optional, and ignored, on a
-    # single-institute deployment; REQUIRED once there are several, because
-    # face login has no session to infer the tenant from and matching against
-    # every institute's gallery is exactly the leak this phase closes.
-    institute: Optional[str] = None
+# There was a SimpleFaceLogin model here, for POST /api/face-login, which
+# took a base64 image and returned a signed-in student session. It is gone:
+# see the note above the student login handler for why a face is an
+# attendance signal here and never a credential.
 
 from auth_utils import verify_password, hash_password, default_student_password
 
@@ -1811,7 +1827,25 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
 
 @app.post("/api/user-login")
 async def user_login(login_data: SimpleAdminLogin, response: Response):
-    """Student login: roll number (student_id) + password, against students table."""
+    """Student login: roll number (student_id) + password, against students table.
+
+    This is the only way a student signs in. There used to be a second one,
+    POST /api/face-login, which took a base64 image and handed back a student
+    session cookie — no password. It was reachable, unauthenticated, and
+    documented in the README, but no page in the app ever called it.
+
+    It is deleted rather than hardened, because an HTTP endpoint cannot tell a
+    live face from a photograph of one. Nothing attests that the bytes came
+    from a camera at all: a student's photo lifted off social media, posted to
+    the endpoint, returned their account. It was also the one login path with
+    no throttle, so the gallery could be brute-forced at will.
+
+    The attendance terminal matches faces too, and that is fine, because the
+    difference is what a match buys you. There a face is an attendance signal,
+    on a staff-provisioned kiosk, behind a per-batch PIN, in the room, with a
+    liveness check and a correctable outcome. Here it would have been a
+    credential, and an account takeover is not correctable.
+    """
     try:
         student_id = (login_data.username or "").strip()
         password = login_data.password or ""
@@ -1868,144 +1902,6 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
     except Exception as e:
         print(f"[ERROR] Student login error: {str(e)}")
         return {"success": False, "message": f"Login failed: {str(e)}"}
-
-@app.post("/api/face-login")
-async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
-    """Simple face login - uses existing face recognition"""
-    try:
-        # Use your existing face recognition code
-        if not FACE_RECOGNITION_AVAILABLE:
-            return {
-                "success": False,
-                "message": "Face recognition not available",
-                "faces_detected": 0
-            }
-        
-        # Convert base64 to image
-        if login_data.image_data.startswith('data:image'):
-            image_data_clean = login_data.image_data.split(',')[1]
-        else:
-            image_data_clean = login_data.image_data
-        
-        image_bytes = base64.b64decode(image_data_clean)
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        image_array = np.array(image)
-        
-        # Use your existing face detection
-        detected_faces = asian_face_recognizer.detect_faces_optimized(image_array)
-        
-        if len(detected_faces) == 0:
-            return {
-                "success": False,
-                "message": "No face detected",
-                "faces_detected": 0
-            }
-        
-        if len(detected_faces) > 1:
-            return {
-                "success": False,
-                "message": "Multiple faces detected",
-                "faces_detected": len(detected_faces)
-            }
-        
-        face_encoding = detected_faces[0]['embedding']
-
-        # Scope the gallery before matching. Nobody is signed in yet, so the
-        # institute has to come from the request; on a multi-institute
-        # deployment a request that does not name one is refused rather than
-        # quietly searched across every customer's students.
-        login_institute = None
-        if not tenancy.is_single_tenant(attendance_system.conn):
-            login_institute = tenancy.institute_by_slug(
-                attendance_system.conn, login_data.institute)
-            if login_institute is None:
-                return {"success": False,
-                        "message": "Choose your institute before signing in with your face.",
-                        "institutes": [
-                            {"slug": i["slug"], "name": i["name"]}
-                            for i in tenancy.list_institutes(attendance_system.conn)
-                        ]}
-
-        gallery_encodings, gallery_names, gallery_ids = \
-            attendance_system.gallery_for(login_institute)
-
-        # Find best match using your existing system
-        if len(gallery_encodings) > 0:
-            similarities = []
-            for known_encoding in gallery_encodings:
-                face_norm = face_encoding / np.linalg.norm(face_encoding)
-                known_norm = known_encoding / np.linalg.norm(known_encoding)
-                similarity = np.dot(face_norm, known_norm)
-                similarities.append(similarity)
-
-            best_match_index = np.argmax(similarities)
-            best_similarity = similarities[best_match_index]
-
-            RECOGNITION_THRESHOLD = 0.60
-
-            if best_similarity > RECOGNITION_THRESHOLD:
-                db_id = gallery_ids[best_match_index]
-                student_name = gallery_names[best_match_index]
-
-                # Look up roll number / batch for a consistent student session
-                srow = attendance_system.conn.execute(
-                    "SELECT student_id, course_id, must_change_password FROM students WHERE id = ?",
-                    (db_id,),
-                ).fetchone()
-                roll_no = srow[0] if srow else db_id
-                course_id = srow[1] if srow else None
-                must_change = bool(srow[2]) if srow else False
-
-                user_info = {
-                    "id": db_id,
-                    "name": student_name,
-                    "student_id": roll_no,
-                    "role": "student",
-                    "course_id": course_id,
-                    "must_change_password": must_change,
-                    "has_face": True,
-                    "institute_id": tenancy.institute_of_course(
-                        attendance_system.conn, course_id),
-                }
-
-                session_token = SessionManager.create_session("student", user_info)
-                _set_session_cookie(response, session_token)
-
-                return {
-                    "success": True,
-                    "message": "Face login successful",
-                    "student": {
-                        "id": db_id,
-                        "name": student_name,
-                        "confidence": float(best_similarity)
-                    },
-                    "redirect_url": "/change-password" if must_change else "/student",
-                    "faces_detected": 1
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Face not recognized",
-                    "faces_detected": 1
-                }
-        else:
-            return {
-                "success": False,
-                "message": "No students registered",
-                "faces_detected": 1
-            }
-            
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Face login failed: {str(e)}",
-            "faces_detected": 0
-        }
-
 
 # ==================================================================
 # Attendance Terminal (kiosk) — per-batch PIN (Phase 8)
@@ -2772,6 +2668,11 @@ async def admin_overview(session: Dict[str, Any] = Depends(require_admin_access)
     except Exception:
         pass
     consent["pending"] = max(0, consent["total"] - consent["consented"])
+    # The card prints "policy v<x>" and was falling back to a hardcoded
+    # "1.0" because this was never sent, so bumping CONSENT_POLICY_VERSION
+    # (which re-asks every student for consent) left the dashboard still
+    # claiming the old one.
+    consent["policy_version"] = CONSENT_POLICY_VERSION
     consent["policy_version"] = CONSENT_POLICY_VERSION
 
     institute = None
@@ -3100,6 +3001,10 @@ async def get_institute(session: Dict[str, Any] = Depends(require_admin_access))
             "login_max_attempts": login_throttle.MAX_ATTEMPTS,
             "login_lockout_minutes": login_throttle.LOCKOUT_MINUTES,
             "consent_policy_version": CONSENT_POLICY_VERSION,
+            # The floor for marking somebody present off a camera.
+            # Visible because an operator tuning FACE_MATCH_THRESHOLD
+            # otherwise has no way to confirm the value took effect.
+            "face_match_threshold": FACE_MATCH_THRESHOLD,
             "biometric_retention_days": int(
                 os.getenv("BIOMETRIC_RETENTION_DAYS", "90") or 90),
             "cookie_secure": os.getenv("COOKIE_SECURE", "1") != "0",
@@ -3387,10 +3292,7 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                 best_match_index = np.argmax(similarities)
                 best_similarity = similarities[best_match_index]
                 
-                # Threshold for recognition (adjust as needed)
-                RECOGNITION_THRESHOLD = 0.60  
-                
-                if best_similarity > RECOGNITION_THRESHOLD:
+                if best_similarity > FACE_MATCH_THRESHOLD:
                     student_id = gallery_ids[best_match_index]
                     student_name = gallery_names[best_match_index]
 
@@ -3634,50 +3536,6 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
     
     except Exception as e:
         return {"success": False, "message": str(e)}
-
-@app.get("/api/dashboard/stats")
-async def get_dashboard_stats(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Get dashboard statistics"""
-    try:
-        today = datetime.now().date().strftime('%Y-%m-%d')
-        cursor = attendance_system.conn.cursor()
-        
-        # Get total students
-        cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
-        total_students = cursor.fetchone()[0]
-        
-        # Get today's attendance count
-        cursor.execute('SELECT COUNT(*) FROM attendance WHERE date = ?', (today,))
-        present_today = cursor.fetchone()[0]
-        
-        # Calculate stats
-        absent_today = total_students - present_today
-        attendance_rate = (present_today / total_students * 100) if total_students > 0 else 0
-        
-        print(f"Dashboard stats: Total={total_students}, Present={present_today}, Absent={absent_today}, Rate={attendance_rate}%")
-        
-        return {
-            "success": True,
-            "stats": {
-                "total_students": total_students,
-                "present_today": present_today,
-                "absent_today": absent_today,
-                "attendance_rate": round(attendance_rate, 1)
-            }
-        }
-        
-    except Exception as e:
-        print(f"Dashboard stats error: {str(e)}")
-        return {
-            "success": False,
-            "message": str(e),
-            "stats": {
-                "total_students": 0,
-                "present_today": 0,
-                "absent_today": 0,
-                "attendance_rate": 0
-            }
-        }
 
 @app.get("/api/attendance/student/{student_id}")
 async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -5259,24 +5117,6 @@ async def session_status(session: Optional[Dict[str, Any]] = Depends(get_current
 
 
 
-@app.get("/api/navigation/home")
-async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Smart home navigation based on user type"""
-    from fastapi.responses import RedirectResponse
-    
-    if not session:
-        return {"success": False, "redirect_url": "/login"}
-    
-    user_type = session.get("user_type", "")
-    
-    if user_type == "admin":
-        return {"success": True, "redirect_url": "/dashboard", "message": "Redirecting to admin dashboard"}
-    elif user_type == "user":
-        return {"success": True, "redirect_url": "/attendance", "message": "You are already on your home page"}
-    else:
-        return {"success": False, "redirect_url": "/login", "message": "Invalid session"}
-    
-
 @app.post("/api/attendance/manual/session")
 async def mark_manual_session_attendance_api(data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Mark one student present manually. Delegates to the bulk-mark path.
@@ -5860,7 +5700,18 @@ async def set_consent(request: Request, data: dict = Body(...),
 @app.get("/api/admin/consent-status")
 async def consent_status_report(course_id: Optional[int] = None,
                                 session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Who has and has not consented — the record you need if anyone asks."""
+    """Who has and has not consented — the record you need if anyone asks.
+
+    The dashboard's consent card reads the totals from /api/admin/overview;
+    this is its drill-down, because "4 have not responded" is only actionable
+    once you know which four.
+
+    Scoped by institute as well as by batch. It filtered on
+    teacher_allowed_course_ids() alone, which returns None for an admin
+    meaning "every batch" — so the whole filter was skipped and one customer's
+    admin got a roll-by-roll consent register for every other customer. The
+    same shape of bug as update_student, and for the same reason.
+    """
     try:
         allowed = teacher_allowed_course_ids(session)
         sql = ("SELECT s.id, s.student_id, s.name, s.course_id, c.name, "
@@ -5873,7 +5724,12 @@ async def consent_status_report(course_id: Optional[int] = None,
                "WHERE s.status IN ('active','pending_registration')")
         params = [CONSENT_PURPOSE, CONSENT_POLICY_VERSION,
                   CONSENT_PURPOSE, CONSENT_POLICY_VERSION]
+        scope_sql, scope_params = tenancy.student_filter(
+            attendance_system.conn, session, "s.course_id")
+        sql += scope_sql
+        params.extend(scope_params)
         if course_id:
+            assert_course_allowed(session, course_id)
             sql += " AND s.course_id = ?"
             params.append(course_id)
         sql += " ORDER BY s.name"
@@ -5891,6 +5747,8 @@ async def consent_status_report(course_id: Optional[int] = None,
         return {"success": True, "policy_version": CONSENT_POLICY_VERSION,
                 "students": out, "total": len(out), "consented": granted_n,
                 "pending": len(out) - granted_n}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -7705,9 +7563,7 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
                 best_match_index = np.argmax(similarities)
                 best_similarity = similarities[best_match_index]
                 
-                RECOGNITION_THRESHOLD = 0.60
-                
-                if best_similarity > RECOGNITION_THRESHOLD:
+                if best_similarity > FACE_MATCH_THRESHOLD:
                     student_id = gallery_ids[best_match_index]
                     student_name = gallery_names[best_match_index]
 
