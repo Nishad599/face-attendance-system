@@ -2651,6 +2651,173 @@ async def admin_overview(session: Dict[str, Any] = Depends(require_admin_access)
     }
 
 
+def require_superadmin(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Platform level: sees across institutes, belongs to none.
+
+    Deliberately not folded into require_admin_access. An institute admin
+    having platform powers is the whole thing tenancy exists to prevent.
+    """
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if (session.get("user_info") or {}).get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Platform owner access required")
+    return session
+
+
+@app.get("/api/platform/institutes")
+async def platform_institutes(session: Dict[str, Any] = Depends(require_superadmin)):
+    """Every institute, with the numbers that say whether it is healthy."""
+    conn = attendance_system.conn
+    out = []
+    try:
+        rows = conn.execute(
+            "SELECT id, name, slug, contact_email, is_active, created_at "
+            "FROM institutes ORDER BY name").fetchall()
+    except Exception as e:
+        return {"success": False, "message": str(e), "institutes": []}
+
+    today = datetime.now(pytz.timezone("Asia/Kolkata")).date().strftime("%Y-%m-%d")
+
+    def one(sql, params=()):
+        try:
+            r = conn.execute(sql, tuple(params)).fetchone()
+            return int(r[0]) if r and r[0] is not None else 0
+        except Exception:
+            return 0
+
+    for r in rows:
+        iid = r[0]
+        batches = one("SELECT COUNT(*) FROM courses WHERE institute_id = ? "
+                      "AND is_active = 1", (iid,))
+        students = one(
+            "SELECT COUNT(*) FROM students s JOIN courses c ON c.id = s.course_id "
+            "WHERE c.institute_id = ? AND s.status IN ('active','pending_registration')",
+            (iid,))
+        enrolled = one(
+            "SELECT COUNT(*) FROM students s JOIN courses c ON c.id = s.course_id "
+            "WHERE c.institute_id = ? AND s.face_encoding IS NOT NULL", (iid,))
+        marks_today = one(
+            "SELECT COUNT(DISTINCT a.student_id) FROM attendance a "
+            "JOIN courses c ON c.id = a.course_id "
+            "WHERE c.institute_id = ? AND a.date = ?", (iid, today))
+        terminals = one("SELECT COUNT(*) FROM courses WHERE institute_id = ? "
+                        "AND is_active = 1 AND terminal_pin_hash IS NOT NULL", (iid,))
+        staff = one("SELECT COUNT(*) FROM users WHERE institute_id = ? AND is_active = 1",
+                    (iid,))
+        pending = sum(one(
+            f"SELECT COUNT(*) FROM {t} q JOIN courses c ON c.id = q.course_id "
+            f"WHERE c.institute_id = ? AND q.status = 'pending'", (iid,))
+            for t in ("leave_requests", "grievances",
+                      "face_registration_requests", "profile_change_requests"))
+
+        # What a platform owner needs to spot without opening the tenant.
+        warnings = []
+        if batches and not terminals:
+            warnings.append("no terminal PIN on any batch")
+        if students and not enrolled:
+            warnings.append("nobody has enrolled a face")
+        if not staff:
+            warnings.append("no active staff account")
+
+        out.append({
+            "id": iid, "name": r[1], "slug": r[2], "contact_email": r[3],
+            "is_active": bool(r[4]), "created_at": str(r[5])[:19] if r[5] else None,
+            "batches": batches, "students": students, "face_enrolled": enrolled,
+            "marks_today": marks_today, "terminals": terminals, "staff": staff,
+            "pending_approvals": pending, "warnings": warnings,
+        })
+
+    return {
+        "success": True,
+        "institutes": out,
+        "totals": {
+            "institutes": len(out),
+            "active": sum(1 for i in out if i["is_active"]),
+            "students": sum(i["students"] for i in out),
+            "marks_today": sum(i["marks_today"] for i in out),
+            "needs_attention": sum(1 for i in out if i["warnings"]),
+        },
+    }
+
+
+class InstituteCreate(BaseModel):
+    name: str
+    contact_email: Optional[str] = None
+
+
+@app.post("/api/platform/institutes")
+async def platform_create_institute(data: InstituteCreate,
+                                    session: Dict[str, Any] = Depends(require_superadmin)):
+    """Provision a new institute. Does NOT create its admin account.
+
+    Creating a login is a separate, deliberate act — a provisioned institute
+    with no way in is recoverable; one with a password someone has to guess
+    the origin of is not.
+    """
+    conn = attendance_system.conn
+    name = (data.name or "").strip()
+    if not name:
+        return {"success": False, "message": "Name is required"}
+
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "institute"
+    try:
+        if conn.execute("SELECT 1 FROM institutes WHERE slug = ?", (slug,)).fetchone():
+            return {"success": False,
+                    "message": f"An institute with the identifier '{slug}' already exists"}
+        # Names are not unique in the schema, only slugs — but two rows reading
+        # "Northgate Institute" in this console cannot be told apart, and the
+        # name is what appears on every page and report inside the tenant.
+        if conn.execute("SELECT 1 FROM institutes WHERE LOWER(name) = ?",
+                        (name.lower(),)).fetchone():
+            return {"success": False,
+                    "message": f"An institute named '{name}' already exists"}
+        conn.execute(
+            "INSERT INTO institutes (name, slug, contact_email, is_active) "
+            "VALUES (?, ?, ?, 1)",
+            (name, slug, (data.contact_email or "").strip() or None))
+        conn.commit()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    audit(session, "create_institute", target=name, details=f"slug={slug}")
+    return {"success": True, "message": f"Created {name}", "slug": slug}
+
+
+@app.post("/api/platform/institutes/{institute_id}/active")
+async def platform_set_active(institute_id: int, data: dict = Body(...),
+                              session: Dict[str, Any] = Depends(require_superadmin)):
+    """Suspend or restore an institute. Nothing is deleted."""
+    conn = attendance_system.conn
+    active = 1 if data.get("is_active") else 0
+    try:
+        row = conn.execute("SELECT name FROM institutes WHERE id = ?",
+                           (institute_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No such institute")
+        conn.execute("UPDATE institutes SET is_active = ? WHERE id = ?",
+                     (active, institute_id))
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    audit(session, "suspend_institute" if not active else "restore_institute",
+          target=row[0])
+    return {"success": True,
+            "message": f"{row[0]} {'restored' if active else 'suspended'}"}
+
+
+@app.get("/superadmin", response_class=HTMLResponse)
+async def superadmin_page(request: Request,
+                          session: Dict[str, Any] = Depends(require_superadmin)):
+    """The platform owner's console: every institute at once."""
+    return templates.TemplateResponse("superadmin.html", {
+        "request": request,
+        "user_name": (session.get("user_info") or {}).get("name", ""),
+    })
+
+
 @app.get("/api/admin/institute")
 async def get_institute(session: Dict[str, Any] = Depends(require_admin_access)):
     """This institute's own profile, plus the policy values it runs under.

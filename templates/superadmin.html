@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Platform — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        /* ================================================================
+           PLATFORM CONSOLE (super admin)
+           Deliberately not styled like a tenant's pages. When you can see
+           every customer's data at once, the screen should never be
+           mistakable for one customer's own — hence the dark bar and the
+           badge, which are the only places in the app that look like this.
+           ================================================================ */
+
+        .num {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sa-bar {
+            background: #141C2E;
+            border-bottom: 1px solid #243047;
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .sa-bar .brand {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            color: #7FA6FF;
+        }
+
+        .sa-badge {
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: var(--status-info-solid, #2557D6);
+            color: #fff;
+            font-size: 11.5px;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+        }
+
+        .sa-bar .who {
+            margin-left: auto;
+            font-size: 13px;
+            color: #AFBDD4;
+        }
+
+        .sa-bar a {
+            color: #AFBDD4;
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .sa-bar a:hover {
+            color: #fff;
+        }
+
+        .sa-tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .sa-tile {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 16px 18px;
+        }
+
+        .sa-tile .l {
+            font-size: 11.5px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .sa-tile .v {
+            font-size: 1.9rem;
+            font-weight: 600;
+            line-height: 1.1;
+            margin-top: 6px;
+        }
+
+        .sa-tile .s {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .sa-tile.alert {
+            background: var(--status-warn-surface);
+            border-color: var(--status-warn-border);
+        }
+
+        .sa-tile.alert .l,
+        .sa-tile.alert .v,
+        .sa-tile.alert .s {
+            color: var(--status-warn-text);
+        }
+
+        .sa-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+
+        .sa-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .sa-table th {
+            text-align: left;
+            padding: 9px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .sa-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+
+        .sa-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .sa-table .r {
+            text-align: right;
+        }
+
+        .sa-mark {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            background: var(--status-info-solid);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+
+        .sa-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.74rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+
+        .sa-chip.ok {
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
+        }
+
+        .sa-chip.warn {
+            background: var(--status-warn-surface);
+            color: var(--status-warn-text);
+        }
+
+        .sa-chip.off {
+            background: var(--bg-page);
+            color: var(--text-secondary);
+        }
+
+        .sa-empty {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 16px 0;
+        }
+
+        .muted {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sa-bar">
+        <span class="brand">CDAC</span>
+        <span class="sa-badge">PLATFORM</span>
+        <span style="color:#fff;font-weight:600;font-size:14px;">Institutes</span>
+        <span class="who">{{ user_name }} · platform owner &nbsp;
+            <a href="/dashboard">Leave platform view</a> &nbsp;
+            <a href="#" onclick="performLogout();return false;">Logout</a></span>
+    </div>
+
+    <div class="app-page">
+        <div class="app-page-header" style="display:flex;justify-content:space-between;
+             align-items:flex-end;gap:16px;flex-wrap:wrap;">
+            <div>
+                <h1>Institutes</h1>
+                <p class="muted" id="saSummary">Loading…</p>
+            </div>
+            <button class="app-btn app-btn-primary" onclick="openCreate()">
+                <i class="fa-solid fa-plus"></i> New institute
+            </button>
+        </div>
+
+        <div class="sa-tiles" id="saTiles"></div>
+
+        <!-- Create, inline rather than a modal: provisioning is rare enough
+             that losing the list behind an overlay is not worth it. -->
+        <div class="sa-card" id="saCreate" style="display:none;">
+            <h2 style="margin:0 0 4px;font-size:1.05rem;">New institute</h2>
+            <p class="muted" style="font-size:.88rem;margin:0 0 14px;">
+                Creates the tenant only. Its admin account is a separate,
+                deliberate step — an institute with no way in is recoverable;
+                one with a password nobody can account for is not.
+            </p>
+            <div class="d-flex gap-8" style="flex-wrap:wrap;align-items:flex-end;">
+                <div class="app-form-group" style="margin:0;min-width:240px;">
+                    <label class="app-form-label" for="newName">Name</label>
+                    <input type="text" id="newName" class="app-form-input"
+                           placeholder="Southpoint Academy">
+                </div>
+                <div class="app-form-group" style="margin:0;min-width:240px;">
+                    <label class="app-form-label" for="newEmail">Contact email</label>
+                    <input type="email" id="newEmail" class="app-form-input"
+                           placeholder="office@example.edu">
+                </div>
+                <button class="app-btn app-btn-primary" onclick="createInstitute()">Create</button>
+                <button class="app-btn app-btn-subtle" onclick="closeCreate()">Cancel</button>
+            </div>
+            <div id="createMsg" style="margin-top:10px;font-size:.88rem;"></div>
+        </div>
+
+        <div class="sa-card">
+            <div id="saRows">
+                <div class="sa-empty">Loading…</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function initials(name) {
+            return (name || '?').split(/\s+/).slice(0, 2)
+                .map(function (w) { return w[0] || ''; }).join('').toUpperCase();
+        }
+
+        function openCreate() {
+            document.getElementById('saCreate').style.display = '';
+            document.getElementById('newName').focus();
+        }
+
+        function closeCreate() {
+            document.getElementById('saCreate').style.display = 'none';
+            document.getElementById('createMsg').textContent = '';
+        }
+
+        async function load() {
+            try {
+                const d = await (await fetch('/api/platform/institutes')).json();
+                if (!d.success) {
+                    document.getElementById('saRows').innerHTML =
+                        '<div class="sa-empty">' + esc(d.message || 'Could not load.') + '</div>';
+                    return;
+                }
+                const t = d.totals;
+                document.getElementById('saSummary').textContent =
+                    t.institutes + ' institutes · ' + t.students +
+                    ' students · data isolated per institute';
+
+                document.getElementById('saTiles').innerHTML =
+                    tile('INSTITUTES', t.institutes, t.active + ' active') +
+                    tile('STUDENTS', t.students, '') +
+                    tile('MARKED TODAY', t.marks_today, '') +
+                    tile('NEEDS ATTENTION', t.needs_attention, '', t.needs_attention > 0);
+
+                if (!d.institutes.length) {
+                    document.getElementById('saRows').innerHTML =
+                        '<div class="sa-empty">No institutes yet.</div>';
+                    return;
+                }
+
+                document.getElementById('saRows').innerHTML =
+                    '<div style="overflow-x:auto;"><table class="sa-table"><thead><tr>' +
+                    '<th>INSTITUTE</th><th class="r">BATCHES</th><th class="r">STUDENTS</th>' +
+                    '<th class="r">FACES</th><th class="r">TODAY</th><th class="r">WAITING</th>' +
+                    '<th>HEALTH</th><th class="r"></th></tr></thead><tbody>' +
+                    d.institutes.map(row).join('') + '</tbody></table></div>';
+            } catch (e) {
+                document.getElementById('saRows').innerHTML =
+                    '<div class="sa-empty">Could not load.</div>';
+            }
+        }
+
+        function tile(label, value, sub, alert) {
+            return '<div class="sa-tile' + (alert ? ' alert' : '') + '">' +
+                '<div class="l">' + esc(label) + '</div>' +
+                '<div class="v num">' + value + '</div>' +
+                (sub ? '<div class="s">' + esc(sub) + '</div>' : '') + '</div>';
+        }
+
+        function row(i) {
+            const health = !i.is_active
+                ? '<span class="sa-chip off">suspended</span>'
+                : (i.warnings.length
+                    ? i.warnings.map(function (w) {
+                        return '<span class="sa-chip warn"><i class="fa-solid ' +
+                            'fa-triangle-exclamation"></i>' + esc(w) + '</span>';
+                    }).join(' ')
+                    : '<span class="sa-chip ok"><i class="fa-solid fa-check"></i>all good</span>');
+
+            return '<tr>' +
+                '<td><div class="d-flex gap-8" style="align-items:center;">' +
+                '<span class="sa-mark">' + esc(initials(i.name)) + '</span>' +
+                '<div><strong>' + esc(i.name) + '</strong>' +
+                '<div class="muted num" style="font-size:.78rem;">' + esc(i.slug) + '</div></div>' +
+                '</div></td>' +
+                '<td class="r num">' + i.batches + '</td>' +
+                '<td class="r num">' + i.students + '</td>' +
+                '<td class="r num">' + i.face_enrolled + '</td>' +
+                '<td class="r num">' + i.marks_today + '</td>' +
+                '<td class="r num">' + (i.pending_approvals || '—') + '</td>' +
+                '<td>' + health + '</td>' +
+                '<td class="r"><button class="app-btn app-btn-subtle app-btn-sm" ' +
+                'onclick="toggleActive(' + i.id + ',' + (i.is_active ? 'false' : 'true') +
+                ',\'' + esc(i.name).replace(/'/g, "\\'") + '\')">' +
+                (i.is_active ? 'Suspend' : 'Restore') + '</button></td></tr>';
+        }
+
+        async function createInstitute() {
+            const msg = document.getElementById('createMsg');
+            const name = document.getElementById('newName').value.trim();
+            if (!name) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Name is required.';
+                return;
+            }
+            msg.style.color = 'var(--text-secondary)';
+            msg.textContent = 'Creating…';
+            try {
+                const d = await (await fetch('/api/platform/institutes', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        contact_email: document.getElementById('newEmail').value.trim()
+                    })
+                })).json();
+                msg.style.color = d.success
+                    ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                msg.textContent = d.message || (d.success ? 'Created' : 'Failed');
+                if (d.success) {
+                    document.getElementById('newName').value = '';
+                    document.getElementById('newEmail').value = '';
+                    load();
+                }
+            } catch (e) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Connection failed.';
+            }
+        }
+
+        async function toggleActive(id, makeActive, name) {
+            const verb = makeActive ? 'Restore' : 'Suspend';
+            if (!confirm(verb + ' ' + name + '? Nothing is deleted' +
+                (makeActive ? '.' : '; its people simply cannot sign in.'))) return;
+            try {
+                const d = await (await fetch('/api/platform/institutes/' + id + '/active', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: makeActive })
+                })).json();
+                if (!d.success) alert(d.message || 'Failed');
+                load();
+            } catch (e) { alert('Connection failed'); }
+        }
+
+        async function performLogout() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', load);
+    </script>
+</body>
+
+</html>
