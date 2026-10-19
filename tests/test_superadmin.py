@@ -209,3 +209,54 @@ class TestConsoleLooksDifferent:
     def test_values_are_escaped(self, page):
         assert "function esc(" in page
         assert "esc(i.name)" in page
+
+
+class TestTheRoleCanActuallyLogIn:
+    """The gap this closes: migrate_phase10 added the role and
+    require_superadmin guarded the console, but the staff login accepted only
+    ["admin", "teacher"] — so the role existed and nobody could ever become
+    one. The console was unreachable by construction."""
+
+    def test_login_accepts_the_role(self):
+        src = read(APP_FILE)
+        idx = src.find("async def simple_admin_login")
+        assert idx != -1
+        body = src[idx:idx + 1400]
+        assert '"superadmin"' in body, "staff login still refuses superadmins"
+
+    def test_login_lands_on_the_console(self):
+        src = read(APP_FILE)
+        idx = src.find("async def simple_admin_login")
+        assert '"/superadmin"' in src[idx:idx + 1400]
+
+    def test_superadmin_passes_the_admin_guards(self):
+        """Otherwise every admin page 403s them, including the console's own
+        'Leave platform view' link."""
+        src = read(APP_FILE)
+        for guard in ("def require_admin_access", "def require_teacher_or_admin"):
+            idx = src.find(guard)
+            assert idx != -1
+            assert "superadmin" in src[idx:idx + 900], f"{guard} excludes superadmin"
+
+    def test_an_admin_is_still_not_a_superadmin(self):
+        """The converse must never hold."""
+        src = read(APP_FILE)
+        idx = src.find("def require_superadmin(")
+        body = src[idx:idx + 600]
+        assert '!= "superadmin"' in body or "!= 'superadmin'" in body
+
+    def test_nav_shows_the_console_only_to_owners(self):
+        nav = read(os.path.join(TEMPLATES, "_navbar.html"))
+        m = re.search(r'href="/superadmin"[^>]*data-roles="([^"]+)"', nav)
+        assert m, "no platform link in the nav"
+        assert m.group(1).strip() == "superadmin"
+
+    def test_there_is_a_way_to_create_one(self):
+        """The migration deliberately creates no account: a privileged login
+        appearing by itself, with a password nobody can account for, is worse
+        than having to run one command."""
+        script = os.path.join(ROOT, "create_superadmin.py")
+        assert os.path.exists(script)
+        src = read(script)
+        assert "getpass" in src, "a password passed as an argument lands in shell history"
+        assert "hash_password" in src

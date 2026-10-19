@@ -293,10 +293,19 @@ def require_authentication(session: Optional[Dict[str, Any]] = Cookie(None, alia
 templates = Jinja2Templates(directory="templates")
 # Security middleware functions
 def require_admin_access(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Require admin access"""
+    """Require admin access.
+
+    A superadmin passes: they own the platform and can already read every
+    institute through the console, so 403-ing them out of /dashboard would be
+    surprising rather than safer. Note this is full access, not read-only
+    support access — every privileged action still goes through audit().
+
+    The converse is what must never hold: an admin is NOT a superadmin, which
+    is why require_superadmin is a separate guard rather than a flag here.
+    """
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if session.get("user_type") != "admin":
+    if session.get("user_type") not in ("admin", "superadmin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return session
 
@@ -314,7 +323,7 @@ def require_teacher_or_admin(session: Optional[Dict[str, Any]] = Depends(get_cur
     """Allow teachers and admins (attendance/analytics/holiday/bulk-mark actions)."""
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if session.get("user_type") not in ["admin", "teacher"]:
+    if session.get("user_type") not in ["admin", "teacher", "superadmin"]:
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
     return session
 
@@ -1677,7 +1686,12 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
             return {"success": False,
                     "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."}
 
-        user_info = authenticate_user(username, password, roles=["admin", "teacher"])
+        # 'superadmin' belongs here: migrate_phase10 added the role and
+        # require_superadmin guards the platform console, but this list did
+        # not include it — so the role existed and nobody could ever log in
+        # as one.
+        user_info = authenticate_user(username, password,
+                                      roles=["superadmin", "admin", "teacher"])
         if not user_info:
             record_login_failure(username)
             return {"success": False, "message": "Invalid username or password"}
@@ -1687,7 +1701,8 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
         session_token = SessionManager.create_session(role, user_info)
         _set_session_cookie(response, session_token)
 
-        redirect = "/dashboard" if role == "admin" else "/teacher"
+        redirect = {"superadmin": "/superadmin",
+                    "admin": "/dashboard"}.get(role, "/teacher")
         if user_info.get("must_change_password"):
             redirect = "/change-password"
 

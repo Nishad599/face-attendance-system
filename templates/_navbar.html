@@ -15,7 +15,11 @@
         CDAC Attendance
     </a>
     <div class="app-navbar-links">
-        <a href="/dashboard" id="nav-dashboard" data-roles="admin">
+        {# Only a superadmin ever sees this, and it is first: the platform
+           console is their home, not an institute's dashboard. #}
+        <a href="/superadmin" id="nav-platform" data-roles="superadmin">
+            <i class="fa-solid fa-building-columns"></i> Platform</a>
+        <a href="/dashboard" id="nav-dashboard" data-roles="admin,superadmin">
             <i class="fa-solid fa-house"></i> Dashboard</a>
         <a href="/teacher" id="nav-portal" data-roles="teacher">
             <i class="fa-solid fa-chalkboard-user"></i> My Batches</a>

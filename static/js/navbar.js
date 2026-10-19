@@ -18,6 +18,7 @@
 
     // Where "home" is depends on who you are.
     var HOME_BY_ROLE = {
+        superadmin: '/superadmin',
         admin: '/dashboard',
         teacher: '/teacher',
         student: '/student',

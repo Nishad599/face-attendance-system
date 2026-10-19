@@ -68,6 +68,13 @@ Sessions are **database-backed** (`sessions` table), so a restart or a deploy no
 | Role | Signs in with | Gets |
 |------|---------------|------|
 | **superadmin** | username + password | Platform level: every institute. `users.institute_id` is NULL |
+
+> No superadmin account is created by the migration — a privileged login
+> appearing by itself, with a password nobody can account for, is worse than
+> running one command. Make one with `python create_superadmin.py`; it prompts
+> for the password rather than taking it as an argument. The owner signs in at
+> `/login` like anyone else and lands on `/superadmin`.
+
 | **admin** | username + password | Everything **inside their own institute**: batches, teachers, students, slot config, reports, audit log |
 | **teacher** | username + password | The **Teacher Portal**, scoped to assigned batches only (`teacher_batches`) |
 | **student** | roll number + password (DOB by default, must change on first login) | The **Student Portal** — own attendance, calendar, timetable, requests |
