@@ -1,7 +1,9 @@
 from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File, BackgroundTasks
 from typing import Optional, Dict, Any, List
-from fastapi.responses import HTMLResponse, Response, RedirectResponse
+from fastapi.responses import (HTMLResponse, Response, RedirectResponse,
+                               JSONResponse)
 from fastapi.staticfiles import StaticFiles
+from urllib.parse import quote
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
 import sys
@@ -151,13 +153,61 @@ async def add_security_headers(request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
-    # Cache control for sensitive pages
-    if request.url.path in ["/dashboard", "/admin", "/students", "/attendance"]:
+    # Don't let a signed-out browser's Back button show the last person's
+    # roster. This was a hardcoded list — "/dashboard", "/admin", "/students",
+    # "/attendance" — which drifted twice: /admin and /students became
+    # redirects, and /people, /settings, /insights, /approvals and /superadmin
+    # were added without it, so the pages carrying the most student data were
+    # the cacheable ones. Everything is no-store except what is genuinely
+    # public, which is the safe direction for a list to drift in.
+    if not _is_public_path(request.url.path):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    
+
     return response
+
+
+# Served the same to anyone, so cacheable: static assets, the login screen,
+# the privacy notice (it has to be readable before signing in), the
+# institute's own /about page, and the PWA plumbing.
+#
+# Deliberately not here: "/" and "/logout", which redirect based on the
+# session, so a cached response sends the next person to the wrong place;
+# "/change-password" and "/register", which are for someone already signed in.
+_PUBLIC_PATHS = {"/login", "/privacy", "/about", "/contact",
+                 "/forgot-password", "/favicon.ico",
+                 "/manifest.webmanifest", "/sw.js"}
+
+
+def _is_public_path(path: str) -> bool:
+    return path in _PUBLIC_PATHS or path.startswith("/static/")
+
+
+@app.exception_handler(HTTPException)
+async def _auth_redirect(request: Request, exc: HTTPException):
+    """Send an unauthenticated page request to the login screen.
+
+    Every protected page answered a signed-out browser with the raw JSON body
+    {"detail": "Authentication required"}. An admin whose session had expired
+    clicked a bookmark and got that, with no way forward but to type the URL
+    of the login page — and it is the first thing a prospective customer sees.
+
+    Only for page navigations: an /api/ call keeps its JSON 401, because the
+    pages' own fetch handlers check the status and would otherwise receive the
+    login HTML and try to parse it as JSON.
+    """
+    if (exc.status_code in (401, 403)
+            and not request.url.path.startswith("/api/")
+            and "text/html" in request.headers.get("accept", "")):
+        nxt = request.url.path
+        if request.url.query:
+            nxt += "?" + request.url.query
+        return RedirectResponse(
+            url="/login?next=" + quote(nxt, safe=""), status_code=303)
+    return JSONResponse(status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                        headers=getattr(exc, "headers", None))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Session Management Configuration
