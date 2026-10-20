@@ -473,8 +473,13 @@ def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     return [r[0] for r in rows]
 
 
-def best_match(probe, institute_id):
+def best_match(probe, institute_id, gallery=None):
     """(db_id, name, similarity) for the closest known face, or (None, None, 0.0).
+
+    `gallery` is an already-resolved (matrix, names, ids) from
+    match_gallery(). Pass it when looping over the faces in one frame:
+    resolving it per face re-ran tenancy.is_single_tenant(), which is a
+    COUNT(*) on institutes, so a six-face frame issued eight of them.
 
     One place, because there were two copies of this loop — the staff camera
     and the terminal — and a third in a now-deleted face-login endpoint. They
@@ -488,7 +493,8 @@ def best_match(probe, institute_id):
     """
     if probe is None:
         return None, None, 0.0
-    matrix, names, ids = attendance_system.match_gallery(institute_id)
+    matrix, names, ids = (gallery if gallery is not None
+                          else attendance_system.match_gallery(institute_id))
 
     if matrix is not None and len(ids):
         p = np.asarray(probe, dtype=attendance_system.MATCH_DTYPE)
@@ -3489,6 +3495,8 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
     match_institute_id = tenancy.institute_for_session(session)
     gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
         match_institute_id)
+    # Resolved once for the whole frame, not once per face.
+    frame_gallery = attendance_system.match_gallery(match_institute_id)
 
     try:
         # Convert base64 to image
@@ -3519,6 +3527,9 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
         recognized_students = []
         unknown_faces = 0
         spoofed_faces = 0
+        # Per-batch lookups, memoised for the life of this frame; see below.
+        frame_cache = {}
+        wrote_in_frame = False
         
         for face_data in detected_faces:
             # --- ANTI-SPOOFING GATE ---
@@ -3550,7 +3561,7 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
             # known face; see AttendanceSystem._build_match_matrices.
             if len(gallery_ids) > 0:
                 student_id, student_name, best_similarity = best_match(
-                    face_encoding, match_institute_id)
+                    face_encoding, match_institute_id, frame_gallery)
 
                 if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
 
@@ -3574,11 +3585,30 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                             "SELECT course_id FROM students WHERE id = ?", (student_id,)
                         ).fetchone()
                         s_course_id = s_course[0] if s_course else None
-                        late = compute_is_late(course_id=s_course_id)
 
-                        # No attendance on a Sunday or a holiday, by any route.
-                        ok_day, why = working_days.check(
-                            attendance_system.conn, s_course_id, today)
+                        # Everything below depends on the BATCH, not the
+                        # student, and one frame is usually one batch in front
+                        # of one camera. Computed once per batch per frame
+                        # rather than once per face: the late check, the
+                        # working-day check (which reads holidays), the current
+                        # slot, and that slot's subject.
+                        if s_course_id not in frame_cache:
+                            _ok, _why = working_days.check(
+                                attendance_system.conn, s_course_id, today)
+                            _slot = (attendance_manager.get_current_slot(
+                                course_id=s_course_id) if attendance_manager else None)
+                            _key = (_slot or {}).get("slot_key")
+                            frame_cache[s_course_id] = {
+                                "late": compute_is_late(course_id=s_course_id),
+                                "ok_day": _ok, "why": _why, "slot_key": _key,
+                                # Recorded at mark time, so a later timetable
+                                # change cannot rewrite history.
+                                "subject_id": timetable.subject_for_slot(
+                                    attendance_system.conn, s_course_id, today, _key),
+                            }
+                        cached = frame_cache[s_course_id]
+                        late = cached["late"]
+                        ok_day, why = cached["ok_day"], cached["why"]
                         if not ok_day:
                             recognized_students.append({
                                 "student_id": student_id,
@@ -3589,13 +3619,8 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                             })
                             continue
 
-                        slot = (attendance_manager.get_current_slot(course_id=s_course_id)
-                                if attendance_manager else None)
-                        slot_key = (slot or {}).get("slot_key")
-                        # Record which module this class was, at mark time — a
-                        # later timetable change must not rewrite history.
-                        subject_id = timetable.subject_for_slot(
-                            attendance_system.conn, s_course_id, today, slot_key)
+                        slot_key = cached["slot_key"]
+                        subject_id = cached["subject_id"]
                         cursor.execute('''
                             INSERT INTO attendance (student_id, date, time_in, is_manual, is_late,
                                                     course_id, session_type, subject_id)
@@ -3603,7 +3628,7 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                         ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'),
                               False, late, s_course_id, slot_key, subject_id))
 
-                        attendance_system.conn.commit()
+                        wrote_in_frame = True
                         status = "marked"
                         message = f"Attendance marked for {student_name}"
                         if late:
@@ -3629,6 +3654,22 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
             else:
                 unknown_faces += 1
         
+        # One commit for the frame rather than one per student. A group
+        # shot is one event: either those students were seen together or they
+        # were not. On the VM's WAL-mode SQLite each commit is an fsync taken
+        # while other terminals wait for the single writer slot.
+        if wrote_in_frame:
+            try:
+                attendance_system.conn.commit()
+            except Exception as e:
+                attendance_system.conn.rollback()
+                print(f"[ERROR] could not commit the frame's marks: {e}")
+                return {"success": False,
+                        "faces_detected": len(detected_faces),
+                        "recognized_students": [],
+                        "unknown_faces": unknown_faces,
+                        "message": "Attendance could not be saved. Please try again."}
+
         return {
             "success": True,
             "faces_detected": len(detected_faces),
@@ -3638,6 +3679,13 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
         }
         
     except Exception as e:
+        # The frame's marks are only committed at the end, so an error
+        # part-way through must not leave a half-written group in an open
+        # transaction for the next request to commit by accident.
+        try:
+            attendance_system.conn.rollback()
+        except Exception:
+            pass
         print(f"[ERROR] Detection failed: {str(e)}")
         return {
             "success": False,
@@ -7779,6 +7827,8 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
     match_institute_id = tenancy.institute_for_session(session)
     gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
         match_institute_id)
+    # Resolved once for the whole frame, not once per face.
+    frame_gallery = attendance_system.match_gallery(match_institute_id)
 
     # Terminal sessions restrict marking to their batch
     terminal_batch_ids = None
@@ -7825,6 +7875,10 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
         recognized_students = []
         unknown_faces = 0
         spoofed_faces = 0
+        # Batch-level lookups, memoised for the life of this frame: the
+        # working-day check and the slot's subject are the same for everyone
+        # standing in front of the camera.
+        frame_cache = {}
         
         for face_data in detected_faces:
             # --- ANTI-SPOOFING GATE ---
@@ -7856,7 +7910,7 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             # known face; see AttendanceSystem._build_match_matrices.
             if len(gallery_ids) > 0:
                 student_id, student_name, best_similarity = best_match(
-                    face_encoding, match_institute_id)
+                    face_encoding, match_institute_id, frame_gallery)
 
                 if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
 
@@ -7878,10 +7932,14 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
                         })
                         continue
 
-                    # Use slot manager for attendance marking
+                    # One transaction for the whole frame, committed after the
+                    # loop. A terminal can recognise a row of students in a
+                    # single shot, and this used to commit per student.
                     attendance_result = manager.mark_attendance_with_slot(
                         student_id=student_id,
-                        detection_confidence=best_similarity
+                        detection_confidence=best_similarity,
+                        defer_commit=True,
+                        frame_cache=frame_cache,
                     )
                     
                     face_location = face_data['location']
@@ -7958,6 +8016,19 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             else:
                 unknown_faces += 1
 
+        # One commit for the frame. The manager holds its own connection --
+        # separate from attendance_system.conn -- so this is the one that
+        # matters. Each mark_attendance_with_slot() above deferred it, so
+        # without this the whole group sits in an open transaction.
+        try:
+            manager.conn.commit()
+        except Exception as e:
+            manager.conn.rollback()
+            print(f"[ERROR] could not commit the frame's marks: {e}")
+            return {"success": False, "faces_detected": len(detected_faces),
+                    "recognized_students": [], "unknown_faces": unknown_faces,
+                    "message": "Attendance could not be saved. Please try again."}
+
         marked_now = [s for s in recognized_students
                       if s.get("status") in ("marked", "already_marked")]
         success = len(marked_now) > 0
@@ -7994,6 +8065,12 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
         return out
         
     except Exception as e:
+        # The frame's marks are deferred, so an error part-way through must
+        # not leave a half-written group in an open transaction.
+        try:
+            get_slot_manager().conn.rollback()
+        except Exception:
+            pass
         print(f"[ERROR] Slot detection failed: {str(e)}")
         return {
             "success": False,

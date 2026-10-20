@@ -505,18 +505,37 @@ class AttendanceSlotManager:
         
         return configs
     
-    def mark_attendance_with_slot(self, student_id: int, detection_confidence: float = 0.0, 
-                                 force_slot: Optional[str] = None) -> Dict:
+    def mark_attendance_with_slot(self, student_id: int, detection_confidence: float = 0.0,
+                                 force_slot: Optional[str] = None,
+                                 defer_commit: bool = False,
+                                 frame_cache: Optional[Dict] = None) -> Dict:
         """
         Mark attendance only if within valid time slot
-        
+
         Args:
             student_id: ID of the student
             detection_confidence: Face recognition confidence score
             force_slot: Force specific slot (for manual attendance)
-            
+            defer_commit: skip the commit and leave it to the caller
+            frame_cache: a dict the caller keeps for the life of one frame
+
         Returns:
             Dict with success status and message
+
+        `defer_commit` exists for the camera paths. One frame can recognise a
+        whole row of students, and this used to commit once per student, so a
+        group of eight meant eight transactions -- eight fsyncs on the VM's
+        WAL-mode SQLite, where only one writer is allowed at a time, in the
+        one moment when several terminals are all marking at once. The frame
+        is the natural transaction: either the group was seen or it wasn't.
+        The caller commits once at the end, and must do so, or the marks sit
+        in an open transaction.
+
+        `frame_cache` goes with it. Three of the lookups below depend on the
+        BATCH and the date rather than the student -- whether it is a working
+        day, which reads the holiday table, and which subject the slot belongs
+        to -- and one frame is usually one batch standing in front of one
+        camera. Without the cache a six-face frame ran each of them six times.
         """
         try:
             # Use IST timezone consistently
@@ -581,11 +600,18 @@ class AttendanceSlotManager:
             # batch present on a day that no report will ever count.
             try:
                 import working_days as _wd
-                _row = cursor.execute(
-                    "SELECT course_id FROM students WHERE id = ?", (student_id,)
-                ).fetchone()
-                _ok, _why = _wd.check(self.conn, _row[0] if _row else None,
-                                      datetime.now().strftime('%Y-%m-%d'))
+                # student_course_id was already read above. This re-selected it,
+                # and so did the block further down -- three identical queries
+                # for one student in one call, and this runs per recognised
+                # face.
+                _today = datetime.now().strftime('%Y-%m-%d')
+                _wd_key = ("working_day", student_course_id, _today)
+                if frame_cache is not None and _wd_key in frame_cache:
+                    _ok, _why = frame_cache[_wd_key]
+                else:
+                    _ok, _why = _wd.check(self.conn, student_course_id, _today)
+                    if frame_cache is not None:
+                        frame_cache[_wd_key] = (_ok, _why)
                 if not _ok:
                     return {
                         'success': False,
@@ -637,15 +663,19 @@ class AttendanceSlotManager:
             # report and analytic reads, so it must carry the slot and batch.
             # These were previously left NULL, which made half-day counting and
             # subject attribution impossible for face-marked attendance.
-            course_row = cursor.execute(
-                "SELECT course_id FROM students WHERE id = ?", (student_id,)
-            ).fetchone()
-            course_id = course_row[0] if course_row else None
+            course_id = student_course_id
 
             subject_id = None
             try:
                 import timetable as _tt
-                subject_id = _tt.subject_for_slot(self.conn, course_id, today_str, slot_id)
+                _tt_key = ("subject", course_id, today_str, slot_id)
+                if frame_cache is not None and _tt_key in frame_cache:
+                    subject_id = frame_cache[_tt_key]
+                else:
+                    subject_id = _tt.subject_for_slot(
+                        self.conn, course_id, today_str, slot_id)
+                    if frame_cache is not None:
+                        frame_cache[_tt_key] = subject_id
             except Exception:
                 pass    # no timetable configured; attendance still marks
 
@@ -670,11 +700,17 @@ class AttendanceSlotManager:
                       force_slot is not None, f'{slot_name} slot attendance',
                       slot_id, course_id, subject_id))
             
-            self.conn.commit()
-            
-            # Update daily summary
-            self.update_daily_summary(today_str)
-            
+            if not defer_commit:
+                self.conn.commit()
+
+            # update_daily_summary(today_str) used to run here. It cost four
+            # COUNT queries and a write PER STUDENT MARKED, to maintain
+            # daily_attendance_summary -- a table nothing in the application
+            # ever reads. It is only created, written here, and emptied by
+            # clear_all_data. Its counts were also unscoped by institute, so
+            # had anything read them on a multi-tenant deployment they would
+            # have been wrong. Five queries per student, for nobody.
+
             logger.info(f"Attendance marked: {student_name} ({student_id_str}) - {slot_name} at {current_timestamp}")
             
             return {
@@ -806,58 +842,14 @@ class AttendanceSlotManager:
                 'total_absent': 0
             }
 
-    def update_daily_summary(self, date_str: str):
-        """Update the daily attendance summary table"""
-        try:
-            cursor = self.conn.cursor()
-            
-            # Get counts
-            cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
-            total_students = cursor.fetchone()[0]
-            
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE 'morning%'
-            ''', (date_str,))
-            morning_count = cursor.fetchone()[0]
-            
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ? AND slot_id LIKE 'afternoon%' 
-            ''', (date_str,))
-            afternoon_count = cursor.fetchone()[0]
-            
-            cursor.execute('''
-                SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                WHERE date = ?
-            ''', (date_str,))
-            total_present = cursor.fetchone()[0]
-            
-            # Update summary with IST timestamp
-            if is_postgres():
-                cursor.execute('''
-                    INSERT INTO daily_attendance_summary
-                    (date, total_students, present_morning, present_afternoon, total_present, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (date) DO UPDATE SET
-                        total_students = EXCLUDED.total_students,
-                        present_morning = EXCLUDED.present_morning,
-                        present_afternoon = EXCLUDED.present_afternoon,
-                        total_present = EXCLUDED.total_present,
-                        last_updated = EXCLUDED.last_updated
-                ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
-            else:
-                cursor.execute('''
-                    INSERT OR REPLACE INTO daily_attendance_summary
-                    (date, total_students, present_morning, present_afternoon, total_present, last_updated)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (date_str, total_students, morning_count, afternoon_count, total_present, get_ist_timestamp_str()))
-            
-            self.conn.commit()
-            
-        except Exception as e:
-            logger.error(f"Error updating daily summary: {str(e)}")
-    
+    # update_daily_summary() lived here. It maintained
+    # daily_attendance_summary, which nothing in the application reads -- the
+    # table is created, written by this method, and emptied by clear_all_data,
+    # and that is the whole of its life. It ran on every single mark, costing
+    # four COUNT queries and a write each time, and its counts were unscoped
+    # by institute so a multi-tenant deployment would have had them wrong
+    # anyway. The live figures come from /api/attendance/live-count and
+    # /api/admin/overview, which query the real tables.
     def get_slot_attendance_details(self, date_str: Optional[str] = None) -> Dict:
         """Get detailed attendance information by slot"""
         if date_str is None:

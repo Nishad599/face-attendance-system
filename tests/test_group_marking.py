@@ -59,14 +59,30 @@ class TestServerKeepsGoingThroughTheGroup:
         assert 'blocked = ("non_working_day"' in body
 
     def test_no_early_return_inside_the_face_loop(self):
-        """Any `return` between `for face_data` and the end of the loop drops
-        the students already collected in this frame."""
+        """A `return` inside the loop drops the students already collected.
+
+        The loop body is found by indentation, which is what "inside the loop"
+        means. It used to be sliced from `for face_data` to the `marked_now`
+        line, and that over-reached: the frame's single commit now sits
+        between the two, and its failure path legitimately returns -- at that
+        point the loop is finished and nothing was persisted, so reporting
+        marks would be a lie.
+        """
         body = slots_handler()
-        start = body.find("for face_data in detected_faces:")
-        end = body.find("marked_now = [s for s in recognized_students")
-        assert start != -1 and end != -1 and end > start
-        loop = body[start:end]
-        assert "return {" not in loop, "a return inside the loop abandons the group"
+        lines = body.splitlines()
+        start = next(i for i, ln in enumerate(lines)
+                     if "for face_data in detected_faces:" in ln)
+        indent = len(lines[start]) - len(lines[start].lstrip())
+
+        loop = []
+        for ln in lines[start + 1:]:
+            if ln.strip() and (len(ln) - len(ln.lstrip())) <= indent:
+                break           # dedented back out: the loop has ended
+            loop.append(ln)
+        assert loop, "could not find the loop body"
+        offenders = [ln.strip() for ln in loop if ln.strip().startswith("return")]
+        assert not offenders, (
+            "a return inside the loop abandons the group: " + "; ".join(offenders))
 
     def test_success_is_judged_on_who_was_marked(self):
         body = slots_handler()
