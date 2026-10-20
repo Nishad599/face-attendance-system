@@ -4,11 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Attendance — CDAC Attendance</title>
+    <title>{% if is_terminal %}Attendance Terminal{% else %}Live Attendance{% endif %} — CDAC Attendance</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    {% if is_terminal %}
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    {% endif %}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
-    <script src="/static/js/theme.js"></script>
+    {% if not is_terminal %}<script src="/static/js/theme.js"></script>{% endif %}
     <style>
         /* Page-specific layout for camera + results side by side */
         .att-layout {
@@ -114,19 +117,19 @@
         .result-item {
             padding: 12px 16px;
             border-left: 4px solid var(--color-success);
-            background: #E3FCEF;
+            background: var(--status-ok-surface);
             border-radius: 6px;
             margin-bottom: 10px;
         }
 
         .result-item.warning {
             border-color: var(--color-warning);
-            background: #FFFAE6;
+            background: var(--status-warn-surface);
         }
 
         .result-item.error {
             border-color: var(--color-danger);
-            background: #FFEBE6;
+            background: var(--status-bad-surface);
         }
 
         .result-item h4 {
@@ -160,26 +163,26 @@
         }
 
         .slot-banner.active {
-            background: #E3FCEF;
-            color: #006644;
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
             border-left: 4px solid var(--color-success);
         }
 
         .slot-banner.next {
-            background: #DEEBFF;
-            color: #0747A6;
+            background: var(--status-info-surface);
+            color: var(--status-info-text);
             border-left: 4px solid var(--color-primary);
         }
 
         .slot-banner.none {
-            background: #FFEBE6;
-            color: #BF2600;
+            background: var(--status-bad-surface);
+            color: var(--status-bad-text);
             border-left: 4px solid var(--color-danger);
         }
 
         .slot-banner.sunday {
-            background: #FFFAE6;
-            color: #FF8B00;
+            background: var(--status-warn-surface);
+            color: var(--status-warn-solid);
             border-left: 4px solid var(--color-warning);
         }
 
@@ -192,23 +195,23 @@
         }
 
         .status-success {
-            background: #E3FCEF;
-            color: #006644;
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
         }
 
         .status-error {
-            background: #FFEBE6;
-            color: #BF2600;
+            background: var(--status-bad-surface);
+            color: var(--status-bad-text);
         }
 
         .status-warning {
-            background: #FFFAE6;
-            color: #FF8B00;
+            background: var(--status-warn-surface);
+            color: var(--status-warn-solid);
         }
 
         .status-info {
-            background: #DEEBFF;
-            color: #0747A6;
+            background: var(--status-info-surface);
+            color: var(--status-info-text);
         }
 
         .att-instructions {
@@ -240,157 +243,817 @@
         }
 
         /* ================================================================
-           TERMINAL / KIOSK MODE
-           The kiosk runs on a 10" tablet. The stock page did not fit it: in
-           landscape (1280x800) the camera ran past the fold and Start/Stop
-           could not be reached without scrolling, which is unusable when a
-           student is standing at the device.
+           ATTENDANCE TERMINAL (KIOSK)
+           ================================================================
+           This is not the staff page with bits hidden. It used to be, and the
+           result was a screen addressed to nobody who was standing at it:
+           "Live Attendance Detection", "Detection Results", a breadcrumb back
+           to a dashboard the kiosk cannot open, four admin stat boxes eating
+           the top third, and a Start button the student had to press before
+           anything happened (plus a Stop button that killed the terminal until
+           staff noticed). Confirmation that you had actually been marked was a
+           14px list item in a side column.
 
-           Terminal mode drops the chrome a kiosk cannot use, locks the page
-           to the viewport, and gives every remaining pixel to the camera.
-           Nothing here applies to staff, who get the normal scrolling page.
+           The kiosk now has its own markup and its own dark palette, fixed to
+           the viewport on a 10" tablet. It runs itself: the camera starts on
+           load, retries on failure, and never offers a control that can take
+           the terminal out of service. The student-facing half is the camera
+           and ONE large status card; everything a passer-by does not need is
+           either small or gone.
+
+           The palette is self-contained (--k-* below) rather than built on the
+           app's theme variables, so the light/dark toggle cannot repaint a
+           kiosk that is meant to stay dark — dark cuts glare in a lab and makes
+           the camera feed read better.
            ================================================================ */
+        .terminal-mode {
+            --k-ground: #0E1726;
+            --k-surface: #18233A;
+            --k-raised: #1C2A45;
+            --k-line: #22304D;
+            --k-line-strong: #2E405F;
+            --k-text: #F2F5FA;
+            --k-muted: #A8B8D4;
+            --k-faint: #8C9FBF;
+            --k-blue: #4C8DFF;
+            --k-blue-text: #8FB4FF;
+            --k-green: #3DD68C;
+            --k-green-deep: #113524;
+            --k-green-line: #2F7A4F;
+            --k-green-text: #8FE8B6;
+            --k-amber: #F2A33C;
+            --k-amber-deep: #35260F;
+            --k-amber-line: #7A5A22;
+            --k-amber-text: #F0D3A0;
+            --k-red: #FF8178;
+            --k-red-deep: #3A1714;
+            --k-red-line: #8A3A32;
+            --k-red-text: #F5C4BF;
 
-        /* A kiosk has no dashboard to go back to and nobody reads the
-           instructions panel mid-queue. */
-        .terminal-mode .app-breadcrumb,
-        .terminal-mode .app-page-header p,
-        .terminal-mode #instructionsSection {
-            display: none;
+            margin: 0;
+            height: 100dvh;
+            overflow: hidden;
+            background: var(--k-ground);
+            color: var(--k-text);
+            font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
+            /* app.css reserves the top of every page for the fixed navbar.
+               The kiosk does not include one, so without this the whole screen
+               is pushed down by --nav-height and the footer falls below the
+               fold on a tablet — exactly the "controls you cannot reach"
+               problem this redesign exists to fix. */
+            padding-top: 0;
         }
 
-        .terminal-mode .app-page-header {
+        .kiosk {
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ---- Top bar ---- */
+        .kiosk-top {
+            flex: none;
+            height: 76px;
+            box-sizing: border-box;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--k-line);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .kiosk-brand {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            color: var(--k-blue);
+        }
+
+        .kiosk-rule {
+            width: 1px;
+            height: 26px;
+            background: var(--k-line);
+        }
+
+        .kiosk-title {
+            font-size: 17px;
+            font-weight: 600;
+        }
+
+        .kiosk-batch {
+            box-sizing: border-box;
+            padding: 7px 14px;
+            border-radius: 999px;
+            background: var(--k-raised);
+            border: 1px solid var(--k-line-strong);
+            font-size: 14px;
+            font-weight: 500;
+            color: #CBD7EC;
+            max-width: 38vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .kiosk-clock {
+            text-align: right;
+            line-height: 1.15;
+            margin-left: auto;
+        }
+
+        .kiosk-clock .time {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 30px;
+            font-weight: 600;
+        }
+
+        .kiosk-clock .date {
+            font-size: 13px;
+            color: var(--k-muted);
+            margin-top: 2px;
+        }
+
+        /* ---- Body ---- */
+        .kiosk-body {
+            flex: 1;
+            min-height: 0;
+            box-sizing: border-box;
+            padding: 18px 24px;
+            display: flex;
+            gap: 18px;
+        }
+
+        .kiosk-cam {
+            flex: 1;
+            min-width: 0;
+            position: relative;
+            background: #070C16;
+            /* Brighter than the other panels' border: the feed is almost the
+               same value as the page, so without a visible edge the camera
+               reads as dead space whenever the frame is dark. */
+            border: 1px solid var(--k-line-strong);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .kiosk-cam video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            background: #070C16;
+        }
+
+        /* The guide frame tells a student where to stand. It is a fixed target,
+           not a live face box: the detection coordinates belong to a frame
+           captured up to 3s earlier, so drawing them would lag the person. */
+        .kiosk-guide {
+            position: absolute;
+            left: 50%;
+            top: 12%;
+            transform: translateX(-50%);
+            width: min(29vh, 260px);
+            height: min(29vh, 260px);
+            border: 3px solid rgba(110, 138, 184, 0.9);
+            border-radius: 10px;
+            transition: border-color 220ms ease;
+            pointer-events: none;
+        }
+
+        .kiosk-guide.ok {
+            border-color: var(--k-green);
+            border-width: 4px;
+        }
+
+        .kiosk-guide.bad {
+            border-color: var(--k-amber);
+            border-width: 4px;
+        }
+
+        .kiosk-guide.blocked {
+            border-color: var(--k-red);
+            border-width: 4px;
+        }
+
+        .kiosk-nametag {
+            position: absolute;
+            left: 50%;
+            top: calc(12% - 44px);
+            transform: translateX(-50%);
+            box-sizing: border-box;
+            padding: 8px 18px;
+            border-radius: 999px;
+            background: var(--k-green);
+            color: #062214;
+            font-size: 16px;
+            font-weight: 700;
+            white-space: nowrap;
+            max-width: 90%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: none;
+            pointer-events: none;
+        }
+
+        .kiosk-standmark {
+            position: absolute;
+            left: 50%;
+            bottom: 58px;
+            transform: translateX(-50%);
+            box-sizing: border-box;
+            padding: 10px 20px;
+            border-radius: 999px;
+            background: rgba(7, 12, 22, 0.82);
+            border: 1px solid var(--k-line-strong);
+            font-size: 16px;
+            font-weight: 500;
+            color: #CBD7EC;
+            text-align: center;
+            max-width: 88%;
+            pointer-events: none;
+        }
+
+        .kiosk-camlabel {
+            position: absolute;
+            left: 16px;
+            bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            color: var(--k-faint);
+            pointer-events: none;
+        }
+
+        .kiosk-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--k-green);
+            display: inline-block;
+        }
+
+        .kiosk-dot.off {
+            background: var(--k-red);
+        }
+
+        /* ---- Right column ---- */
+        .kiosk-side {
+            flex: none;
+            width: 386px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        @media (max-width: 1100px) {
+            .kiosk-side {
+                width: 320px;
+            }
+        }
+
+        .kiosk-card {
+            box-sizing: border-box;
+            background: var(--k-surface);
+            border: 1px solid var(--k-line);
+            border-radius: 16px;
+            padding: 16px 20px;
+        }
+
+        /* The status card is the whole point of the screen, so it takes every
+           pixel the fixed-height cards below it do not need. */
+        #kStatus {
+            flex: 1;
+            min-height: 0;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            overflow: hidden;
+            transition: background-color 200ms ease, border-color 200ms ease;
+        }
+
+        .kiosk-eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 14px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+        }
+
+        .kiosk-eyebrow .chip {
+            flex: none;
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            display: inline-block;
+        }
+
+        .kiosk-eyebrow .ico {
+            flex: none;
+            width: 42px;
+            height: 42px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .kiosk-headline {
+            font-size: 30px;
+            font-weight: 600;
+            line-height: 1.16;
+            letter-spacing: -0.01em;
+            overflow-wrap: break-word;
+        }
+
+        .kiosk-headline.name {
+            font-size: 34px;
+            font-weight: 700;
+        }
+
+        .kiosk-sub {
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--k-muted);
+            margin-top: 10px;
+        }
+
+        .kiosk-roll {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+
+        .kiosk-divider {
+            height: 1px;
+            margin: 16px 0;
+        }
+
+        .kiosk-line {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 16px;
+            margin-top: 8px;
+        }
+
+        /* Status card tones. Each differs in icon and wording as well as hue,
+           so it does not rely on colour alone. */
+        .k-tone-idle {
+            background: var(--k-surface);
+            border-color: var(--k-line);
+        }
+
+        .k-tone-ok {
+            background: var(--k-green-deep);
+            border-color: var(--k-green-line);
+        }
+
+        .k-tone-warn {
+            background: var(--k-amber-deep);
+            border-color: var(--k-amber-line);
+        }
+
+        .k-tone-stop {
+            background: var(--k-red-deep);
+            border-color: var(--k-red-line);
+        }
+
+        .k-tone-info {
+            background: #15243C;
+            border-color: #2E4A75;
+        }
+
+        /* ---- Slot card ---- */
+        .kiosk-label {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            color: var(--k-faint);
+            margin-bottom: 8px;
+        }
+
+        .kiosk-slot-row {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .kiosk-slot-name {
+            font-size: 22px;
+            font-weight: 600;
+        }
+
+        .kiosk-slot-time {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 16px;
+            color: var(--k-muted);
+        }
+
+        .kiosk-slot-note {
+            margin-top: 9px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        /* ---- Just marked ---- */
+        .kiosk-recent-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
             margin-bottom: 10px;
         }
 
-        .terminal-mode .app-page-header h1 {
-            font-size: 1.25rem;
+        .kiosk-recent-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 15px;
+            font-weight: 500;
+            padding: 3px 0;
+        }
+
+        .kiosk-recent-row .t {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 14px;
+            color: var(--k-muted);
+        }
+
+        .kiosk-recent-row.fresh,
+        .kiosk-recent-row.fresh .t {
+            color: var(--k-green-text);
+            font-weight: 600;
+        }
+
+        .kiosk-recent-empty {
+            font-size: 14px;
+            color: var(--k-faint);
+        }
+
+        /* ---- Buttons ---- */
+        .kiosk-btn {
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 56px;
+            border-radius: 14px;
+            background: transparent;
+            border: 1.5px solid #3A4D70;
+            color: #CBD7EC;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex: none;
+        }
+
+        .kiosk-btn:hover,
+        .kiosk-btn:focus-visible {
+            border-color: var(--k-blue);
+            color: var(--k-text);
+        }
+
+        .kiosk-btn-primary {
+            background: var(--k-blue);
+            border-color: var(--k-blue);
+            color: #07142C;
+            font-weight: 700;
+        }
+
+        .kiosk-btn-primary:hover,
+        .kiosk-btn-primary:focus-visible {
+            background: #6BA1FF;
+            border-color: #6BA1FF;
+            color: #07142C;
+        }
+
+        /* ---- Footer ---- */
+        .kiosk-foot {
+            flex: none;
+            height: 46px;
+            box-sizing: border-box;
+            padding: 0 24px;
+            border-top: 1px solid var(--k-line);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            color: var(--k-faint);
+            gap: 12px;
+        }
+
+        .kiosk-foot button {
+            background: none;
+            border: none;
+            color: var(--k-muted);
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 6px 4px;
+        }
+
+        /* ---- Manual fallback sheet ---- */
+        .kiosk-sheet-wrap {
+            position: fixed;
+            inset: 0;
+            background: rgba(4, 8, 16, 0.86);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            z-index: 60;
+        }
+
+        .kiosk-sheet-wrap.open {
+            display: flex;
+        }
+
+        .kiosk-sheet {
+            width: 764px;
+            max-width: 100%;
+            max-height: 94dvh;
+            overflow-y: auto;
+            box-sizing: border-box;
+            background: var(--k-surface);
+            border: 1px solid var(--k-line-strong);
+            border-radius: 20px;
+            padding: 22px 24px;
+        }
+
+        .kiosk-sheet h2 {
+            font-size: 25px;
+            font-weight: 600;
+            line-height: 1.2;
             margin: 0;
         }
 
-        /* Compact the batch banner and the stat strip - on a tablet these were
-           eating roughly a third of the height before the camera started. */
-        .terminal-mode .app-alert {
-            padding: 8px 12px;
-            font-size: 0.84rem;
-            margin-bottom: 10px;
+        .kiosk-sheet-cols {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            flex-wrap: wrap;
         }
 
-        .terminal-mode .att-stats {
-            gap: 8px;
-            margin-bottom: 10px;
+        .kiosk-keypad {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 9px;
+            margin-top: 12px;
         }
 
-        .terminal-mode .att-stat-box {
-            padding: 8px 10px;
+        .kiosk-key {
+            height: 54px;
+            border-radius: 12px;
+            background: var(--k-raised);
+            border: 1px solid var(--k-line-strong);
+            color: var(--k-text);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 21px;
+            font-weight: 600;
+            cursor: pointer;
         }
 
-        .terminal-mode .att-stat-box .val {
-            font-size: 1.3rem;
+        .kiosk-key:active {
+            background: #27395C;
         }
 
-        .terminal-mode .att-stat-box .lbl {
-            font-size: 0.72rem;
+        .kiosk-key.alt {
+            background: #16223A;
+            color: var(--k-muted);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
         }
 
-        /* Touch targets. The stock buttons were ~40px tall; a finger needs 48. */
-        .terminal-mode .att-btns .app-btn {
+        .kiosk-prn {
+            box-sizing: border-box;
+            width: 100%;
+            height: 60px;
+            border-radius: 12px;
+            background: var(--k-ground);
+            border: 1.5px solid var(--k-blue);
+            color: var(--k-text);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 23px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            padding: 0 16px;
+        }
+
+        .kiosk-chip {
+            box-sizing: border-box;
+            width: 100%;
             min-height: 52px;
-            font-size: 1rem;
+            text-align: left;
+            border-radius: 12px;
+            background: #16223A;
+            border: 1.5px solid var(--k-line-strong);
+            color: #CBD7EC;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: 500;
+            padding: 0 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 9px;
         }
 
-        .terminal-mode #groupMode {
-            width: 22px;
-            height: 22px;
+        .kiosk-chip.sel {
+            background: #1C3356;
+            border-color: var(--k-blue);
+            color: var(--k-text);
         }
 
-        .terminal-mode .att-section {
-            padding: 14px 16px;
-        }
-
-        .terminal-mode .att-section h2 {
-            font-size: 1rem;
-            margin-bottom: 6px;
-        }
-
-        .terminal-mode .att-section p.sub {
-            margin-bottom: 10px;
-            font-size: 0.85rem;
-        }
-
-        /* ---- Landscape tablet: lock to the viewport ----------------------
-           Above 700px wide and no taller than a tablet, the page becomes a
-           fixed-height flex column. The camera takes the leftover space via
-           flex:1 rather than a fixed aspect ratio, which is what pushed the
-           controls off-screen at 1280x800. */
-        @media (min-width: 700px) and (max-height: 1100px) {
-            .terminal-mode .app-page {
-                height: calc(100dvh - var(--nav-height));
-                display: flex;
+        /* ---- Portrait tablet: stack, camera still dominant ---- */
+        @media (max-aspect-ratio: 1/1) {
+            .kiosk-body {
                 flex-direction: column;
-                overflow: hidden;
-                padding: 12px 16px;
             }
 
-            .terminal-mode .att-layout {
+            .kiosk-cam {
+                flex: none;
+                height: 44dvh;
+            }
+
+            .kiosk-side {
+                width: auto;
                 flex: 1;
                 min-height: 0;
-                margin-bottom: 0;
-                align-items: stretch;
-            }
-
-            .terminal-mode .att-layout > .att-section {
-                display: flex;
-                flex-direction: column;
-                min-height: 0;
-            }
-
-            /* The video is the only element allowed to absorb slack. */
-            .terminal-mode .att-video {
-                aspect-ratio: auto;
-                flex: 1;
-                min-height: 0;
-                max-height: none;
-            }
-
-            /* Results scroll inside their own column instead of growing the
-               page - the page itself must never scroll at a kiosk. */
-            .terminal-mode #detectionResults,
-            .terminal-mode .att-layout > .att-section:last-child {
-                overflow-y: auto;
-                min-height: 0;
-            }
-
-            /* The manual fallback is long; keep it reachable without pushing
-               the camera controls out of view. */
-            .terminal-mode #manualFallback {
-                overflow-y: auto;
-                max-height: 34vh;
-            }
-
-            /* Group mode must NOT stack here. On a scrolling desktop page
-               going single-column gives the camera the full width, but inside
-               a fixed-height kiosk it puts the results panel underneath and
-               squeezes the video to a ~90px sliver. Widen the column instead
-               and keep the camera full height. */
-            .terminal-mode .att-layout.cam-wide {
-                grid-template-columns: 2.6fr 1fr;
-            }
-        }
-
-        /* ---- Portrait tablet -------------------------------------------
-           Stacked is right here, but the camera should still dominate and the
-           results must be reachable with a short scroll rather than a long
-           one. */
-        @media (min-width: 700px) and (min-height: 1101px) {
-            .terminal-mode .att-video {
-                max-height: 46vh;
             }
         }
     </style>
 </head>
 
-<body{% if is_terminal %} class="terminal-mode"{% endif %}>
+{% if is_terminal %}
+{# ===================== ATTENDANCE TERMINAL (KIOSK) ===================== #}
+
+<body class="terminal-mode">
+    <div class="kiosk">
+
+        <div class="kiosk-top">
+            <span class="kiosk-brand">CDAC</span>
+            <span class="kiosk-rule"></span>
+            <span class="kiosk-title">Attendance terminal</span>
+            <span class="kiosk-batch" title="{{ terminal_batch }}">{{ terminal_batch or 'Batch terminal' }}</span>
+            <div class="kiosk-clock">
+                <div class="time" id="kClockTime">--:--</div>
+                <div class="date" id="kClockDate"></div>
+            </div>
+        </div>
+
+        <div class="kiosk-body">
+            <div class="kiosk-cam">
+                <video id="video" autoplay muted playsinline></video>
+                <div class="kiosk-guide" id="kGuide"></div>
+                <div class="kiosk-nametag" id="kNametag"></div>
+                <div class="kiosk-standmark" id="kStandMark">Stand on the mark and look at the camera</div>
+                <div class="kiosk-camlabel">
+                    <span class="kiosk-dot" id="kCamDot"></span>
+                    <span id="kCamState">STARTING CAMERA</span>
+                </div>
+            </div>
+
+            <div class="kiosk-side">
+                <!-- Status: the one thing a student standing here has to read -->
+                <div class="kiosk-card k-tone-idle" id="kStatus">
+                    <div class="kiosk-eyebrow" id="kEyebrow">
+                        <span class="chip" style="background: var(--k-blue)"></span>
+                        <span style="color: var(--k-blue-text)">LOOKING FOR A FACE</span>
+                    </div>
+                    <div class="kiosk-headline" id="kHeadline">Step up to mark yourself present</div>
+                    <div class="kiosk-sub" id="kSub">You don't need to press anything. The camera marks you
+                        automatically.</div>
+                    <div id="kExtra"></div>
+                </div>
+
+                <!-- Slot -->
+                <div class="kiosk-card">
+                    <div class="kiosk-label" id="kSlotLabel">SESSION</div>
+                    <div class="kiosk-slot-row">
+                        <div class="kiosk-slot-name" id="kSlotName">Checking…</div>
+                        <div class="kiosk-slot-time" id="kSlotTime"></div>
+                    </div>
+                    <div class="kiosk-slot-note" id="kSlotNote" style="display:none;"></div>
+                </div>
+
+                <!-- Just marked -->
+                <div class="kiosk-card">
+                    <div class="kiosk-recent-head">
+                        <span class="kiosk-label" style="margin:0;">JUST MARKED</span>
+                        <span style="font-size:13px;color:var(--k-muted);" id="kCount"></span>
+                    </div>
+                    <div id="kRecent">
+                        <div class="kiosk-recent-empty">Nobody yet this session.</div>
+                    </div>
+                </div>
+
+                <button type="button" class="kiosk-btn" onclick="openFallback()">
+                    <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+                    <span>It's not recognising me</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="kiosk-foot">
+            <span>Monday to Saturday only — no marking on Sundays or holidays</span>
+            <button type="button" onclick="performLogout()">Staff sign-in</button>
+        </div>
+    </div>
+
+    <!-- Manual fallback: files a request, does NOT mark attendance -->
+    <div class="kiosk-sheet-wrap" id="kSheet" role="dialog" aria-modal="true" aria-labelledby="kSheetTitle">
+        <div class="kiosk-sheet">
+            <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:16px;">
+                <div style="flex:1;">
+                    <h2 id="kSheetTitle">Tell your teacher you were here</h2>
+                    <div style="font-size:15px;color:var(--k-muted);margin-top:6px;line-height:1.5;">
+                        This does <strong style="color:var(--k-amber-text);font-weight:600;">not</strong> mark you
+                        present. Your teacher reviews it and confirms.
+                    </div>
+                </div>
+                <button type="button" class="kiosk-key alt" style="width:46px;height:46px;flex:none;"
+                        aria-label="Close and go back to the camera" onclick="closeFallback()">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <div style="height:1px;background:var(--k-line-strong);margin-bottom:18px;"></div>
+
+            <div class="kiosk-sheet-cols">
+                <div style="flex:none;width:330px;max-width:100%;">
+                    <label class="kiosk-label" for="mfRoll" style="display:block;">YOUR ROLL NUMBER</label>
+                    <input type="text" id="mfRoll" class="kiosk-prn" inputmode="numeric" autocomplete="off"
+                           placeholder="e.g. 240840120031">
+                    <div class="kiosk-keypad">
+                        <button type="button" class="kiosk-key" onclick="keyPress('1')">1</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('2')">2</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('3')">3</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('4')">4</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('5')">5</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('6')">6</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('7')">7</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('8')">8</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('9')">9</button>
+                        <button type="button" class="kiosk-key alt" onclick="keyClear()">Clear</button>
+                        <button type="button" class="kiosk-key" onclick="keyPress('0')">0</button>
+                        <button type="button" class="kiosk-key alt" onclick="keyBack()"
+                                aria-label="Delete last digit">
+                            <i class="fa-solid fa-delete-left" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div style="flex:1;min-width:260px;">
+                    <div class="kiosk-label">WHY (PICK ONE)</div>
+                    <button type="button" class="kiosk-chip sel" data-reason="The camera won't recognise me"
+                            onclick="pickReason(this)">
+                        <i class="fa-solid fa-check" aria-hidden="true" style="color:var(--k-blue-text)"></i>
+                        <span>The camera won't recognise me</span>
+                    </button>
+                    <button type="button" class="kiosk-chip" data-reason="I've just joined this batch"
+                            onclick="pickReason(this)">I've just joined this batch</button>
+                    <button type="button" class="kiosk-chip" data-reason="I'm wearing a mask or glasses"
+                            onclick="pickReason(this)">I'm wearing a mask or glasses</button>
+                    <button type="button" class="kiosk-chip" data-reason="Something else"
+                            onclick="pickReason(this)">Something else</button>
+
+                    <button type="button" class="kiosk-btn kiosk-btn-primary" style="margin-top:12px;"
+                            onclick="submitManualRequest()">
+                        <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                        <span>Send to my teacher</span>
+                    </button>
+                    <div id="mfMsg" style="margin-top:10px;font-size:14px;min-height:20px;"></div>
+                    <div style="font-size:13px;color:var(--k-faint);margin-top:4px;line-height:1.5;">
+                        You'll see it under Requests in your own portal, with the teacher's answer.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% else %}
+{# ===================== STAFF LIVE ATTENDANCE PAGE ===================== #}
+
+<body>
     <!-- Navbar -->
     {% include "_navbar.html" %}
 
@@ -401,23 +1064,6 @@
             <h1><i class="fa-solid fa-video"></i> Live Attendance Detection</h1>
             <p>Automatic face recognition attendance system</p>
         </div>
-
-        {% if is_terminal %}
-        <!-- Which batches this kiosk is marking. On a combined terminal the
-             operator has to be able to see at a glance that a batch they
-             expected is actually covered. -->
-        <div class="app-alert app-alert-info" style="align-items:flex-start;">
-            <i class="fa-solid fa-desktop"></i>
-            <div>
-                <strong>{% if terminal_batch_count > 1 %}Combined terminal{% else %}Batch terminal{% endif %}</strong>
-                &mdash; marking attendance for <strong>{{ terminal_batch }}</strong>.
-                {% if terminal_batch_count > 1 %}
-                Each student is recorded against their own batch.
-                {% endif %}
-                Students from any other batch will not be marked.
-            </div>
-        </div>
-        {% endif %}
 
         <!-- Sunday Notice -->
         <div id="sundayNotice" class="app-alert app-alert-warning" style="display:none;">
@@ -482,33 +1128,6 @@
                 </div>
                 <div id="groupSummary" style="display:none;margin-top:10px;padding:12px;
                      border-radius:6px;background:var(--bg-page);font-size:.9rem;"></div>
-
-                <!-- Terminal-only fallback. Shown for kiosk sessions so a
-                     student whose face will not match is not simply stuck.
-                     Files a pending request; a teacher still has to approve. -->
-                <div id="manualFallback" style="display:none;margin-top:16px;padding-top:16px;
-                     border-top:1px solid var(--border-color);">
-                    <p class="sub" style="margin:0 0 10px;">
-                        <i class="fa-solid fa-circle-info"></i>
-                        Camera not recognising you? Send your teacher a request instead.
-                    </p>
-                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
-                        <div class="app-form-group" style="margin:0;flex:1;min-width:140px;">
-                            <label class="app-form-label">Roll number</label>
-                            <input type="text" id="mfRoll" class="app-form-input"
-                                   placeholder="e.g. 2024001" autocomplete="off">
-                        </div>
-                        <div class="app-form-group" style="margin:0;flex:2;min-width:180px;">
-                            <label class="app-form-label">Reason (optional)</label>
-                            <input type="text" id="mfReason" class="app-form-input"
-                                   placeholder="e.g. Camera won't recognise me" autocomplete="off">
-                        </div>
-                        <button class="app-btn app-btn-subtle" onclick="submitManualRequest()">
-                            <i class="fa-solid fa-hand"></i> Request
-                        </button>
-                    </div>
-                    <div id="mfMsg" style="margin-top:8px;font-size:0.88rem;"></div>
-                </div>
             </div>
 
             <!-- Detection Results -->
@@ -567,18 +1186,36 @@
             </div>
         </div>
     </div>
+{% endif %}
+
+    {% if is_terminal %}<canvas id="canvas" style="display:none;"></canvas>{% endif %}
 
     <script>
+        /* Shared by both views. IS_TERMINAL decides which renderer runs — the
+           camera, the capture loop and the live count are identical either way,
+           so they are written once and every DOM touch is null-guarded. */
+        const IS_TERMINAL = {{ 'true' if is_terminal else 'false' }};
+
         let stream = null;
         let detectionInterval = null;
         let liveCountInterval = null;
 
+        function $(id) { return document.getElementById(id); }
+
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        }
+
+        function isGroupMode() {
+            const el = $('groupMode');
+            return !!(el && el.checked);
+        }
+
         function checkSundayStatus() {
-            const today = new Date();
-            const isSunday = today.getDay() === 0;
-            const sundayNotice = document.getElementById('sundayNotice');
-            if (isSunday && sundayNotice) sundayNotice.style.display = 'flex';
-            else if (sundayNotice) sundayNotice.style.display = 'none';
+            const isSunday = new Date().getDay() === 0;
+            const sundayNotice = $('sundayNotice');
+            if (sundayNotice) sundayNotice.style.display = isSunday ? 'flex' : 'none';
             return isSunday;
         }
 
@@ -586,22 +1223,30 @@
             try {
                 const response = await fetch('/api/attendance/live-count');
                 const data = await response.json();
-                if (data.success) {
-                    document.getElementById('liveStudentCount').textContent = data.total_present;
-                    document.getElementById('totalStudents').textContent = data.total_students;
-                    document.getElementById('attendancePercentage').textContent = data.attendance_percentage + '%';
-                    document.getElementById('lastUpdated').textContent = 'Updated: ' + data.last_updated;
-                    updateSlotStatus(data.current_slot, data.next_slot);
-                    checkSundayStatus();
+                if (!data.success) return;
+
+                if ($('liveStudentCount')) {
+                    $('liveStudentCount').textContent = data.total_present;
+                    $('totalStudents').textContent = data.total_students;
+                    $('attendancePercentage').textContent = data.attendance_percentage + '%';
+                    $('lastUpdated').textContent = 'Updated: ' + data.last_updated;
                 }
+                if (IS_TERMINAL) {
+                    kioskCount(data);
+                    kioskSlot(data.current_slot, data.next_slot);
+                } else {
+                    updateSlotStatus(data.current_slot, data.next_slot);
+                }
+                checkSundayStatus();
             } catch (error) {
                 console.error('Error updating live count:', error);
             }
         }
 
         function updateSlotStatus(currentSlot, nextSlot) {
-            const banner = document.getElementById('slotStatusBanner');
-            const slotInfo = document.getElementById('currentSlotInfo');
+            const banner = $('slotStatusBanner');
+            const slotInfo = $('currentSlotInfo');
+            if (!banner || !slotInfo) return;
             const isSunday = new Date().getDay() === 0;
 
             if (currentSlot && currentSlot.is_active) {
@@ -622,6 +1267,8 @@
             }
         }
 
+        /* ---------------- Camera ---------------- */
+
         async function startCamera() {
             try {
                 // A group of five spread across the frame leaves each face only
@@ -635,14 +1282,18 @@
                         facingMode: 'user'
                     }
                 });
-                const videoEl = document.getElementById('video');
+                const videoEl = $('video');
                 videoEl.srcObject = stream;
                 videoEl.addEventListener('loadedmetadata', reportCameraResolution, { once: true });
-                document.getElementById('startBtn').disabled = true;
-                document.getElementById('stopBtn').disabled = false;
-                document.getElementById('captureBtn').disabled = false;
+                if ($('startBtn')) {
+                    $('startBtn').disabled = true;
+                    $('stopBtn').disabled = false;
+                    $('captureBtn').disabled = false;
+                }
                 const isSunday = checkSundayStatus();
                 showMessage(isSunday ? 'Camera started — but today is Sunday, attendance cannot be marked' : 'Camera started!', isSunday ? 'warning' : 'success');
+                if (IS_TERMINAL) kioskCamState(true);
+                if (detectionInterval) clearInterval(detectionInterval);
                 detectionInterval = setInterval(captureFrame, 3000);
                 if (!liveCountInterval) {
                     updateLiveCount();
@@ -650,77 +1301,19 @@
                 }
             } catch (error) {
                 showMessage('Camera access failed: ' + error.message, 'error');
+                if (IS_TERMINAL) kioskCameraFailed(error);
             }
         }
 
         function stopCamera() {
             if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
             if (detectionInterval) { clearInterval(detectionInterval); detectionInterval = null; }
-            document.getElementById('startBtn').disabled = false;
-            document.getElementById('stopBtn').disabled = true;
-            document.getElementById('captureBtn').disabled = true;
-            showMessage('Camera stopped', 'info');
-        }
-
-        function displayDetectionResults(result) {
-            const resultsDiv = document.getElementById('detectionResults');
-            const outOfSlotDiv = document.getElementById('outOfSlotMessage');
-            const defaultMsg = document.getElementById('defaultDetectionMessage');
-            const isSunday = new Date().getDay() === 0;
-            if (defaultMsg) defaultMsg.style.display = 'none';
-
-            if (result.success && result.recognized_students && result.recognized_students.length > 0) {
-                outOfSlotDiv.style.display = 'none';
-                let html = '';
-                result.recognized_students.forEach(s => {
-                    // Handle spoof detection
-                    if (s.status === 'spoof_detected') {
-                        html += `<div class="result-item" style="border-left: 4px solid var(--color-danger); background: #FFEBE6;">
-                            <div class="d-flex justify-between align-center">
-                                <div>
-                                    <h4 style="color: var(--color-danger);"><i class="fa-solid fa-skull-crossbones"></i> SPOOF DETECTED</h4>
-                                    <p style="color: #BF2600;">Liveness score: ${(s.liveness_score * 100).toFixed(1)}% — Photo/screen attack blocked</p>
-                                </div>
-                                <span class="app-badge app-badge-danger">Blocked</span>
-                            </div>
-                            <p style="color: #BF2600;">${s.message}</p>
-                        </div>`;
-                        return;
-                    }
-
-                    const cls = s.status === 'marked' ? '' : 'warning';
-                    const sundayNote = isSunday ? ' (Sunday)' : '';
-                    html += `<div class="result-item ${cls}">
-                        <div class="d-flex justify-between align-center">
-                            <div>
-                                <h4><i class="fa-solid fa-shield-halved" style="color: var(--color-success);"></i> ${s.name}</h4>
-                                <p>Confidence: ${(s.confidence * 100).toFixed(1)}% · Slot: ${s.slot_name || 'Current'}${sundayNote}</p>
-                            </div>
-                            <span class="app-badge ${s.status === 'marked' ? 'app-badge-success' : 'app-badge-warning'}">
-                                ${s.status === 'marked' ? 'Marked' : 'Already Present'}
-                            </span>
-                        </div>
-                        <p>${s.message}</p>
-                    </div>`;
-                });
-                resultsDiv.innerHTML = html;
-                showMessage(result.message + (isSunday ? ' (Sunday)' : ''), isSunday ? 'warning' : 'success');
-                setTimeout(updateLiveCount, 1000);
-            } else if (result.outside_slot) {
-                outOfSlotDiv.style.display = 'block';
-                let details = result.message;
-                if (result.next_slot) {
-                    const h = Math.floor(result.next_slot.wait_minutes / 60), m = result.next_slot.wait_minutes % 60;
-                    details += ` Next: ${result.next_slot.slot_info.name} in ${h}h ${m}m`;
-                }
-                document.getElementById('outOfSlotDetails').textContent = details;
-                resultsDiv.innerHTML = '<div class="att-empty"><i class="fa-solid fa-user"></i><p>Face detected, but outside attendance hours</p></div>';
-                showMessage('Face detected outside slot', 'warning');
-            } else {
-                outOfSlotDiv.style.display = 'none';
-                resultsDiv.innerHTML = `<div class="att-empty"><i class="fa-solid fa-xmark" style="color:var(--color-danger)"></i><p>${result.message || 'No faces detected'}</p><p style="font-size:0.79rem;">Position yourself properly in front of the camera</p></div>`;
-                showMessage(result.message || 'No faces detected', 'warning');
+            if ($('startBtn')) {
+                $('startBtn').disabled = false;
+                $('stopBtn').disabled = true;
+                $('captureBtn').disabled = true;
             }
+            showMessage('Camera stopped', 'info');
         }
 
         // Longest edge we send to the server. 1600px keeps each of five faces
@@ -729,8 +1322,8 @@
         const MAX_CAPTURE_EDGE = 1600;
 
         async function captureFrame() {
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('canvas');
+            const video = $('video');
+            const canvas = $('canvas');
             const ctx = canvas.getContext('2d');
 
             let w = video.videoWidth, h = video.videoHeight;
@@ -748,34 +1341,24 @@
                     body: JSON.stringify({ image_data: imageData })
                 });
                 const result = await r.json();
-                displayDetectionResults(result);
-                if (document.getElementById('groupMode').checked) {
-                    showGroupSummary(result);
+                if (IS_TERMINAL) {
+                    kioskRender(result);
+                } else {
+                    displayDetectionResults(result);
+                    if (isGroupMode()) showGroupSummary(result);
                 }
             } catch (error) {
                 showMessage('Detection failed: ' + error.message, 'error');
+                if (IS_TERMINAL) kioskNetworkError();
             }
-        }
-
-        // ---------- Group photo mode ----------
-        function onGroupModeChange() {
-            const on = document.getElementById('groupMode').checked;
-            document.getElementById('groupHint').textContent = on
-                ? 'Point the camera at the whole row, then press Capture — everyone recognised is marked at once.'
-                : '';
-            if (!on) document.getElementById('groupSummary').style.display = 'none';
-            // Give the camera the full page width while framing a group.
-            const layout = document.querySelector('.att-layout');
-            if (layout) layout.classList.toggle('cam-wide', on);
-            reportCameraResolution();
         }
 
         // Tell the operator what the webcam actually delivered. If it falls back
         // to 640x480 a group shot will not recognise reliably, and the fix is a
         // better camera - not standing closer.
         function reportCameraResolution() {
-            const video = document.getElementById('video');
-            const out = document.getElementById('camRes');
+            const video = $('video');
+            const out = $('camRes');
             if (!out) return;
             if (!video.videoWidth) { out.textContent = ''; return; }
             const w = video.videoWidth, h = video.videoHeight;
@@ -787,9 +1370,113 @@
                 : 'Low resolution — faces at the edge of a group shot may not be recognised.';
         }
 
+        function showMessage(message, type) {
+            const el = $('statusMessage');
+            if (!el) return;          // the kiosk has its own status surface
+            el.className = `status-${type || 'info'}`;
+            el.style.padding = '10px 16px';
+            el.style.borderRadius = '8px';
+            el.style.textAlign = 'center';
+            el.style.marginTop = '12px';
+            el.innerHTML = `<p style="margin:0">${message}</p>`;
+        }
+
+        async function performLogout() {
+            if (!confirm(IS_TERMINAL
+                ? 'Sign this terminal out? Attendance will stop being marked here.'
+                : 'Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        {% if not is_terminal %}
+        /* ---------------- Staff renderers ---------------- */
+
+        function displayDetectionResults(result) {
+            const resultsDiv = $('detectionResults');
+            const outOfSlotDiv = $('outOfSlotMessage');
+            const defaultMsg = $('defaultDetectionMessage');
+            const isSunday = new Date().getDay() === 0;
+            if (defaultMsg) defaultMsg.style.display = 'none';
+
+            if (result.success && result.recognized_students && result.recognized_students.length > 0) {
+                outOfSlotDiv.style.display = 'none';
+                let html = '';
+                result.recognized_students.forEach(s => {
+                    // Handle spoof detection
+                    if (s.status === 'spoof_detected') {
+                        html += `<div class="result-item" style="border-left: 4px solid var(--color-danger); background: #FFEBE6;">
+                            <div class="d-flex justify-between align-center">
+                                <div>
+                                    <h4 style="color: var(--color-danger);"><i class="fa-solid fa-skull-crossbones"></i> SPOOF DETECTED</h4>
+                                    <p style="color: #BF2600;">Liveness score: ${(s.liveness_score * 100).toFixed(1)}% — Photo/screen attack blocked</p>
+                                </div>
+                                <span class="app-badge app-badge-danger">Blocked</span>
+                            </div>
+                            <p style="color: #BF2600;">${esc(s.message)}</p>
+                        </div>`;
+                        return;
+                    }
+
+                    const cls = s.status === 'marked' ? '' : 'warning';
+                    const sundayNote = isSunday ? ' (Sunday)' : '';
+                    html += `<div class="result-item ${cls}">
+                        <div class="d-flex justify-between align-center">
+                            <div>
+                                <h4><i class="fa-solid fa-shield-halved" style="color: var(--color-success);"></i> ${esc(s.name)}</h4>
+                                <p>Confidence: ${(s.confidence * 100).toFixed(1)}% · Slot: ${esc(s.slot_name || 'Current')}${sundayNote}</p>
+                            </div>
+                            <span class="app-badge ${s.status === 'marked' ? 'app-badge-success' : 'app-badge-warning'}">
+                                ${s.status === 'marked' ? 'Marked' : 'Already Present'}
+                            </span>
+                        </div>
+                        <p>${esc(s.message)}</p>
+                    </div>`;
+                });
+                resultsDiv.innerHTML = html;
+                showMessage(result.message + (isSunday ? ' (Sunday)' : ''), isSunday ? 'warning' : 'success');
+                setTimeout(updateLiveCount, 1000);
+            } else if (result.outside_slot) {
+                outOfSlotDiv.style.display = 'block';
+                let details = result.message;
+                if (result.next_slot) {
+                    const h = Math.floor(result.next_slot.wait_minutes / 60), m = result.next_slot.wait_minutes % 60;
+                    details += ` Next: ${result.next_slot.slot_info.name} in ${h}h ${m}m`;
+                }
+                $('outOfSlotDetails').textContent = details;
+                resultsDiv.innerHTML = '<div class="att-empty"><i class="fa-solid fa-user"></i><p>Face detected, but outside attendance hours</p></div>';
+                showMessage('Face detected outside slot', 'warning');
+            } else if (result.non_working_day) {
+                outOfSlotDiv.style.display = 'none';
+                resultsDiv.innerHTML = `<div class="att-empty"><i class="fa-solid fa-calendar-xmark" style="color:var(--color-warning)"></i><p>${esc(result.message || 'Not a working day')}</p></div>`;
+                showMessage(result.message || 'Not a working day', 'warning');
+            } else {
+                outOfSlotDiv.style.display = 'none';
+                resultsDiv.innerHTML = `<div class="att-empty"><i class="fa-solid fa-xmark" style="color:var(--color-danger)"></i><p>${esc(result.message || 'No faces detected')}</p><p style="font-size:0.79rem;">Position yourself properly in front of the camera</p></div>`;
+                showMessage(result.message || 'No faces detected', 'warning');
+            }
+        }
+
+        // ---------- Group photo mode ----------
+        function onGroupModeChange() {
+            const on = isGroupMode();
+            $('groupHint').textContent = on
+                ? 'Point the camera at the whole row, then press Capture — everyone recognised is marked at once.'
+                : '';
+            if (!on) $('groupSummary').style.display = 'none';
+            // Give the camera the full page width while framing a group.
+            const layout = document.querySelector('.att-layout');
+            if (layout) layout.classList.toggle('cam-wide', on);
+            reportCameraResolution();
+        }
+
         function showGroupSummary(result) {
             const students = (result && result.students) || result.recognized_students || [];
-            const box = document.getElementById('groupSummary');
+            const box = $('groupSummary');
 
             const marked = students.filter(s => s.status === 'marked');
             const already = students.filter(s => s.status === 'already_marked');
@@ -817,52 +1504,476 @@
             box.style.display = '';
         }
 
-        function esc(s) {
-            return (s == null ? '' : String(s)).replace(/[&<>"]/g, c =>
-                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-        }
-
-        function showMessage(message, type) {
-            const el = document.getElementById('statusMessage');
-            el.className = `status-${type || 'info'}`;
-            el.style.padding = '10px 16px';
-            el.style.borderRadius = '8px';
-            el.style.textAlign = 'center';
-            el.style.marginTop = '12px';
-            el.innerHTML = `<p style="margin:0">${message}</p>`;
-        }
-
-        async function performLogout() {
-            if (!confirm('Are you sure you want to logout?')) return;
-            try {
-                const r = await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include' });
-                const d = await r.json();
-                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
-                else alert('Logout failed: ' + d.message);
-            } catch (e) { window.location.href = '/login'; }
-        }
-
         document.addEventListener('DOMContentLoaded', function () {
             checkSundayStatus();
             const isSunday = new Date().getDay() === 0;
             showMessage(isSunday ? 'Sunday — attendance cannot be marked today' : 'Click "Start" to begin', isSunday ? 'warning' : 'info');
             updateLiveCount();
             liveCountInterval = setInterval(updateLiveCount, 10000);
-
-            // Role-based visibility check
-            fetch('/api/session/status').then(r => r.json()).then(d => {
-                if (d.authenticated && d.user_type !== 'admin') {
-                    // Nav link visibility is handled centrally by static/js/navbar.js.
-                }
-                // The manual fallback only makes sense at an unattended kiosk;
-                // staff already have Mark Attendance in the teacher portal.
-                if (d.authenticated && d.user_type === 'terminal') {
-                    document.getElementById('manualFallback').style.display = '';
-                }
-            }).catch(e => console.error('Session check failed:', e));
         });
 
-        // ---------- Keep a kiosk tablet awake ----------
+        {% else %}
+        /* ---------------- Kiosk renderers ---------------- */
+
+        /* Marks made at this terminal since it was opened. Deliberately local:
+           a student wants to see their own name land, and the server has no
+           "recent marks" endpoint to poll for. The running total beside it does
+           come from the server. */
+        const recentMarks = [];
+        let revertTimer = null;
+
+        function kioskClock() {
+            const now = new Date();
+            const t = $('kClockTime'), d = $('kClockDate');
+            if (t) {
+                t.textContent = String(now.getHours()).padStart(2, '0') + ':' +
+                    String(now.getMinutes()).padStart(2, '0');
+            }
+            if (d) {
+                d.textContent = now.toLocaleDateString(undefined,
+                    { weekday: 'long', day: 'numeric', month: 'long' });
+            }
+        }
+
+        function kioskCamState(live) {
+            const dot = $('kCamDot'), label = $('kCamState');
+            if (dot) dot.className = 'kiosk-dot' + (live ? '' : ' off');
+            if (label) label.textContent = live ? 'CAMERA LIVE' : 'CAMERA OFFLINE';
+        }
+
+        function kioskCount(data) {
+            const el = $('kCount');
+            if (!el) return;
+            if (data.total_students) {
+                el.textContent = `${data.total_present} of ${data.total_students} in`;
+            } else {
+                el.textContent = '';
+            }
+        }
+
+        function kioskSlot(currentSlot, nextSlot) {
+            const label = $('kSlotLabel'), name = $('kSlotName'),
+                time = $('kSlotTime'), note = $('kSlotNote');
+            if (!name) return;
+
+            const hhmm = v => (v == null ? '' : String(v).slice(0, 5));
+
+            if (currentSlot && currentSlot.is_active) {
+                const info = currentSlot.slot_info || {};
+                label.textContent = 'SESSION OPEN NOW';
+                name.textContent = info.name || 'Session';
+                time.textContent = (info.start_time && info.end_time)
+                    ? `${hhmm(info.start_time)} – ${hhmm(info.end_time)}` : '';
+                const left = currentSlot.time_remaining;
+                if (left != null) {
+                    note.style.display = '';
+                    note.style.color = left <= 15 ? 'var(--k-amber)' : 'var(--k-green-text)';
+                    note.innerHTML = '<i class="fa-regular fa-clock" aria-hidden="true"></i><span>' +
+                        (left <= 0 ? 'Closing now' : 'Closes in ' + left + ' minute' + (left === 1 ? '' : 's')) +
+                        '</span>';
+                } else {
+                    note.style.display = 'none';
+                }
+            } else if (nextSlot) {
+                const info = nextSlot.slot_info || {};
+                const h = Math.floor(nextSlot.wait_minutes / 60), m = nextSlot.wait_minutes % 60;
+                label.textContent = 'NEXT SESSION';
+                name.textContent = info.name || 'Session';
+                time.textContent = info.start_time ? `opens ${hhmm(info.start_time)}` : '';
+                note.style.display = '';
+                note.style.color = 'var(--k-muted)';
+                note.innerHTML = '<i class="fa-regular fa-clock" aria-hidden="true"></i><span>in ' +
+                    (h ? h + ' h ' : '') + m + ' min</span>';
+            } else {
+                label.textContent = 'SESSION';
+                name.textContent = 'None scheduled';
+                time.textContent = '';
+                note.style.display = 'none';
+            }
+        }
+
+        function kioskRecent() {
+            const box = $('kRecent');
+            if (!box) return;
+            if (!recentMarks.length) {
+                box.innerHTML = '<div class="kiosk-recent-empty">Nobody yet this session.</div>';
+                return;
+            }
+            box.innerHTML = recentMarks.slice(0, 3).map((m, i) =>
+                `<div class="kiosk-recent-row${i === 0 ? ' fresh' : ''}">
+                     <span>${esc(m.name)}</span><span class="t">${esc(m.time)}</span>
+                 </div>`).join('');
+        }
+
+        function addRecentMark(name, time) {
+            // The capture loop fires every 3s. A second mark for the same
+            // student normally comes back as already_marked and never reaches
+            // here, but if the server ever does repeat one the list must not
+            // fill up with the same name.
+            const top = recentMarks[0];
+            if (top && top.name === name && top.time === time) return;
+            recentMarks.unshift({ name: name, time: time });
+            if (recentMarks.length > 8) recentMarks.length = 8;
+            kioskRecent();
+        }
+
+        /* One function paints every state of the status card. `tone` picks the
+           colour, `icon` the glyph; both the eyebrow wording and the icon differ
+           per state so the card never relies on colour alone. */
+        function kioskStatus(opts) {
+            const card = $('kStatus');
+            if (!card) return;
+            card.className = 'kiosk-card k-tone-' + (opts.tone || 'idle');
+
+            const tint = {
+                idle: 'var(--k-blue-text)', info: 'var(--k-blue-text)',
+                ok: 'var(--k-green-text)', warn: 'var(--k-amber)', stop: 'var(--k-red)'
+            }[opts.tone || 'idle'];
+            const solid = {
+                idle: 'var(--k-blue)', info: 'var(--k-blue-text)',
+                ok: 'var(--k-green)', warn: 'var(--k-amber)', stop: 'var(--k-red)'
+            }[opts.tone || 'idle'];
+            const onSolid = {
+                idle: '#07142C', info: '#0B1A33',
+                ok: '#062214', warn: '#2A1B05', stop: '#2E0C09'
+            }[opts.tone || 'idle'];
+
+            $('kEyebrow').innerHTML = opts.icon
+                ? `<span class="ico" style="background:${solid};color:${onSolid}">
+                       <i class="fa-solid ${opts.icon}" aria-hidden="true"></i></span>
+                   <span style="color:${tint}">${esc(opts.eyebrow || '')}</span>`
+                : `<span class="chip" style="background:${solid}"></span>
+                   <span style="color:${tint}">${esc(opts.eyebrow || '')}</span>`;
+
+            $('kHeadline').className = 'kiosk-headline' + (opts.isName ? ' name' : '');
+            $('kHeadline').textContent = opts.headline || '';
+            $('kSub').innerHTML = opts.sub || '';
+            $('kSub').style.color = opts.subTint || 'var(--k-muted)';
+            $('kExtra').innerHTML = opts.extra || '';
+
+            const guide = $('kGuide'), tag = $('kNametag'), mark = $('kStandMark');
+            if (guide) guide.className = 'kiosk-guide' + (opts.guide ? ' ' + opts.guide : '');
+            if (tag) {
+                if (opts.nametag) { tag.style.display = ''; tag.textContent = opts.nametag; }
+                else { tag.style.display = 'none'; }
+            }
+            if (mark) mark.style.display = opts.hideMark ? 'none' : '';
+
+            if (revertTimer) { clearTimeout(revertTimer); revertTimer = null; }
+            if (opts.revertAfter) {
+                revertTimer = setTimeout(kioskIdle, opts.revertAfter);
+            }
+        }
+
+        function kioskIdle() {
+            kioskStatus({
+                tone: 'idle',
+                eyebrow: 'LOOKING FOR A FACE',
+                headline: 'Step up to mark yourself present',
+                sub: "You don't need to press anything. The camera marks you automatically."
+            });
+        }
+
+        function kioskCameraFailed(error) {
+            kioskCamState(false);
+            kioskStatus({
+                tone: 'stop', icon: 'fa-video-slash',
+                eyebrow: 'TERMINAL OFFLINE',
+                headline: 'The camera is not available',
+                sub: 'Attendance cannot be marked here. Please tell your teacher.',
+                subTint: 'var(--k-red-text)',
+                hideMark: true
+            });
+            // Unattended: nobody is going to press anything, so keep trying.
+            setTimeout(startCamera, 10000);
+        }
+
+        function kioskNetworkError() {
+            kioskStatus({
+                tone: 'warn', icon: 'fa-wifi',
+                eyebrow: 'RECONNECTING',
+                headline: "Can't reach the server",
+                sub: 'Waiting for the connection to come back. Nothing you do is lost.',
+                subTint: 'var(--k-amber-text)',
+                revertAfter: 8000
+            });
+        }
+
+        function kioskRender(result) {
+            const students = result.recognized_students || [];
+
+            // A spoof or a wrong-batch face has to win over anyone else in the
+            // frame: it is the one thing the person in front needs to read.
+            const spoof = students.find(s => s.status === 'spoof_detected');
+            const wrongBatch = students.find(s => s.status === 'wrong_batch');
+            const marked = students.filter(s => s.status === 'marked');
+            // An array, not a find: a group can contain several people who are
+            // already in, and the group summary counts them.
+            const already = students.filter(s => s.status === 'already_marked');
+
+            // A spoof or a wrong-batch face must not speak for the whole frame.
+            // In a group the server still marks everyone legitimate, so if
+            // anyone was marked the success message wins and the rest are
+            // summarised inside it; these headline only when nobody got in.
+            if (spoof && !marked.length && !already.length) {
+                kioskStatus({
+                    tone: 'stop', icon: 'fa-ban',
+                    eyebrow: 'NOT ACCEPTED',
+                    headline: 'That looked like a photo',
+                    sub: "A printout or a phone screen can't be used. Please stand in front of the camera yourself.",
+                    subTint: 'var(--k-red-text)',
+                    extra: '<div class="kiosk-line" style="color:var(--k-red-text);font-size:13px;">Reported to your teacher</div>',
+                    guide: 'blocked', revertAfter: 7000
+                });
+                return;
+            }
+
+            if (wrongBatch && !marked.length && !already.length) {
+                kioskStatus({
+                    tone: 'info', icon: 'fa-user',
+                    eyebrow: 'OTHER BATCH',
+                    headline: 'Not this terminal',
+                    sub: 'This one marks <strong style="font-weight:600">' +
+                        esc('{{ terminal_batch }}') + '</strong> only.',
+                    subTint: '#C3D5F5',
+                    extra: '<div class="kiosk-line" style="color:var(--k-blue-text);font-weight:500;">' +
+                        "Use your own batch's terminal</div>",
+                    guide: 'bad', revertAfter: 7000
+                });
+                return;
+            }
+
+            if (marked.length) {
+                // One person at a time is the normal case at a kiosk; a group
+                // capture is summarised instead of naming everyone.
+                if (marked.length === 1) {
+                    const s = marked[0];
+                    const when = (s.time_marked || '').slice(11, 16) ||
+                        new Date().toTimeString().slice(0, 5);
+                    addRecentMark(s.name, when);
+                    kioskStatus({
+                        tone: 'ok', icon: 'fa-check',
+                        eyebrow: 'MARKED PRESENT',
+                        headline: s.name, isName: true,
+                        sub: s.roll_no
+                            ? '<span style="font-family:\'IBM Plex Mono\',monospace">' + esc(s.roll_no) + '</span>'
+                            : '',
+                        subTint: 'var(--k-green-text)',
+                        extra:
+                            '<div class="kiosk-divider" style="background:var(--k-green-line)"></div>' +
+                            '<div class="kiosk-line"><i class="fa-regular fa-clock" aria-hidden="true" ' +
+                            'style="color:var(--k-green-text)"></i><span><strong style="font-weight:600">' +
+                            esc(s.slot_name || 'This session') + '</strong> at ' + esc(when) + '</span></div>' +
+                            '<div class="kiosk-line" style="color:#BFF0D4;"><i class="fa-solid fa-arrow-right" ' +
+                            'aria-hidden="true" style="color:var(--k-green-text)"></i>' +
+                            "<span>You're done — you can go in</span></div>",
+                        nametag: s.name, guide: 'ok', revertAfter: 6000
+                    });
+                } else {
+                    // A group stood in front of the camera. Everyone recognised
+                    // is marked in the same frame, so name them all — a count
+                    // alone leaves each person unsure whether they were the one
+                    // who got missed.
+                    const when = new Date().toTimeString().slice(0, 5);
+                    marked.forEach(s => addRecentMark(s.name, when));
+
+                    const others = students.filter(
+                        s => ['marked', 'already_marked'].indexOf(s.status) === -1);
+                    let extra =
+                        '<div class="kiosk-divider" style="background:var(--k-green-line)"></div>' +
+                        '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+                        marked.map(s =>
+                            '<span style="background:rgba(61,214,140,.16);border:1px solid var(--k-green-line);' +
+                            'border-radius:999px;padding:3px 11px;font-size:15px;font-weight:600;">' +
+                            esc(s.name) + '</span>').join('') + '</div>';
+
+                    if (already.length) {
+                        extra += '<div class="kiosk-line" style="color:#BFF0D4;font-size:14px;">' +
+                            already.length + ' already in</div>';
+                    }
+                    if (others.length) {
+                        extra += '<div class="kiosk-line" style="color:var(--k-amber);font-size:14px;">' +
+                            others.length + ' not marked — step up one at a time</div>';
+                    }
+
+                    kioskStatus({
+                        tone: 'ok', icon: 'fa-check',
+                        eyebrow: 'MARKED PRESENT',
+                        headline: marked.length + ' students marked', isName: true,
+                        sub: '', extra: extra,
+                        guide: 'ok', revertAfter: 7000
+                    });
+                }
+                setTimeout(updateLiveCount, 1000);
+                return;
+            }
+
+            if (already.length) {
+                const first = already[0];
+                kioskStatus({
+                    tone: 'info', icon: 'fa-check',
+                    eyebrow: 'ALREADY IN',
+                    headline: already.length > 1
+                        ? already.length + ' already in' : first.name,
+                    isName: true,
+                    sub: already.length > 1
+                        ? already.map(s => esc(s.name)).join(' · ')
+                        : 'You were marked for <strong style="font-weight:600">' +
+                          esc(first.slot_name || 'this session') + '</strong> already.',
+                    subTint: '#C3D5F5',
+                    extra: '<div class="kiosk-line" style="color:var(--k-blue-text);font-weight:500;">' +
+                        'Nothing more to do — go in</div>',
+                    nametag: already.length === 1 ? first.name : null,
+                    guide: 'ok', revertAfter: 5000
+                });
+                return;
+            }
+
+            if (result.non_working_day) {
+                kioskStatus({
+                    tone: 'warn', icon: 'fa-calendar-xmark',
+                    eyebrow: 'NO CLASS',
+                    headline: 'No marking today',
+                    sub: esc(result.message || "Attendance isn't taken today."),
+                    subTint: 'var(--k-amber-text)',
+                    guide: 'bad', revertAfter: 10000
+                });
+                return;
+            }
+
+            if (result.outside_slot) {
+                let next = '';
+                if (result.next_slot) {
+                    const info = result.next_slot.slot_info || {};
+                    const h = Math.floor(result.next_slot.wait_minutes / 60),
+                        m = result.next_slot.wait_minutes % 60;
+                    next = '<div class="kiosk-line" style="font-weight:600;">' +
+                        esc(info.name || 'Next session') + ' opens in ' +
+                        (h ? h + ' h ' : '') + m + ' min</div>';
+                }
+                kioskStatus({
+                    tone: 'warn', icon: 'fa-clock',
+                    eyebrow: 'CLOSED',
+                    headline: 'No session open right now',
+                    sub: 'Your face was seen, but nothing is recorded outside session hours.',
+                    subTint: 'var(--k-amber-text)',
+                    extra: next, guide: 'bad', revertAfter: 9000
+                });
+                return;
+            }
+
+            // Nothing recognised. Only say so once a face was actually seen —
+            // an empty frame between students is the normal resting state and
+            // must not flash a failure at nobody.
+            if (result.faces_detected) {
+                kioskStatus({
+                    tone: 'warn', icon: 'fa-eye-slash',
+                    eyebrow: 'TRY AGAIN',
+                    headline: "We didn't catch that",
+                    sub: 'Come a step closer and look straight at the camera.',
+                    subTint: 'var(--k-amber-text)',
+                    extra: '<div class="kiosk-line" style="font-family:\'IBM Plex Mono\',monospace;' +
+                        "font-size:13px;color:#C9A86A;\">Still looking…</div>",
+                    guide: 'bad', revertAfter: 5000
+                });
+            } else if (!revertTimer) {
+                kioskIdle();
+            }
+        }
+
+        /* ---------- Manual fallback sheet ---------- */
+
+        function openFallback() {
+            $('kSheet').classList.add('open');
+            $('mfMsg').textContent = '';
+            $('mfRoll').focus();
+        }
+
+        function closeFallback() {
+            $('kSheet').classList.remove('open');
+        }
+
+        function keyPress(d) {
+            const el = $('mfRoll');
+            if (el.value.length < 24) el.value += d;
+        }
+
+        function keyBack() {
+            const el = $('mfRoll');
+            el.value = el.value.slice(0, -1);
+        }
+
+        function keyClear() {
+            $('mfRoll').value = '';
+        }
+
+        function pickReason(btn) {
+            document.querySelectorAll('.kiosk-chip').forEach(function (c) {
+                c.classList.remove('sel');
+                const tick = c.querySelector('i');
+                if (tick) tick.remove();
+            });
+            btn.classList.add('sel');
+            const i = document.createElement('i');
+            i.className = 'fa-solid fa-check';
+            i.setAttribute('aria-hidden', 'true');
+            i.style.color = 'var(--k-blue-text)';
+            btn.insertBefore(i, btn.firstChild);
+        }
+
+        function selectedReason() {
+            const sel = document.querySelector('.kiosk-chip.sel');
+            return sel ? (sel.getAttribute('data-reason') || '') : '';
+        }
+
+        async function submitManualRequest() {
+            const rollEl = $('mfRoll');
+            const msg = $('mfMsg');
+            const roll = rollEl.value.trim();
+            if (!roll) {
+                msg.style.color = 'var(--k-red)';
+                msg.textContent = 'Enter your roll number.';
+                return;
+            }
+            msg.style.color = 'var(--k-muted)';
+            msg.textContent = 'Sending…';
+            try {
+                const res = await fetch('/api/terminal/manual-request', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ roll_no: roll, reason: selectedReason() })
+                });
+                const d = await res.json();
+                msg.style.color = d.success ? 'var(--k-green-text)' : 'var(--k-red)';
+                msg.textContent = d.message || '';
+                if (d.success) {
+                    // Clear immediately: the next student is standing right there.
+                    rollEl.value = '';
+                    setTimeout(closeFallback, 2500);
+                }
+            } catch (e) {
+                msg.style.color = 'var(--k-red)';
+                msg.textContent = 'Connection failed. Try again.';
+            }
+        }
+
+        document.addEventListener('keydown', function (e) {
+            if (!$('kSheet').classList.contains('open')) return;
+            if (e.key === 'Escape') closeFallback();
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            kioskClock();
+            setInterval(kioskClock, 15000);
+            kioskIdle();
+            kioskRecent();
+            updateLiveCount();
+            liveCountInterval = setInterval(updateLiveCount, 10000);
+            // The terminal runs itself — there is no Start button to press.
+            startCamera();
+        });
+        {% endif %}
+
+        /* ---------- Keep a kiosk tablet awake ---------- */
         // The terminal runs unattended on a tablet, which will otherwise dim
         // and sleep mid-session and stop the camera. The Wake Lock API needs a
         // secure context (the app serves HTTPS) and is released whenever the
@@ -871,7 +1982,7 @@
         let wakeLock = null;
 
         async function requestWakeLock() {
-            if (!document.body.classList.contains('terminal-mode')) return;
+            if (!IS_TERMINAL) return;
             if (!('wakeLock' in navigator)) return;
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
@@ -889,38 +2000,6 @@
         });
 
         requestWakeLock();
-
-        // ---------- Terminal manual fallback ----------
-        async function submitManualRequest() {
-            const rollEl = document.getElementById('mfRoll');
-            const reasonEl = document.getElementById('mfReason');
-            const msg = document.getElementById('mfMsg');
-            const roll = rollEl.value.trim();
-            if (!roll) {
-                msg.style.color = '#BF2600';
-                msg.textContent = 'Enter your roll number.';
-                return;
-            }
-            msg.style.color = 'var(--text-secondary)';
-            msg.textContent = 'Sending…';
-            try {
-                const res = await fetch('/api/terminal/manual-request', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ roll_no: roll, reason: reasonEl.value.trim() })
-                });
-                const d = await res.json();
-                msg.style.color = d.success ? '#006644' : '#BF2600';
-                msg.textContent = d.message || '';
-                if (d.success) {
-                    // Clear immediately: the next student is standing right there.
-                    rollEl.value = ''; reasonEl.value = '';
-                    setTimeout(function () { msg.textContent = ''; }, 8000);
-                }
-            } catch (e) {
-                msg.style.color = '#BF2600';
-                msg.textContent = 'Connection failed. Try again.';
-            }
-        }
 
         window.addEventListener('beforeunload', function () {
             stopCamera();

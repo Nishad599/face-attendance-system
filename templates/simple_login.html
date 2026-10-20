@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login — CDAC Attendance</title>
-    <meta name="theme-color" content="#0052CC">
+    <meta name="theme-color" content="var(--color-primary)">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -84,14 +84,14 @@
 
         .role-toggle input:checked+label {
             border-color: var(--color-primary);
-            background: #DEEBFF;
+            background: var(--status-info-surface);
             color: var(--color-primary);
             font-weight: 600;
         }
 
         .login-error {
-            background: #FFEBE6;
-            color: #BF2600;
+            background: var(--status-bad-surface);
+            color: var(--status-bad-text);
             padding: 10px 14px;
             border-radius: 6px;
             font-size: 0.93rem;
@@ -320,7 +320,15 @@
                 if (data.success) {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i> Success!';
                     btn.classList.remove('app-btn-primary'); btn.classList.add('app-btn-success');
-                    setTimeout(() => { window.location.href = data.redirect_url || '/'; }, 400);
+                    // ?next= is where an expired session was headed, set by the
+                    // 401 handler. Honoured only if it is a path on this site:
+                    // an open redirect on a login page sends a signed-in user
+                    // to an attacker's copy of it.
+                    const next = new URLSearchParams(location.search).get('next');
+                    const safe = next && next.startsWith('/') && !next.startsWith('//');
+                    const dest = (data.must_change_password ? null : (safe ? next : null))
+                        || data.redirect_url || '/';
+                    setTimeout(() => { window.location.href = dest; }, 400);
                 } else {
                     errorDiv.textContent = data.message || 'Invalid credentials';
                     errorDiv.style.display = 'block';

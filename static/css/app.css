@@ -6,6 +6,9 @@
 /* --- CSS Variables --- */
 :root {
     --color-primary: #0052CC;
+    /* Links need more lift than the button fill can give: in dark
+       mode --color-primary on a card measured 3.98:1. */
+    --color-link: #0052CC;
     --color-primary-hover: #0747A6;
     --color-success: #00875A;
     --color-danger: #DE350B;
@@ -18,11 +21,41 @@
     --bg-input: #FAFBFC;
 
     --text-primary: #172B4D;
-    --text-secondary: #6B778C;
+    --text-secondary: #5E6C84;   /* 4.87:1 on --bg-page; #6B778C was 4.15 */
     --text-subtle: #97A0AF;
     --text-inverse: #FFFFFF;
 
     --border-color: #DFE1E6;
+
+    /* ---- Status scale ------------------------------------------------
+       "At risk", "marked", "needs attention" appear on nearly every page
+       and had no tokens at all, so each page hardcoded its own hex. The
+       result was two different reds (#BF2600 and #B3372E) and two
+       different greens (#006644 and #0E6B4A) all meaning the same thing,
+       plus pale surfaces that stayed near-white in dark mode.
+
+       Four roles, four slots each: a tinted surface, its border, text that
+       passes contrast on that surface, and a solid fill for chips and bars.
+       Redefined under [data-theme="dark"] below.                        */
+    --status-ok-surface: #E6F5EE;
+    --status-ok-border: #ABD9C3;
+    --status-ok-text: #0E6B4A;
+    --status-ok-solid: #17A06A;
+
+    --status-warn-surface: #FDF3E6;
+    --status-warn-border: #E0A458;
+    --status-warn-text: #8A4B00;
+    --status-warn-solid: #C98A2E;
+
+    --status-bad-surface: #FBEAE8;
+    --status-bad-border: #D98A84;
+    --status-bad-text: #B3372E;
+    --status-bad-solid: #C3453B;
+
+    --status-info-surface: #E8EFFC;
+    --status-info-border: #AFC4F5;
+    --status-info-text: #1B3FA0;
+    --status-info-solid: #2557D6;
     --border-radius: 8px;
     --border-radius-lg: 12px;
 
@@ -44,10 +77,36 @@
     --text-primary: #f8fafc;
     --text-secondary: #cbd5e1;
     --text-subtle: #64748b;
+
+    /* Status scale, dark. The light surfaces are near-white, so in dark mode
+       they used to sit on a dark card as glaring patches — and a status badge
+       is the one thing that must stay readable at a glance. Deep tinted
+       surfaces with light text instead. */
+    --status-ok-surface: #122C22;
+    --status-ok-border: #2F7A4F;
+    --status-ok-text: #8FE8B6;
+    --status-ok-solid: #3DD68C;
+
+    --status-warn-surface: #33260F;
+    --status-warn-border: #7A5A22;
+    --status-warn-text: #F0D3A0;
+    --status-warn-solid: #F2A33C;
+
+    --status-bad-surface: #351916;
+    --status-bad-border: #8A3A32;
+    --status-bad-text: #F5C4BF;
+    --status-bad-solid: #E5544B;
+
+    --status-info-surface: #15243C;
+    --status-info-border: #2E4A75;
+    --status-info-text: #AFC9FF;
+    --status-info-solid: #4C8DFF;
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
     --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.4);
     --color-primary: #3b82f6;
+    --color-link: #7dafff;
 }
 
 /* --- Reset & Base --- */
@@ -75,7 +134,7 @@ body {
 }
 
 a {
-    color: var(--color-primary);
+    color: var(--color-link);
     text-decoration: none;
 }
 
@@ -180,13 +239,34 @@ p {
 }
 
 .app-navbar-links a:hover {
-    background: #EBECF0;
+    background: var(--border-color);
     color: var(--text-primary);
     text-decoration: none;
 }
 
+/* Count of decisions waiting, on the Approvals link. navbar.js fills it and
+   unhides it; `hidden` keeps it out of the layout when there is nothing to
+   report, so the link does not jump once the count arrives. */
+.nav-badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.nav-badge[hidden] {
+    display: none;
+}
+
 .app-navbar-links a.active {
-    background: #DEEBFF;
+    background: var(--status-info-surface);
     color: var(--color-primary);
 }
 
@@ -439,7 +519,7 @@ p {
 }
 
 .app-btn-success:hover {
-    background: #006644;
+    background: var(--status-ok-text);
     color: var(--text-inverse);
 }
 
@@ -449,7 +529,7 @@ p {
 }
 
 .app-btn-danger:hover {
-    background: #BF2600;
+    background: var(--status-bad-text);
     color: var(--text-inverse);
 }
 
@@ -465,7 +545,7 @@ p {
 }
 
 .app-btn-subtle:hover {
-    background: #F4F5F7;
+    background: var(--bg-page);
     color: var(--text-primary);
 }
 
@@ -517,7 +597,7 @@ p {
 }
 
 .app-form-input:disabled {
-    background: #F4F5F7;
+    background: var(--bg-page);
     color: var(--text-subtle);
     cursor: not-allowed;
 }
@@ -542,7 +622,7 @@ select.app-form-input {
 .app-table th {
     text-align: left;
     padding: 10px 16px;
-    background: #F4F5F7;
+    background: var(--bg-page);
     font-weight: 600;
     color: var(--text-secondary);
     font-size: 0.79rem;
@@ -558,7 +638,7 @@ select.app-form-input {
 }
 
 .app-table tbody tr:hover {
-    background: #FAFBFC;
+    background: var(--bg-input);
 }
 
 .app-table tbody tr:last-child td {
@@ -577,27 +657,27 @@ select.app-form-input {
 }
 
 .app-badge-success {
-    background: #E3FCEF;
-    color: #006644;
+    background: var(--status-ok-surface);
+    color: var(--status-ok-text);
 }
 
 .app-badge-danger {
-    background: #FFEBE6;
-    color: #BF2600;
+    background: var(--status-bad-surface);
+    color: var(--status-bad-text);
 }
 
 .app-badge-warning {
-    background: #FFFAE6;
-    color: #FF8B00;
+    background: var(--status-warn-surface);
+    color: var(--status-warn-text);
 }
 
 .app-badge-info {
-    background: #DEEBFF;
-    color: #0747A6;
+    background: var(--status-info-surface);
+    color: var(--status-info-text);
 }
 
 .app-badge-neutral {
-    background: #F4F5F7;
+    background: var(--bg-page);
     color: var(--text-secondary);
 }
 
@@ -713,23 +793,23 @@ select.app-form-input {
 }
 
 .app-alert-info {
-    background: #DEEBFF;
-    color: #0747A6;
+    background: var(--status-info-surface);
+    color: var(--status-info-text);
 }
 
 .app-alert-success {
-    background: #E3FCEF;
-    color: #006644;
+    background: var(--status-ok-surface);
+    color: var(--status-ok-text);
 }
 
 .app-alert-warning {
-    background: #FFFAE6;
-    color: #FF8B00;
+    background: var(--status-warn-surface);
+    color: var(--status-warn-text);
 }
 
 .app-alert-danger {
-    background: #FFEBE6;
-    color: #BF2600;
+    background: var(--status-bad-surface);
+    color: var(--status-bad-text);
 }
 
 /* --- Notification Toast --- */
@@ -969,8 +1049,8 @@ select.app-form-input {
 }
 
 .current-timing {
-    background: #DEEBFF;
-    color: #0747A6;
+    background: var(--status-info-surface);
+    color: var(--status-info-text);
     padding: 8px 12px;
     border-radius: 6px;
     font-weight: 600;
@@ -1008,8 +1088,8 @@ select.app-form-input {
 }
 
 .active-slot {
-    background: #E3FCEF;
-    color: #006644;
+    background: var(--status-ok-surface);
+    color: var(--status-ok-text);
     padding: 12px 16px;
     border-radius: var(--border-radius);
     font-weight: 600;
@@ -1017,8 +1097,8 @@ select.app-form-input {
 }
 
 .next-slot {
-    background: #FFFAE6;
-    color: #FF8B00;
+    background: var(--status-warn-surface);
+    color: var(--status-warn-text);
     padding: 12px 16px;
     border-radius: var(--border-radius);
     font-weight: 600;
@@ -1026,8 +1106,8 @@ select.app-form-input {
 }
 
 .no-slots {
-    background: #FFEBE6;
-    color: #BF2600;
+    background: var(--status-bad-surface);
+    color: var(--status-bad-text);
     padding: 12px 16px;
     border-radius: var(--border-radius);
     font-weight: 600;
@@ -1233,7 +1313,7 @@ select.app-form-input {
 }
 
 .btn-success:hover {
-    background: #006644;
+    background: var(--status-ok-text);
     color: var(--text-inverse);
 }
 
@@ -1243,7 +1323,7 @@ select.app-form-input {
 }
 
 .btn-danger:hover {
-    background: #BF2600;
+    background: var(--status-bad-text);
     color: var(--text-inverse);
 }
 
@@ -1371,7 +1451,7 @@ table {
 table th {
     text-align: left;
     padding: 10px 16px;
-    background: #F4F5F7;
+    background: var(--bg-page);
     font-weight: 600;
     color: var(--text-secondary);
     font-size: 0.79rem;
@@ -1389,7 +1469,7 @@ table td {
 
 .students-table tbody tr:hover,
 table tbody tr:hover {
-    background: #FAFBFC;
+    background: var(--bg-input);
 }
 
 .students-table-container {
@@ -1438,7 +1518,7 @@ input[type="text"].search-input {
 
 .status.error {
     color: var(--color-danger);
-    background: #FFEBE6;
+    background: var(--status-bad-surface);
     border-radius: var(--border-radius);
 }
 
@@ -1558,15 +1638,15 @@ input[type="text"].search-input {
 }
 
 .instructions {
-    background: #DEEBFF;
+    background: var(--status-info-surface);
     border-radius: var(--border-radius);
     padding: 16px 20px;
     margin-bottom: 20px;
-    color: #0747A6;
+    color: var(--status-info-text);
 }
 
 .instructions h3 {
-    color: #0747A6;
+    color: var(--status-info-text);
     margin-bottom: 8px;
 }
 
@@ -1649,8 +1729,8 @@ input[type="text"].search-input {
 }
 
 .schedule-info {
-    background: #DEEBFF;
-    color: #0747A6;
+    background: var(--status-info-surface);
+    color: var(--status-info-text);
     padding: 8px 16px;
     border-radius: 6px;
     font-size: 0.86rem;
@@ -1661,9 +1741,9 @@ input[type="text"].search-input {
 
 /* Sunday notice */
 .sunday-notice {
-    background: #FFFAE6;
+    background: var(--status-warn-surface);
     border: 1px solid var(--color-warning);
-    color: #FF8B00;
+    color: var(--status-warn-text);
     padding: 12px 16px;
     border-radius: var(--border-radius);
     font-weight: 600;
@@ -1912,7 +1992,7 @@ input[type="text"].search-input {
 }
 
 .calendar-nav:hover {
-    background: #EBECF0;
+    background: var(--border-color);
 }
 
 .calendar-grid {
@@ -1954,18 +2034,18 @@ input[type="text"].search-input {
 }
 
 .calendar-day.present {
-    background: #E3FCEF;
-    color: #006644;
+    background: var(--status-ok-surface);
+    color: var(--status-ok-text);
 }
 
 .calendar-day.absent {
-    background: #FFEBE6;
-    color: #BF2600;
+    background: var(--status-bad-surface);
+    color: var(--status-bad-text);
 }
 
 .calendar-day.partial {
-    background: #FFFAE6;
-    color: #FF8B00;
+    background: var(--status-warn-surface);
+    color: var(--status-warn-text);
 }
 
 .calendar-day.empty {
@@ -2285,7 +2365,7 @@ input[type="file"] {
 /* --- Extra Tailwind color utilities (used by JS-generated HTML) --- */
 .bg-green-100,
 .bg-green-50 {
-    background: #E3FCEF;
+    background: var(--status-ok-surface);
 }
 
 .bg-green-500 {
@@ -2293,11 +2373,11 @@ input[type="file"] {
 }
 
 .bg-green-600 {
-    background: #006644;
+    background: var(--status-ok-text);
 }
 
 .bg-red-100 {
-    background: #FFEBE6;
+    background: var(--status-bad-surface);
 }
 
 .bg-red-500 {
@@ -2305,12 +2385,12 @@ input[type="file"] {
 }
 
 .bg-red-600 {
-    background: #BF2600;
+    background: var(--status-bad-text);
 }
 
 .bg-blue-100,
 .bg-blue-50 {
-    background: #DEEBFF;
+    background: var(--status-info-surface);
 }
 
 .bg-blue-500 {
@@ -2322,16 +2402,16 @@ input[type="file"] {
 }
 
 .bg-yellow-100 {
-    background: #FFFAE6;
+    background: var(--status-warn-surface);
 }
 
 .bg-orange-50,
 .bg-orange-100 {
-    background: #FFFAE6;
+    background: var(--status-warn-surface);
 }
 
 .bg-gray-100 {
-    background: #F4F5F7;
+    background: var(--bg-page);
 }
 
 .bg-gray-900 {
@@ -2340,29 +2420,29 @@ input[type="file"] {
 
 .text-green-600,
 .text-green-800 {
-    color: #006644;
+    color: var(--status-ok-text);
 }
 
 .text-red-600,
 .text-red-800 {
-    color: #BF2600;
+    color: var(--status-bad-text);
 }
 
 .text-blue-600,
 .text-blue-700,
 .text-blue-800 {
-    color: #0747A6;
+    color: var(--status-info-text);
 }
 
 .text-yellow-600,
 .text-yellow-700,
 .text-yellow-800 {
-    color: #FF8B00;
+    color: var(--status-warn-text);
 }
 
 .text-orange-600,
 .text-orange-800 {
-    color: #FF8B00;
+    color: var(--status-warn-text);
 }
 
 .text-purple-600 {
@@ -2469,11 +2549,11 @@ input[type="file"] {
 }
 
 .hover\:bg-green-600:hover {
-    background: #006644;
+    background: var(--status-ok-text);
 }
 
 .hover\:bg-red-600:hover {
-    background: #BF2600;
+    background: var(--status-bad-text);
 }
 
 .hover\:bg-blue-600:hover {
@@ -2531,7 +2611,7 @@ input[type="file"] {
 }
 
 .leader-item:hover {
-    background: #EBECF0;
+    background: var(--border-color);
 }
 
 .leader-info {

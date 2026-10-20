@@ -15,20 +15,34 @@
         CDAC Attendance
     </a>
     <div class="app-navbar-links">
-        <a href="/dashboard" id="nav-dashboard" data-roles="admin">
+        {# Only a superadmin ever sees this, and it is first: the platform
+           console is their home, not an institute's dashboard. #}
+        <a href="/superadmin" id="nav-platform" data-roles="superadmin">
+            <i class="fa-solid fa-building-columns"></i> Platform</a>
+        <a href="/dashboard" id="nav-dashboard" data-roles="admin,superadmin">
             <i class="fa-solid fa-house"></i> Dashboard</a>
         <a href="/teacher" id="nav-portal" data-roles="teacher">
             <i class="fa-solid fa-chalkboard-user"></i> My Batches</a>
+        {# Approvals is admin AND teacher. The four queues used to live only
+           inside the teacher portal, and this link is teacher-only, so an
+           admin had no route to a leave request, a dispute, a face
+           registration or a detail change — they could only reach them by
+           typing /teacher into the address bar. #}
+        <a href="/approvals" id="nav-approvals" data-roles="admin,teacher">
+            <i class="fa-solid fa-inbox"></i> Approvals
+            <span class="nav-badge" id="navApprovalCount" hidden></span></a>
         <a href="/attendance" id="nav-attendance" data-roles="admin,teacher,user,terminal">
             <i class="fa-solid fa-camera"></i> Attendance</a>
-        <a href="/students" id="nav-students" data-roles="admin">
-            <i class="fa-solid fa-users"></i> Students</a>
+        <a href="/people" id="nav-people" data-roles="admin,teacher">
+            <i class="fa-solid fa-users"></i> People</a>
         <a href="/admin/batches" id="nav-batches" data-roles="admin">
             <i class="fa-solid fa-layer-group"></i> Batches</a>
+        <a href="/insights" id="nav-insights" data-roles="admin,teacher">
+            <i class="fa-solid fa-chart-line"></i> Insights</a>
         <a href="/attendance-management" id="nav-reports" data-roles="admin">
-            <i class="fa-solid fa-table-list"></i> Reports</a>
-        <a href="/admin" id="nav-admin" data-roles="admin">
-            <i class="fa-solid fa-gear"></i> Admin</a>
+            <i class="fa-solid fa-table-list"></i> Records</a>
+        <a href="/settings" id="nav-settings" data-roles="admin">
+            <i class="fa-solid fa-gear"></i> Settings</a>
         <a href="/about" id="nav-about" data-roles="*">
             <i class="fa-solid fa-circle-info"></i> About</a>
     </div>

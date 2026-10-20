@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teacher Portal — CDAC Attendance</title>
-    <meta name="theme-color" content="#0052CC">
+    <meta name="theme-color" content="var(--color-primary)">
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="apple-touch-icon" href="/static/images/icon-192.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -32,7 +32,7 @@
         .chart { display: flex; align-items: flex-end; gap: 8px; height: 160px; padding-top: 10px; }
         .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
         .chart .col .bar { width: 70%; min-height: 2px; background: var(--color-primary); border-radius: 4px 4px 0 0; transition: height .3s; }
-        .chart .col .bar.off { background: #C1C7D0; }
+        .chart .col .bar.off { background: var(--border-color); }
         .chart .col .cap { font-size: .7rem; color: var(--text-secondary); white-space: nowrap; }
         .chart .col .val { font-size: .72rem; font-weight: 600; }
         @media (max-width:820px){ #tab-analytics > div[style*="grid"]{ grid-template-columns:1fr !important; } }
@@ -81,6 +81,20 @@
             <p class="muted">Manage attendance, holidays and onboarding for your assigned batches.</p>
         </div>
 
+        <!-- Leave, disputes, face registrations and detail changes used to be
+             four tabs here. They are their own page now: they are work waiting
+             on a decision, not a sub-view of a batch, and admins could not
+             reach them at all while they lived behind this teacher-only page. -->
+        <a href="/approvals" class="app-alert app-alert-info"
+           style="text-decoration:none;color:inherit;align-items:center;">
+            <i class="fa-solid fa-inbox"></i>
+            <div style="flex-grow:1;">
+                <strong>Approvals moved</strong> — leave, attendance disputes, face
+                registrations and detail changes are now in one inbox.
+            </div>
+            <span style="font-weight:600;white-space:nowrap;" id="portalApprovalCount">Open →</span>
+        </a>
+
         <div class="app-form-group" style="max-width:320px;">
             <label class="app-form-label">Batch</label>
             <select id="batchSelect" class="app-form-input" onchange="onBatchChange()"></select>
@@ -89,10 +103,6 @@
         <div class="app-tabs">
             <button class="app-tab active" data-tab="mark" onclick="switchTab('mark')">Mark Attendance</button>
             <button class="app-tab" data-tab="analytics" onclick="switchTab('analytics')">Analytics</button>
-            <button class="app-tab" data-tab="facereq" onclick="switchTab('facereq')">Face Requests</button>
-            <button class="app-tab" data-tab="profilereq" onclick="switchTab('profilereq')">Detail Requests</button>
-            <button class="app-tab" data-tab="grievances" onclick="switchTab('grievances')">Grievances</button>
-            <button class="app-tab" data-tab="leaves" onclick="switchTab('leaves')">Leave</button>
             <button class="app-tab" data-tab="modules" onclick="switchTab('modules')">Modules</button>
             <button class="app-tab" data-tab="holidays" onclick="switchTab('holidays')">Holidays</button>
             <button class="app-tab" data-tab="students" onclick="switchTab('students')">Students</button>
@@ -168,125 +178,6 @@
                         <tbody id="anPerStudent"><tr><td colspan="4" class="muted">Loading…</td></tr></tbody>
                     </table>
                 </div>
-            </div>
-        </div>
-
-        <!-- ===== FACE REQUESTS ===== -->
-        <div id="tab-facereq" style="display:none;">
-            <div class="toolbar">
-                <span class="muted">Students who registered their own face and need your approval.</span>
-                <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadFaceRequests()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-            </div>
-            <div class="bulkbar" id="frBulkbar" style="display:none;">
-                <button class="app-btn app-btn-success app-btn-sm" onclick="actFaceRequests('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
-                <button class="app-btn app-btn-danger app-btn-sm" onclick="actFaceRequests('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
-            </div>
-            <div class="app-table-wrapper">
-                <table class="app-table">
-                    <thead><tr>
-                        <th style="width:36px;"><input type="checkbox" id="frSelAll" onchange="frToggleAll(this)"></th>
-                        <th>Roll No</th><th>Name</th><th>Batch</th><th>Photos</th><th>Submitted</th><th>Action</th>
-                    </tr></thead>
-                    <tbody id="faceReqRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ===== PROFILE CHANGE REQUESTS ===== -->
-        <div id="tab-profilereq" style="display:none;">
-            <div class="toolbar">
-                <div style="display:flex;gap:10px;align-items:center;">
-                    <span class="muted">Students requesting changes to their own details.</span>
-                    <select id="prStatus" class="app-form-input" style="max-width:150px;" onchange="loadProfileReqs()">
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                </div>
-                <button class="app-btn app-btn-subtle app-btn-sm" onclick="loadProfileReqs()">
-                    <i class="fa-solid fa-rotate"></i> Refresh
-                </button>
-            </div>
-            <div class="bulkbar" id="prBulkbar" style="display:none;">
-                <button class="app-btn app-btn-success app-btn-sm" onclick="actProfileReqs('approve', true)">
-                    <i class="fa-solid fa-check"></i> Approve selected
-                </button>
-                <button class="app-btn app-btn-danger app-btn-sm" onclick="actProfileReqs('reject', true)">
-                    <i class="fa-solid fa-xmark"></i> Reject selected
-                </button>
-            </div>
-            <div class="app-table-wrapper">
-                <table class="app-table">
-                    <thead><tr>
-                        <th style="width:36px;"><input type="checkbox" id="prSelAll" onchange="prToggleAll(this)"></th>
-                        <th>Roll No</th><th>Name</th><th>Requested changes</th>
-                        <th>Reason</th><th>Submitted</th><th>Action</th>
-                    </tr></thead>
-                    <tbody id="profileReqRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ===== GRIEVANCES ===== -->
-        <div id="tab-grievances" style="display:none;">
-            <div class="controls">
-                <div class="app-form-group">
-                    <label class="app-form-label">Show</label>
-                    <select id="grStatus" class="app-form-input" onchange="loadGrievances()">
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                    </select>
-                </div>
-                <button class="app-btn app-btn-subtle" onclick="loadGrievances()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-            </div>
-            <div class="bulkbar" id="grBulkbar" style="display:none;">
-                <button class="app-btn app-btn-success app-btn-sm" onclick="actGrievances('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
-                <button class="app-btn app-btn-danger app-btn-sm" onclick="actGrievances('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
-            </div>
-            <div class="app-table-wrapper">
-                <table class="app-table">
-                    <thead>
-                        <tr>
-                            <th style="width:36px;" id="grSelAllCell"><input type="checkbox" id="grSelAll" onchange="grToggleAll(this)"></th>
-                            <th>Roll No</th><th>Name</th><th>Date</th><th>Session</th><th>Reason</th><th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="grievanceRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ===== LEAVE (planned absences) ===== -->
-        <div id="tab-leaves" style="display:none;">
-            <div class="controls">
-                <div class="app-form-group">
-                    <label class="app-form-label">Show</label>
-                    <select id="lvStatus" class="app-form-input" onchange="loadLeaves()">
-                        <option value="pending">Pending</option>
-                        <option value="approved">Approved</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="cancelled">Withdrawn</option>
-                    </select>
-                </div>
-                <button class="app-btn app-btn-subtle" onclick="loadLeaves()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-            </div>
-            <p class="muted" style="margin:0 0 12px;">Approved leave is excused: those days are
-                removed from the student's working-day total rather than counted as absent.</p>
-            <div class="bulkbar" id="lvBulkbar" style="display:none;">
-                <button class="app-btn app-btn-success app-btn-sm" onclick="actLeaves('approve', true)"><i class="fa-solid fa-check"></i> Approve selected</button>
-                <button class="app-btn app-btn-danger app-btn-sm" onclick="actLeaves('reject', true)"><i class="fa-solid fa-xmark"></i> Reject selected</button>
-            </div>
-            <div class="app-table-wrapper">
-                <table class="app-table">
-                    <thead>
-                        <tr>
-                            <th style="width:36px;" id="lvSelAllCell"><input type="checkbox" id="lvSelAll" onchange="lvToggleAll(this)"></th>
-                            <th>Roll No</th><th>Name</th><th>Dates</th><th>Days</th><th>Reason</th><th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="leaveRows"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
-                </table>
             </div>
         </div>
 
@@ -483,15 +374,13 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.app-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-            ['mark', 'analytics', 'facereq', 'profilereq', 'grievances', 'leaves', 'modules', 'holidays', 'students'].forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
+            // Face, profile, grievance and leave queues moved to /approvals.
+            ['mark', 'analytics', 'modules', 'holidays', 'students']
+                .forEach(t => document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none');
             if (tab === 'modules') loadModules();
             if (tab === 'holidays') loadHolidays();
             if (tab === 'students') loadPending();
-            if (tab === 'grievances') loadGrievances();
-            if (tab === 'leaves') loadLeaves();
             if (tab === 'analytics') loadAnalytics();
-            if (tab === 'facereq') loadFaceRequests();
-            if (tab === 'profilereq') loadProfileReqs();
         }
 
         // ---------- Analytics ----------
@@ -563,174 +452,6 @@
                 </tr>`).join('') : '<tr><td colspan="4" class="muted">No students.</td></tr>';
         }
 
-        // ---------- Face registration requests ----------
-        async function loadFaceRequests() {
-            const tbody = document.getElementById('faceReqRows');
-            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
-            const res = await fetch('/api/teacher/face-requests?status=pending');
-            const data = await res.json();
-            const reqs = data.requests || [];
-            document.getElementById('frBulkbar').style.display = reqs.length ? 'flex' : 'none';
-            if (!reqs.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="muted">No face registrations awaiting approval.</td></tr>';
-                return;
-            }
-            tbody.innerHTML = reqs.map(r => `
-                <tr>
-                    <td><input type="checkbox" class="frchk" value="${r.id}"></td>
-                    <td><strong>${esc(r.roll_no)}</strong></td>
-                    <td>${esc(r.student_name)}</td>
-                    <td><span class="app-badge app-badge-info">${esc(r.batch)}</span></td>
-                    <td>${r.photo_count}</td>
-                    <td class="muted">${esc(r.created_at)}</td>
-                    <td><div class="row-actions">
-                        <button class="app-btn app-btn-success app-btn-sm" onclick="actFaceRequests('approve', false, ${r.id})">Approve</button>
-                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actFaceRequests('reject', false, ${r.id})">Reject</button>
-                    </div></td>
-                </tr>`).join('');
-            document.getElementById('frSelAll').checked = false;
-        }
-        function frToggleAll(cb) { document.querySelectorAll('.frchk').forEach(c => c.checked = cb.checked); }
-        async function actFaceRequests(action, selectedOnly, singleId) {
-            let ids;
-            if (singleId) ids = [singleId];
-            else {
-                ids = Array.from(document.querySelectorAll('.frchk:checked')).map(c => parseInt(c.value));
-                if (!ids.length) { toast('No requests selected', 'error'); return; }
-            }
-            const verb = action === 'approve' ? 'Approve' : 'Reject';
-            let note = null;
-            if (action === 'reject') {
-                note = prompt('Reason for rejecting (shown to the student, optional):') || null;
-            } else if (!confirm(`Approve ${ids.length} face registration(s)? They will be recognised at the terminal.`)) {
-                return;
-            }
-            const res = await fetch('/api/teacher/face-requests/action', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids, action, note })
-            });
-            const data = await res.json();
-            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
-            if (data.success) { loadFaceRequests(); loadBatchStudents(); }
-        }
-
-        // ---------- Profile change requests ----------
-        async function loadProfileReqs() {
-            const status = document.getElementById('prStatus').value;
-            const tbody = document.getElementById('profileReqRows');
-            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
-            const res = await fetch('/api/teacher/profile-requests?status=' + status);
-            const data = await res.json();
-            const reqs = data.requests || [];
-            const isPending = status === 'pending';
-            document.getElementById('prBulkbar').style.display = isPending && reqs.length ? 'flex' : 'none';
-            if (!reqs.length) {
-                tbody.innerHTML = '<tr><td colspan="7" class="muted">No ' + status + ' requests.</td></tr>';
-                return;
-            }
-            tbody.innerHTML = reqs.map(function (r) {
-                const diff = r.diff.map(function (d) {
-                    return '<div style="margin-bottom:4px;"><span class="muted">' + esc(d.label) + ':</span> ' +
-                        '<span style="text-decoration:line-through;opacity:.6;">' + esc(d.from) + '</span> ' +
-                        '&rarr; <b>' + esc(d.to) + '</b></div>';
-                }).join('');
-                const actions = isPending
-                    ? '<div class="row-actions">' +
-                      '<button class="app-btn app-btn-success app-btn-sm" onclick="actProfileReqs(\'approve\', false, ' + r.id + ')">Approve</button>' +
-                      '<button class="app-btn app-btn-danger app-btn-sm" onclick="actProfileReqs(\'reject\', false, ' + r.id + ')">Reject</button>' +
-                      '</div>'
-                    : '<span class="app-badge ' + (r.status === 'approved' ? 'app-badge-success' : 'app-badge-danger') +
-                      '">' + esc(r.status) + '</span>';
-                return '<tr>' +
-                    '<td>' + (isPending ? '<input type="checkbox" class="prchk" value="' + r.id + '">' : '') + '</td>' +
-                    '<td><strong>' + esc(r.roll_no) + '</strong></td>' +
-                    '<td>' + esc(r.student_name) + '</td>' +
-                    '<td>' + diff + '</td>' +
-                    '<td class="muted">' + esc(r.reason || '-') + '</td>' +
-                    '<td class="muted">' + esc(r.created_at) + '</td>' +
-                    '<td>' + actions + '</td></tr>';
-            }).join('');
-            document.getElementById('prSelAll').checked = false;
-        }
-
-        function prToggleAll(cb) {
-            document.querySelectorAll('.prchk').forEach(function (c) { c.checked = cb.checked; });
-        }
-
-        async function actProfileReqs(action, selectedOnly, singleId) {
-            let ids;
-            if (singleId) {
-                ids = [singleId];
-            } else {
-                ids = Array.from(document.querySelectorAll('.prchk:checked')).map(function (c) {
-                    return parseInt(c.value);
-                });
-                if (!ids.length) { toast('No requests selected', 'error'); return; }
-            }
-            let note = null;
-            if (action === 'reject') {
-                note = prompt('Reason for rejecting (shown to the student, optional):') || null;
-            } else if (!confirm('Approve ' + ids.length + ' request(s)? The changes will be applied to their records.')) {
-                return;
-            }
-            const res = await fetch('/api/teacher/profile-requests/action', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: ids, action: action, note: note })
-            });
-            const data = await res.json();
-            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
-            if (data.success) { loadProfileReqs(); loadBatchStudents(); }
-        }
-
-        // ---------- Grievances ----------
-        async function loadGrievances() {
-            const status = document.getElementById('grStatus').value;
-            const tbody = document.getElementById('grievanceRows');
-            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
-            const res = await fetch('/api/teacher/grievances?status=' + status);
-            const data = await res.json();
-            const g = data.grievances || [];
-            const isPending = status === 'pending';
-            document.getElementById('grBulkbar').style.display = isPending && g.length ? 'flex' : 'none';
-            document.getElementById('grSelAllCell').style.visibility = isPending ? 'visible' : 'hidden';
-            if (!g.length) { tbody.innerHTML = `<tr><td colspan="7" class="muted">No ${status} requests.</td></tr>`; return; }
-            tbody.innerHTML = g.map(x => `
-                <tr>
-                    <td>${isPending ? `<input type="checkbox" class="grchk" value="${x.id}">` : ''}</td>
-                    <td><strong>${esc(x.roll_no)}</strong></td>
-                    <td>${esc(x.student_name)}</td>
-                    <td>${esc(x.date)}<br><span class="muted" style="font-size:.8rem;">${esc(x.day_name || '')}</span>
-                        ${x.is_working_day === false ? '<br><span class="app-badge app-badge-danger" title="' + esc(x.non_working_reason || '') + '">non-working day</span>' : ''}</td>
-                    <td>${esc(x.session_type)}</td>
-                    <td>${esc(x.reason)}</td>
-                    <td>${isPending ? `<div class="row-actions">
-                        <button class="app-btn app-btn-success app-btn-sm"
-                            ${x.is_working_day === false ? 'disabled title="Attendance cannot be marked on a Sunday or holiday"' : ''}
-                            onclick="actGrievances('approve', false, ${x.id})">Approve</button>
-                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actGrievances('reject', false, ${x.id})">Reject</button>
-                    </div>` : `<span class="app-badge ${x.status === 'approved' ? 'app-badge-success' : 'app-badge-danger'}">${esc(x.status)}</span>`}</td>
-                </tr>`).join('');
-            document.getElementById('grSelAll').checked = false;
-        }
-        function grToggleAll(cb) { document.querySelectorAll('.grchk').forEach(c => c.checked = cb.checked); }
-        async function actGrievances(action, selectedOnly, singleId) {
-            let ids;
-            if (singleId) ids = [singleId];
-            else {
-                ids = Array.from(document.querySelectorAll('.grchk:checked')).map(c => parseInt(c.value));
-                if (!ids.length) { toast('No requests selected', 'error'); return; }
-            }
-            const verb = action === 'approve' ? 'Approve' : 'Reject';
-            if (!confirm(`${verb} ${ids.length} request(s)?` + (action === 'approve' ? ' They will be marked present.' : ''))) return;
-            const res = await fetch('/api/teacher/grievances/action', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids, action })
-            });
-            const data = await res.json();
-            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
-            if (data.success) loadGrievances();
-        }
-
         // ---------- Modules + timetable ----------
         let _ttSlots = [], _ttSubjects = [];
 
@@ -751,7 +472,7 @@
             tbody.innerHTML = subjects.length ? subjects.map(s => {
                 const st = stats[s.id] || {};
                 const rate = st.rate == null ? '—' : st.rate + '%';
-                const colour = st.at_risk ? '#DE350B' : '#00875A';
+                const colour = st.at_risk ? 'var(--status-bad-solid)' : 'var(--status-ok-solid)';
                 return `<tr${s.is_active ? '' : ' style="opacity:.5;"'}>
                     <td><strong>${esc(s.name)}</strong>${s.is_active ? '' : ' <span class="app-badge app-badge-neutral">inactive</span>'}</td>
                     <td>${esc(s.code || '—')}</td>
@@ -925,85 +646,6 @@
             toast(d.message || (d.success ? 'Saved' : 'Failed'), d.success ? 'success' : 'error');
         }
 
-        // ---------- Leave (planned absences) ----------
-        async function loadLeaves() {
-            const status = document.getElementById('lvStatus').value;
-            const tbody = document.getElementById('leaveRows');
-            tbody.innerHTML = '<tr><td colspan="7" class="muted">Loading…</td></tr>';
-            const res = await fetch('/api/teacher/leaves?status=' + status);
-            const data = await res.json();
-            const rows = data.leaves || [];
-            const isPending = status === 'pending';
-            document.getElementById('lvBulkbar').style.display = isPending && rows.length ? 'flex' : 'none';
-            document.getElementById('lvSelAllCell').style.visibility = isPending ? 'visible' : 'hidden';
-            if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7" class="muted">No ${status} requests.</td></tr>`; return; }
-            tbody.innerHTML = rows.map(x => {
-                // Show the weekday, so "Sat → Sun" is obviously not two days off.
-                const span = x.start_date === x.end_date
-                    ? esc(x.start_date) + '<br><span class="muted" style="font-size:.8rem;">' +
-                      esc(x.start_day || '') + '</span>'
-                    : esc(x.start_date) + ' → ' + esc(x.end_date) +
-                      '<br><span class="muted" style="font-size:.8rem;">' +
-                      esc(x.start_day || '') + ' → ' + esc(x.end_day || '') + '</span>';
-                // Flag requests whose dates have already passed: approving one
-                // still excuses those days, but the teacher should notice.
-                const late = x.upcoming ? '' :
-                    ' <span class="app-badge app-badge-warning">past</span>';
-                return `
-                <tr>
-                    <td>${isPending ? `<input type="checkbox" class="lvchk" value="${x.id}">` : ''}</td>
-                    <td><strong>${esc(x.roll_no)}</strong></td>
-                    <td>${esc(x.student_name)}</td>
-                    <td>${span}${late}</td>
-                    <td>${x.days}${x.working_days != null && x.working_days !== x.days
-                        ? '<br><span class="muted" style="font-size:.8rem;">' + x.working_days + ' working</span>' : ''}</td>
-                    <td>${esc(x.reason)}</td>
-                    <td>${isPending ? `<div class="row-actions">
-                        <button class="app-btn app-btn-success app-btn-sm" onclick="actLeaves('approve', false, ${x.id})">Approve</button>
-                        <button class="app-btn app-btn-danger app-btn-sm" onclick="actLeaves('reject', false, ${x.id})">Reject</button>
-                    </div>` : `<span class="app-badge ${x.status === 'approved' ? 'app-badge-success' : 'app-badge-neutral'}">${esc(x.status)}</span>`}</td>
-                </tr>`;
-            }).join('');
-            document.getElementById('lvSelAll').checked = false;
-        }
-        function lvToggleAll(cb) { document.querySelectorAll('.lvchk').forEach(c => c.checked = cb.checked); }
-        async function actLeaves(action, selectedOnly, singleId) {
-            let ids;
-            if (singleId) ids = [singleId];
-            else {
-                ids = Array.from(document.querySelectorAll('.lvchk:checked')).map(c => parseInt(c.value));
-                if (!ids.length) { toast('No requests selected', 'error'); return; }
-            }
-            const verb = action === 'approve' ? 'Approve' : 'Reject';
-            if (!confirm(`${verb} ${ids.length} leave request(s)?` +
-                (action === 'approve' ? ' Those days will not count against attendance.' : ''))) return;
-            const res = await fetch('/api/teacher/leaves/action', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids, action })
-            });
-            const data = await res.json();
-            toast(data.message || (data.success ? 'Done' : 'Failed'), data.success ? 'success' : 'error');
-            if (data.success) loadLeaves();
-        }
-
-        async function init() {
-            document.getElementById('markDate').value = new Date().toISOString().slice(0, 10);
-            const res = await fetch('/api/courses');
-            const data = await res.json();
-            batches = (data.courses || []).filter(c => c.is_active);
-            const sel = document.getElementById('batchSelect');
-            if (!batches.length) { sel.innerHTML = '<option value="">No batches assigned</option>'; document.getElementById('rosterRows').innerHTML = '<tr><td colspan="5" class="muted">No batches assigned. Ask an admin.</td></tr>'; return; }
-            sel.innerHTML = batches.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-            loadRoster();
-        }
-        function onBatchChange() {
-            loadRoster();
-            if (document.getElementById('tab-holidays').style.display !== 'none') loadHolidays();
-            if (document.getElementById('tab-students').style.display !== 'none') loadPending();
-            if (document.getElementById('tab-analytics').style.display !== 'none') loadAnalytics();
-            if (document.getElementById('tab-grievances').style.display !== 'none') loadGrievances();
-            if (document.getElementById('tab-profilereq').style.display !== 'none') loadProfileReqs();
-        }
 
         // ---------- Mark attendance ----------
         async function loadRoster() {
@@ -1018,7 +660,7 @@
             const s = data.summary;
             document.getElementById('markSummary').innerHTML = `
                 <div class="pill"><div class="n">${s.total}</div><div class="l">Students</div></div>
-                <div class="pill"><div class="n" style="color:#36B37E;">${s.present}</div><div class="l">Present</div></div>
+                <div class="pill"><div class="n" style="color:var(--status-ok-solid);">${s.present}</div><div class="l">Present</div></div>
                 <div class="pill"><div class="n" style="color:#FF5630;">${s.absent}</div><div class="l">Absent</div></div>
                 <div class="pill"><div class="n">${s.rate}%</div><div class="l">Rate</div></div>`;
 
@@ -1110,7 +752,7 @@
             const res = await fetch('/api/students/bulk-upload', { method: 'POST', body: fd });
             const data = await res.json();
             document.getElementById('uploadMsg').innerHTML = esc(data.message || '') +
-                (data.errors && data.errors.length ? '<br><span style="color:#BF2600;">' + data.errors.map(esc).join('<br>') + '</span>' : '');
+                (data.errors && data.errors.length ? '<br><span style="color:var(--status-bad-text);">' + data.errors.map(esc).join('<br>') + '</span>' : '');
             if (data.success) { document.getElementById('csvFile').value = ''; loadPending(); }
         }
         // Full batch student list with actions (searchable + paginated)
@@ -1192,7 +834,7 @@
             });
             const data = await res.json();
             const msg = document.getElementById('addMsg');
-            msg.style.color = data.success ? '#006644' : '#BF2600';
+            msg.style.color = data.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
             msg.textContent = data.message || '';
             if (data.success) {
                 ['addRoll', 'addName', 'addEmail', 'addDob'].forEach(id => document.getElementById(id).value = '');

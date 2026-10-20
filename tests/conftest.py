@@ -36,6 +36,23 @@ CREATE TABLE students (
     must_change_password INTEGER DEFAULT 1,
     dob TEXT
 );
+-- migrate_phase10: the tenant. Everything else reaches its institute through
+-- courses.institute_id.
+CREATE TABLE institutes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    contact_email TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    created_at TIMESTAMP,
+    -- migrate_phase12: what /about renders. Optional; an institute that fills
+    -- in nothing gets its name and nothing else.
+    tagline TEXT,
+    about TEXT,
+    address TEXT,
+    phone TEXT,
+    website TEXT
+);
 CREATE TABLE courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -45,7 +62,8 @@ CREATE TABLE courses (
     is_active BOOLEAN DEFAULT 1,
     created_at TIMESTAMP,
     terminal_pin_hash TEXT,
-    half_day_enabled INTEGER DEFAULT 0
+    half_day_enabled INTEGER DEFAULT 0,
+    institute_id INTEGER
 );
 CREATE TABLE attendance (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,17 +79,26 @@ CREATE TABLE attendance (
     course_id INTEGER,
     subject_id INTEGER
 );
+-- migrate_phase9: `attendance` has no UNIQUE constraint of its own, so the
+-- INSERT OR IGNORE writers only dedupe while this index exists. COALESCE
+-- because a whole-day manual/bulk mark carries no session_type, and both
+-- backends treat NULLs as distinct in a unique index.
+CREATE UNIQUE INDEX idx_attendance_unique_slot
+    ON attendance (student_id, date, COALESCE(session_type, ''));
 -- Mirrors production, including `type NOT NULL` — a laxer fixture here let
 -- import_calendar.py ship without it and crash on the real database.
 -- UNIQUE is (date, course_id) as of migrate_phase8: the old date-only
 -- constraint stopped two batches taking the same public holiday.
+-- institute_id (migrate_phase10): course_id NULL means "every batch", but only
+-- within this institute. Without it one tenant's holiday wipes another's day.
 CREATE TABLE holidays (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date DATE NOT NULL,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    course_id INTEGER
+    course_id INTEGER,
+    institute_id INTEGER
 );
 CREATE UNIQUE INDEX idx_holidays_date_course ON holidays (date, course_id);
 CREATE TABLE users (
@@ -79,10 +106,11 @@ CREATE TABLE users (
     username TEXT UNIQUE NOT NULL,
     name TEXT, email TEXT,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('superadmin','admin','teacher')),
     is_active INTEGER DEFAULT 1,
     must_change_password INTEGER DEFAULT 0,
-    created_at TIMESTAMP
+    created_at TIMESTAMP,
+    institute_id INTEGER
 );
 CREATE TABLE teacher_batches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +150,10 @@ CREATE TABLE audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     actor_type TEXT, actor_id INTEGER, actor_name TEXT,
     action TEXT NOT NULL, target TEXT, details TEXT,
-    course_id INTEGER, created_at TIMESTAMP
+    course_id INTEGER, created_at TIMESTAMP,
+    -- migrate_phase11: a number is the institute the action belongs to, NULL
+    -- is platform level and only a superadmin may read it.
+    institute_id INTEGER
 );
 CREATE TABLE session_configs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,6 +199,31 @@ CREATE TABLE timetable (
     session_type TEXT NOT NULL, subject_id INTEGER, room TEXT, created_at TIMESTAMP
 );
 CREATE UNIQUE INDEX idx_timetable_slot ON timetable (course_id, weekday, session_type);
+-- Needed by clear_all_data, which deletes from each of these in turn.
+CREATE TABLE slot_attendance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL, date DATE NOT NULL, slot_id TEXT NOT NULL,
+    time_marked TEXT, detection_confidence REAL,
+    is_manual BOOLEAN DEFAULT 0, manual_reason TEXT,
+    created_at TEXT, course_id INTEGER,
+    UNIQUE(student_id, date, slot_id)
+);
+CREATE TABLE face_encodings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER, encoding_data BLOB, photo_path TEXT,
+    quality_score REAL, created_at TIMESTAMP
+);
+CREATE TABLE registration_sessions (
+    session_id TEXT PRIMARY KEY, student_data TEXT,
+    photos_uploaded INTEGER DEFAULT 0, status TEXT DEFAULT 'in_progress',
+    created_at TIMESTAMP, expires_at TIMESTAMP
+);
+CREATE TABLE daily_attendance_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date DATE NOT NULL UNIQUE, total_students INTEGER DEFAULT 0,
+    present_morning INTEGER DEFAULT 0, present_afternoon INTEGER DEFAULT 0,
+    total_present INTEGER DEFAULT 0, last_updated TEXT
+);
 CREATE TABLE consent_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL, purpose TEXT NOT NULL DEFAULT 'biometric_attendance',
@@ -248,6 +304,85 @@ def seeded(db):
         )
     db.commit()
     return {"ids": ids, "course_id": 1, "start": start, "work_days": work}
+
+
+@pytest.fixture
+def two_institutes(db):
+    """Two institutes that must never see each other.
+
+    Deliberately adversarial: both run a batch, both declare an institute-wide
+    holiday on the SAME date with different names, both have a terminal PIN set,
+    and both have a student. Anything that leaks shows up as the other
+    institute's name or roll number.
+
+        institute 1  Northgate      course 1  NG-BATCH   student NG001
+        institute 2  Southpoint     course 2  SP-BATCH   student SP001
+    """
+    cur = db.cursor()
+    for iid, name, slug in ((1, "Northgate Institute", "northgate"),
+                            (2, "Southpoint Academy", "southpoint")):
+        cur.execute(
+            "INSERT INTO institutes (id, name, slug, is_active, created_at) "
+            "VALUES (?, ?, ?, 1, ?)",
+            (iid, name, slug, datetime.now().isoformat()),
+        )
+
+    start = (date.today() - timedelta(days=20)).strftime("%Y-%m-%d")
+    for cid, iid, name in ((1, 1, "NG-BATCH"), (2, 2, "SP-BATCH")):
+        cur.execute(
+            "INSERT INTO courses (id, name, start_date, end_date, is_active, "
+            "created_at, institute_id, terminal_pin_hash) "
+            "VALUES (?, ?, ?, '2027-12-31', 1, ?, ?, 'x')",
+            (cid, name, start, datetime.now().isoformat(), iid),
+        )
+
+    students = {}
+    for roll, cid in (("NG001", 1), ("SP001", 2)):
+        cur.execute(
+            "INSERT INTO students (student_id, name, email, course_id, status, "
+            "joining_date) VALUES (?, ?, ?, ?, 'active', ?)",
+            (roll, f"Student {roll}", f"{roll.lower()}@test.local", cid, start),
+        )
+        students[roll] = cur.lastrowid
+
+    # Staff, one per institute, plus a platform-level superadmin.
+    for uname, role, iid in (("ng_admin", "admin", 1),
+                             ("sp_admin", "admin", 2),
+                             ("owner", "superadmin", None)):
+        cur.execute(
+            "INSERT INTO users (username, name, password_hash, role, is_active, "
+            "institute_id) VALUES (?, ?, 'x', ?, 1, ?)",
+            (uname, uname, role, iid),
+        )
+
+    # The collision that matters: same date, institute-wide in BOTH.
+    clash = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
+    cur.execute(
+        "INSERT INTO holidays (date, name, type, course_id, institute_id) "
+        "VALUES (?, 'Northgate Founders Day', 'institute', NULL, 1)", (clash,))
+    cur.execute(
+        "INSERT INTO holidays (date, name, type, course_id, institute_id) "
+        "VALUES (?, 'Southpoint Sports Day', 'institute', NULL, 2)", (clash,))
+
+    # Slot timings differ, so a leak changes whether a student is "in slot".
+    for cid, start_t, end_t in ((1, "08:30:00", "09:30:00"),
+                                (2, "14:00:00", "15:00:00")):
+        cur.execute(
+            "INSERT INTO session_configs (course_id, session_type, start_time, "
+            "end_time, is_active) VALUES (?, 'morning_1', ?, ?, 1)",
+            (cid, start_t, end_t))
+
+    db.commit()
+    return {"clash_date": clash, "students": students,
+            "courses": {1: 1, 2: 2}, "start": start}
+
+
+def session_for(role, institute_id=None, user_id=1):
+    """A session dict shaped the way SessionManager stores one."""
+    return {
+        "user_type": role,
+        "user_info": {"id": user_id, "role": role, "institute_id": institute_id},
+    }
 
 
 @pytest.fixture

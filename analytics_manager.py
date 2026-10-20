@@ -48,17 +48,13 @@ class AnalyticsManager:
         return result
 
     def _holiday_dates(self, cursor, course_id=None):
-        cursor.execute(
-            "SELECT date FROM holidays WHERE course_id IS NULL OR course_id = ?",
-            (course_id,),
-        )
-        out = set()
-        for row in cursor.fetchall():
-            try:
-                out.add(datetime.strptime(str(row[0])[:10], '%Y-%m-%d').date())
-            except (ValueError, TypeError):
-                continue
-        return out
+        """Holidays for this batch — see working_days.holiday_dates for the rule.
+
+        Scoping holidays by institute (Phase 10) lives in one place so that a
+        batch's percentage cannot differ between this module and reports.py.
+        """
+        import working_days
+        return working_days.holiday_dates(cursor, course_id)
 
     # ---- analytics -----------------------------------------------------
     def get_class_analytics(self, days=14, course_id=None):

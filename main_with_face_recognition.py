@@ -1,7 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request, Body, Depends, Cookie, Response, UploadFile, File, BackgroundTasks
 from typing import Optional, Dict, Any, List
-from fastapi.responses import HTMLResponse, Response, RedirectResponse
+from fastapi.responses import (HTMLResponse, Response, RedirectResponse,
+                               JSONResponse)
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
+from urllib.parse import quote
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
 import sys
@@ -24,7 +27,6 @@ from asian_face_model import asian_face_recognizer
 import secrets
 import hashlib
 import re
-from phase1_integration import enhance_existing_attendance_system, add_phase1_api_endpoints
 from attendance_manager import create_slot_manager_instance
 import pytz
 import csv
@@ -33,6 +35,7 @@ from analytics_manager import AnalyticsManager
 from anti_spoofing import anti_spoof_checker
 import timetable
 import working_days
+import tenancy
 
 
 def sweep_stale_registration_files(max_age_hours: int = 6) -> int:
@@ -127,7 +130,28 @@ class SessionAttendance(BaseModel):
     session_type: str
     arrival_time: Optional[str] = None
 
+# Distinguishes "caller said institute_id=None, meaning platform level" from
+# "caller said nothing, infer it". None is a meaningful value here, so it
+# cannot double as the default.
+_UNSET = object()
+
 app = FastAPI(title="Face Recognition Attendance System", version="2.0.0")
+
+# Nothing was compressed. The roster JSON, the CSV exports and every page are
+# highly compressible text, and the deployment serves them over a campus LAN
+# to terminals and phones. One line, and the roster drops by roughly three
+# quarters.
+#
+# minimum_size keeps it off the small JSON replies the terminal polls, where
+# the gzip header and the CPU cost exceed anything saved. Images, JPEG frames
+# and the ONNX models are already compressed, and Starlette skips a response
+# that declares its own Content-Encoding, so they are unaffected.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# When this process started, for the dashboard's uptime reading. Module scope,
+# so it survives for the life of the worker and resets on every restart —
+# which is exactly what "uptime" should mean here.
+APP_STARTED_AT = datetime.now()
 
 # Security Headers Middleware
 @app.middleware("http")
@@ -141,18 +165,82 @@ async def add_security_headers(request, call_next):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
-    # Cache control for sensitive pages
-    if request.url.path in ["/dashboard", "/admin", "/students", "/attendance"]:
+    # Don't let a signed-out browser's Back button show the last person's
+    # roster. This was a hardcoded list — "/dashboard", "/admin", "/students",
+    # "/attendance" — which drifted twice: /admin and /students became
+    # redirects, and /people, /settings, /insights, /approvals and /superadmin
+    # were added without it, so the pages carrying the most student data were
+    # the cacheable ones. Everything is no-store except what is genuinely
+    # public, which is the safe direction for a list to drift in.
+    if not _is_public_path(request.url.path):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-    
+
     return response
+
+
+# Served the same to anyone, so cacheable: static assets, the login screen,
+# the privacy notice (it has to be readable before signing in), the
+# institute's own /about page, and the PWA plumbing.
+#
+# Deliberately not here: "/" and "/logout", which redirect based on the
+# session, so a cached response sends the next person to the wrong place;
+# "/change-password" and "/register", which are for someone already signed in.
+_PUBLIC_PATHS = {"/login", "/privacy", "/about", "/contact",
+                 "/forgot-password", "/favicon.ico",
+                 "/manifest.webmanifest", "/sw.js"}
+
+
+def _is_public_path(path: str) -> bool:
+    return path in _PUBLIC_PATHS or path.startswith("/static/")
+
+
+@app.exception_handler(HTTPException)
+async def _auth_redirect(request: Request, exc: HTTPException):
+    """Send an unauthenticated page request to the login screen.
+
+    Every protected page answered a signed-out browser with the raw JSON body
+    {"detail": "Authentication required"}. An admin whose session had expired
+    clicked a bookmark and got that, with no way forward but to type the URL
+    of the login page — and it is the first thing a prospective customer sees.
+
+    Only for page navigations: an /api/ call keeps its JSON 401, because the
+    pages' own fetch handlers check the status and would otherwise receive the
+    login HTML and try to parse it as JSON.
+    """
+    if (exc.status_code in (401, 403)
+            and not request.url.path.startswith("/api/")
+            and "text/html" in request.headers.get("accept", "")):
+        nxt = request.url.path
+        if request.url.query:
+            nxt += "?" + request.url.query
+        return RedirectResponse(
+            url="/login?next=" + quote(nxt, safe=""), status_code=303)
+    return JSONResponse(status_code=exc.status_code,
+                        content={"detail": exc.detail},
+                        headers=getattr(exc, "headers", None))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Session Management Configuration
 SESSION_SECRET_KEY = secrets.token_urlsafe(32)
 SESSION_TIMEOUT_HOURS = 24
+
+# How close a face has to be to count as the same person: cosine similarity
+# between 512-D buffalo_l embeddings, so 1.0 is identical and 0.0 unrelated.
+#
+# This was written out as a local `RECOGNITION_THRESHOLD = 0.60` inside each
+# handler that matches a face, and once more as a class attribute, which is
+# the kind of duplication that gets tuned in one place and silently disagrees
+# in the others. Raising it in the terminal but not in the staff camera would
+# mean the same student is recognised at one and not the other.
+#
+# Tunable without a code change, because the right value depends on the
+# cameras and the lighting: too low and two students get confused for one
+# another, too high and a legitimate student is told to try again. Validate a
+# change against real captures (test_antispoof.py --camera) rather than by
+# feel, and remember it is the floor for marking somebody present.
+FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.60") or 0.60)
 
 # Dedicated connection for session storage (persistent across restarts).
 _session_conn = get_connection(dict_rows=True)
@@ -288,10 +376,19 @@ def require_authentication(session: Optional[Dict[str, Any]] = Cookie(None, alia
 templates = Jinja2Templates(directory="templates")
 # Security middleware functions
 def require_admin_access(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Require admin access"""
+    """Require admin access.
+
+    A superadmin passes: they own the platform and can already read every
+    institute through the console, so 403-ing them out of /dashboard would be
+    surprising rather than safer. Note this is full access, not read-only
+    support access — every privileged action still goes through audit().
+
+    The converse is what must never hold: an admin is NOT a superadmin, which
+    is why require_superadmin is a separate guard rather than a flag here.
+    """
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if session.get("user_type") != "admin":
+    if session.get("user_type") not in ("admin", "superadmin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return session
 
@@ -309,7 +406,7 @@ def require_teacher_or_admin(session: Optional[Dict[str, Any]] = Depends(get_cur
     """Allow teachers and admins (attendance/analytics/holiday/bulk-mark actions)."""
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
-    if session.get("user_type") not in ["admin", "teacher"]:
+    if session.get("user_type") not in ["admin", "teacher", "superadmin"]:
         raise HTTPException(status_code=403, detail="Teacher or admin access required")
     return session
 
@@ -388,8 +485,149 @@ def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     return [r[0] for r in rows]
 
 
+def best_match(probe, institute_id, gallery=None):
+    """(db_id, name, similarity) for the closest known face, or (None, None, 0.0).
+
+    `gallery` is an already-resolved (matrix, names, ids) from
+    match_gallery(). Pass it when looping over the faces in one frame:
+    resolving it per face re-ran tenancy.is_single_tenant(), which is a
+    COUNT(*) on institutes, so a six-face frame issued eight of them.
+
+    One place, because there were two copies of this loop — the staff camera
+    and the terminal — and a third in a now-deleted face-login endpoint. They
+    had already drifted once over the threshold constant. A difference here
+    means the same student is recognised at one camera and not another, which
+    is the kind of bug people explain as "the system doesn't like me".
+
+    Takes the fast path when the pre-normalised matrix is available and falls
+    back to the per-row loop when it is not (mixed embedding dimensions on a
+    part-migrated database), so behaviour is identical either way.
+    """
+    if probe is None:
+        return None, None, 0.0
+    matrix, names, ids = (gallery if gallery is not None
+                          else attendance_system.match_gallery(institute_id))
+
+    if matrix is not None and len(ids):
+        p = np.asarray(probe, dtype=attendance_system.MATCH_DTYPE)
+        n = np.linalg.norm(p)
+        if n == 0:
+            return None, None, 0.0
+        if p.shape[0] != matrix.shape[1]:
+            return None, None, 0.0
+        sims = matrix @ (p / n)
+        i = int(np.argmax(sims))
+        return ids[i], names[i], float(sims[i])
+
+    encodings, names, ids = attendance_system.gallery_for(institute_id)
+    if not len(encodings):
+        return None, None, 0.0
+    p = np.asarray(probe, dtype=np.float64)
+    pn = np.linalg.norm(p)
+    if pn == 0:
+        return None, None, 0.0
+    p = p / pn
+    best_i, best_sim = -1, -1.0
+    for i, known in enumerate(encodings):
+        k = np.asarray(known, dtype=np.float64)
+        if k.shape != p.shape:
+            continue
+        kn = np.linalg.norm(k)
+        if kn == 0:
+            continue
+        sim = float(np.dot(p, k / kn))
+        if sim > best_sim:
+            best_sim, best_i = sim, i
+    if best_i < 0:
+        return None, None, 0.0
+    return ids[best_i], names[best_i], best_sim
+
+
+def visible_student_filter(session: Dict[str, Any], column: str = "course_id"):
+    """(sql, params) limiting a student query to what this session may see.
+
+    Two separate restrictions, and a list endpoint needs both:
+
+      the institute  — one customer never sees another's students
+      the batch      — a teacher sees only the batches assigned to them
+
+    tenancy.student_filter() does the first. teacher_allowed_course_ids() does
+    the second and returns None for an admin, meaning "every batch" — which is
+    why applying it on its own silently checks nothing for an admin. That is
+    exactly how /api/students/list, /api/attendance/today/slots and
+    /api/attendance/bulk-export came to return every institute's roster to any
+    admin who asked: three endpoints that take no id, so an id-based sweep
+    never looked at them.
+
+    It lives here rather than in tenancy.py because the batch half needs the
+    app's own connection and session shape.
+    """
+    where, params = tenancy.student_filter(attendance_system.conn, session, column)
+    allowed = teacher_allowed_course_ids(session)
+    if allowed is None:
+        return where, params
+    if not allowed:
+        # A teacher with no batches assigned sees nobody, not everybody.
+        return where + f" AND {column} IN (SELECT NULL)", params
+    marks = ",".join("?" for _ in allowed)
+    return (where + f" AND {column} IN ({marks})",
+            list(params) + [int(c) for c in allowed])
+
+
+def assert_student_allowed(session: Dict[str, Any], student_id: int):
+    """403 unless this session may act on that student.
+
+    Every endpoint that takes a student id from the URL needs this. Without
+    it an admin at one institute could read or edit another institute's
+    student simply by guessing the number — the session check passes, because
+    they ARE an admin, just not of that student's institute.
+    """
+    conn = attendance_system.conn
+    row = conn.execute("SELECT course_id FROM students WHERE id = ?",
+                       (student_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Student not found")
+    course_id = row[0]
+    if course_id is None:
+        return          # not in a batch yet; nothing to scope by
+    if not tenancy.session_may_touch_course(conn, session, course_id):
+        raise HTTPException(status_code=403, detail="Not your institute")
+    assert_course_allowed(session, course_id)
+
+
+def assert_staff_allowed(session: Dict[str, Any], user_id: int):
+    """403 unless this session may act on that staff account.
+
+    Same reasoning as assert_student_allowed: an admin editing, deleting or
+    resetting the password of another institute's teacher is a cross-tenant
+    write that the role check alone does not catch.
+    """
+    conn = attendance_system.conn
+    row = conn.execute("SELECT institute_id FROM users WHERE id = ?",
+                       (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if tenancy.is_superadmin(session) or tenancy.is_single_tenant(conn):
+        return
+    mine = tenancy.institute_for_session(session)
+    if row[0] is None or mine is None or int(row[0]) != int(mine):
+        raise HTTPException(status_code=403, detail="Not your institute")
+
+
 def assert_course_allowed(session: Dict[str, Any], course_id: int):
-    """Raise 403 if a teacher tries to act on a batch they aren't assigned to."""
+    """403 unless this session may act on that batch.
+
+    Two separate rules, and both matter:
+      * a teacher may only touch batches they are assigned to;
+      * anyone may only touch batches in their own institute.
+
+    The second was missing. teacher_allowed_course_ids() returns None for an
+    admin meaning "all batches", which was true with one institute and became
+    "every tenant's batches" with two.
+    """
+    if not tenancy.session_may_touch_course(attendance_system.conn, session, course_id):
+        raise HTTPException(status_code=403, detail="Not your institute")
+
     allowed = teacher_allowed_course_ids(session)
     if allowed is None:
         return
@@ -433,29 +671,61 @@ class AttendanceSystem:
         self.init_advanced_tables()
     
     def load_student_faces(self):
-        """Load all student face encodings from database with dimension detection"""
+        """Load student face encodings, and index them by institute.
+
+        THE CROSS-TENANT HAZARD THIS FIXES: this used to build one flat list of
+        every active student's embedding, and the detection endpoints matched
+        an incoming face against all of it. With a second institute on the same
+        deployment, a student enrolled at institute A walking up to institute
+        B's terminal would be recognised — and marked present in a batch that
+        is not theirs, in a customer's data that is not theirs.
+
+        The flat lists are still populated, because a single-institute
+        deployment uses them unchanged and plenty of code reads them. Alongside
+        them `self.face_index` maps institute_id -> (encodings, names, ids), and
+        `gallery_for()` is what the detection paths actually call.
+        """
         if not hasattr(asian_face_recognizer, 'use_insightface') or not asian_face_recognizer.use_insightface:
             print("[WARN]  buffalo_l model not available")
             return
-        
+
         cursor = self.conn.cursor()
-        cursor.execute('SELECT id, name, face_encoding FROM students WHERE status = "active" AND face_encoding IS NOT NULL')
-        
+        try:
+            cursor.execute(
+                'SELECT s.id, s.name, s.face_encoding, c.institute_id '
+                'FROM students s LEFT JOIN courses c ON c.id = s.course_id '
+                'WHERE s.status = "active" AND s.face_encoding IS NOT NULL')
+            rows = cursor.fetchall()
+        except Exception:
+            # Pre-migrate_phase10: courses has no institute_id yet.
+            cursor.execute('SELECT id, name, face_encoding, NULL FROM students '
+                           'WHERE status = "active" AND face_encoding IS NOT NULL')
+            rows = cursor.fetchall()
+
         self.known_face_encodings = []
         self.known_face_names = []
         self.known_face_ids = []
-        
+        self.face_index = {}
+
         embedding_dimensions = []
-        
-        for row in cursor.fetchall():
-            student_id, name, face_encoding_blob = row
+
+        for row in rows:
+            student_id, name, face_encoding_blob, institute_id = row
             if face_encoding_blob:
                 face_encoding = np.frombuffer(face_encoding_blob, dtype=np.float64)
                 embedding_dimensions.append(len(face_encoding))
                 self.known_face_encodings.append(face_encoding)
                 self.known_face_names.append(name)
                 self.known_face_ids.append(student_id)
-        
+
+                bucket = self.face_index.setdefault(institute_id,
+                                                    {"encodings": [], "names": [], "ids": []})
+                bucket["encodings"].append(face_encoding)
+                bucket["names"].append(name)
+                bucket["ids"].append(student_id)
+
+        self._build_match_matrices()
+
         # Detect embedding method based on dimensions
         if embedding_dimensions:
             most_common_dim = max(set(embedding_dimensions), key=embedding_dimensions.count)
@@ -470,7 +740,119 @@ class AttendanceSystem:
                 self.embedding_method = "unknown"
         else:
             print("[STATS] No student faces loaded")
-    
+
+        if len(self.face_index) > 1:
+            print("[STATS] Face galleries per institute: " + ", ".join(
+                f"{k}={len(v['ids'])}" for k, v in sorted(
+                    self.face_index.items(), key=lambda kv: (kv[0] is None, kv[0]))))
+
+    # Embeddings are stored float64 (4 KB each) because that is what was
+    # written to the blobs, but a cosine similarity does not need it: float32
+    # halves the memory traffic and lets BLAS use the wider SIMD path.
+    MATCH_DTYPE = np.float32
+
+    def _build_match_matrices(self):
+        """Pre-normalise each gallery into one (N, 512) matrix, once.
+
+        Matching used to be a Python loop doing, per known face, two
+        np.linalg.norm divisions and a 512-element dot product — and it
+        re-normalised the *probe* inside that loop, so once per student
+        instead of once per face. Measured on the dev machine, per face:
+
+            gallery      loop      matmul
+              100      0.78 ms    0.22 ms
+              500      3.53 ms    0.17 ms      21x
+             2000     12.42 ms    0.12 ms     108x
+
+        Pre-normalised rows turn the whole thing into `M @ probe`, one BLAS
+        call whose cost barely moves with N. It is per *face*, so a group shot
+        of eight multiplied the waste by eight.
+
+        Built here rather than lazily because load_student_faces() already
+        knows when the gallery changed, and a lazy build would have to decide
+        that all over again.
+        """
+        self.match_index = {}
+        for key, bucket in self.face_index.items():
+            self.match_index[key] = self._matrix_from(bucket["encodings"])
+        self.match_all = self._matrix_from(self.known_face_encodings)
+
+    def _matrix_from(self, encodings):
+        """(N, D) float32 with unit-length rows, or None when there is nothing.
+
+        Mixed dimensions can occur on a database that has both InsightFace
+        512-D and legacy face_recognition 128-D embeddings; np.stack would
+        raise on those, so the majority dimension wins and the rest are left
+        to the slow path rather than taking the whole gallery down.
+        """
+        if not encodings:
+            return None
+        dims = [len(e) for e in encodings]
+        want = max(set(dims), key=dims.count)
+        rows = [e for e in encodings if len(e) == want]
+        if len(rows) != len(encodings):
+            print(f"[WARN] {len(encodings) - len(rows)} face(s) have a "
+                  f"non-standard embedding size and are excluded from the "
+                  f"fast match path")
+            return None
+        M = np.stack(rows).astype(self.MATCH_DTYPE, copy=False)
+        norms = np.linalg.norm(M, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0          # a zero vector matches nothing
+        return M / norms
+
+    def gallery_for(self, institute_id=None):
+        """(encodings, names, ids) a request is allowed to match against.
+
+        `institute_id=None` means unscoped, which is correct for a superadmin
+        and for a single-institute deployment. Anything else gets that
+        institute's students only — plus any student whose batch has no
+        institute yet, which can only happen on a half-migrated database and
+        would otherwise make those students unrecognisable.
+        """
+        if not hasattr(self, "face_index"):
+            self.face_index = {}
+        if institute_id is None or tenancy.is_single_tenant(self.conn):
+            return (self.known_face_encodings, self.known_face_names, self.known_face_ids)
+
+        encodings, names, ids = [], [], []
+        for key in (int(institute_id), None):
+            bucket = self.face_index.get(key)
+            if not bucket:
+                continue
+            encodings.extend(bucket["encodings"])
+            names.extend(bucket["names"])
+            ids.extend(bucket["ids"])
+        return encodings, names, ids
+
+    def match_gallery(self, institute_id=None):
+        """(matrix, names, ids) for the fast path: `matrix @ probe` gives the
+        cosine similarity against every row at once.
+
+        The matrix is None when it could not be built — an empty gallery, or
+        mixed embedding dimensions — and callers fall back to gallery_for().
+        Returning the names and ids alongside keeps row order and label order
+        provably the same, which is the one thing that must not drift: an
+        off-by-one here marks the wrong student present.
+        """
+        if not hasattr(self, "match_index"):
+            self._build_match_matrices()
+        if institute_id is None or tenancy.is_single_tenant(self.conn):
+            return (getattr(self, "match_all", None),
+                    self.known_face_names, self.known_face_ids)
+
+        key = int(institute_id)
+        buckets = [k for k in (key, None) if self.face_index.get(k)]
+        if len(buckets) == 1:
+            # The common multi-tenant case: one institute, no concatenation,
+            # so the matrix built at load time is used as it is.
+            only = buckets[0]
+            b = self.face_index[only]
+            return self.match_index.get(only), b["names"], b["ids"]
+
+        # A half-migrated database, where some batches have no institute yet.
+        encodings, names, ids = self.gallery_for(institute_id)
+        return self._matrix_from(encodings), names, ids
+
     def start_registration_session(self, name: str, email: str, student_id: str):
         """Start a new registration session"""
         session_id = str(uuid.uuid4())
@@ -509,7 +891,10 @@ class AttendanceSystem:
         self.conn.commit()
         return session_id, "Registration session started"
     
-    DUPLICATE_FACE_THRESHOLD = 0.60
+    # Same threshold as recognition, and deliberately so: "these two
+    # embeddings are the same person" is one question, asked here to
+    # block a second registration and at the camera to mark attendance.
+    DUPLICATE_FACE_THRESHOLD = FACE_MATCH_THRESHOLD
 
     def find_matching_student(self, encoding, exclude_student_code=None, exclude_db_id=None):
         """Return (student_name, similarity) if `encoding` already belongs to a
@@ -532,21 +917,39 @@ class AttendanceSystem:
             if exclude_db_id is not None:
                 exclude_ids.add(exclude_db_id)
 
-            enc = np.asarray(encoding, dtype=np.float64)
-            enc_norm = enc / np.linalg.norm(enc)
-
             best_name, best_sim = None, 0.0
-            for known, db_id, name in zip(self.known_face_encodings,
-                                          self.known_face_ids,
-                                          self.known_face_names):
-                if db_id in exclude_ids:
-                    continue
-                k = np.asarray(known, dtype=np.float64)
-                if k.shape != enc_norm.shape:
-                    continue
-                sim = float(np.dot(enc_norm, k / np.linalg.norm(k)))
-                if sim > best_sim:
-                    best_sim, best_name = sim, name
+            matrix = getattr(self, "match_all", None)
+
+            if matrix is not None and len(self.known_face_ids):
+                enc = np.asarray(encoding, dtype=self.MATCH_DTYPE)
+                n = np.linalg.norm(enc)
+                if n == 0 or enc.shape[0] != matrix.shape[1]:
+                    return None, 0.0
+                sims = matrix @ (enc / n)
+                if exclude_ids:
+                    # Mask rather than filter, so row order still lines up
+                    # with known_face_names. -inf can never win an argmax.
+                    for i, db_id in enumerate(self.known_face_ids):
+                        if db_id in exclude_ids:
+                            sims[i] = -np.inf
+                i = int(np.argmax(sims))
+                if np.isfinite(sims[i]):
+                    best_sim = float(sims[i])
+                    best_name = self.known_face_names[i]
+            else:
+                enc = np.asarray(encoding, dtype=np.float64)
+                enc_norm = enc / np.linalg.norm(enc)
+                for known, db_id, name in zip(self.known_face_encodings,
+                                              self.known_face_ids,
+                                              self.known_face_names):
+                    if db_id in exclude_ids:
+                        continue
+                    k = np.asarray(known, dtype=np.float64)
+                    if k.shape != enc_norm.shape:
+                        continue
+                    sim = float(np.dot(enc_norm, k / np.linalg.norm(k)))
+                    if sim > best_sim:
+                        best_sim, best_name = sim, name
 
             if best_sim >= self.DUPLICATE_FACE_THRESHOLD:
                 return best_name, best_sim
@@ -855,19 +1258,11 @@ class AttendanceSystem:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # Create course_settings table
-        cursor.execute(f'''
-            CREATE TABLE IF NOT EXISTS course_settings (
-                id {SERIAL},
-                academic_year TEXT NOT NULL,
-                semester TEXT NOT NULL,
-                start_date DATE NOT NULL,
-                end_date DATE NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
+        # course_settings was created here. It was never written to and never
+        # read -- a CREATE TABLE and nothing else, anywhere in the codebase.
+        # migrate_phase13 drops it; not re-creating it is what makes that
+        # stick. Academic years and semesters live on `courses`.
+
         # Add new columns to attendance table if they don't exist
         from db import column_exists
         if not column_exists(self.conn, 'attendance', 'manual_reason'):
@@ -907,25 +1302,15 @@ class AttendanceSystem:
             )
         ''')
         
-        # Session attendance table
-        cursor.execute(f'''
-            CREATE TABLE IF NOT EXISTS session_attendance (
-                id {SERIAL},
-                student_id INTEGER NOT NULL,
-                course_id INTEGER NOT NULL,
-                session_type TEXT NOT NULL,
-                date DATE NOT NULL,
-                arrival_time TIME,
-                is_late BOOLEAN DEFAULT FALSE,
-                is_manual BOOLEAN DEFAULT FALSE,
-                manual_reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (student_id) REFERENCES students (id),
-                FOREIGN KEY (course_id) REFERENCES courses (id),
-                UNIQUE(student_id, course_id, session_type, date)
-            )
-        ''')
-        
+        # NOTE: `session_attendance` used to be created here. It was a third
+        # attendance store alongside `attendance` (what every report and
+        # analytic reads) and `slot_attendance` (which enforces one mark per
+        # slot). Nothing ever wrote it — its only writer was a method in the
+        # retired phase1_integration module that was never attached to this
+        # class — so it is no longer created on fresh installs. An existing
+        # deployment keeps its empty table; dropping it is safe but left to a
+        # deliberate manual step rather than an automatic migration.
+
         # Add columns to existing attendance table if they don't exist
         from db import column_exists
         if not column_exists(self.conn, 'attendance', 'session_type'):
@@ -1002,26 +1387,6 @@ class AttendanceSystem:
         end_time = datetime.strptime(session_config[1], '%H:%M:%S').time()
         
         return start_time <= current_time <= end_time
-
-    def get_session_attendance_today(self, session_type: str):
-        """Get today's attendance for a specific session"""
-        today = datetime.now().date().strftime('%Y-%m-%d')
-        course = self.get_active_course()
-        
-        if not course:
-            return []
-        
-        cursor = self.conn.cursor()
-        cursor.execute('''
-            SELECT s.id, s.name, s.student_id, sa.arrival_time, sa.is_late
-            FROM students s
-            LEFT JOIN session_attendance sa ON s.id = sa.student_id 
-                AND sa.course_id = ? AND sa.session_type = ? AND sa.date = ?
-            WHERE s.status = 'active'
-            ORDER BY s.name
-        ''', (course[0], session_type, today))
-        
-        return cursor.fetchall()
 
     def create_course(self, name: str, start_date: str, end_date: str, description: str = None):
         """Create a new course"""
@@ -1181,90 +1546,70 @@ class AttendanceSystem:
 
 
 
-    def get_today_attendance(self):
-        """Get today's session-based attendance with proper timezone handling"""
-        timezone = pytz.timezone('Asia/Kolkata')  # Ensure to use your desired timezone
-        today = datetime.now(timezone).date()  # Localize to the right timezone
+    def get_today_attendance(self, session=None):
+        """Today's attendance, one row per active student.
+
+        Reads the primary `attendance` table. It previously joined
+        `session_attendance` on session_type 'morning'/'afternoon' — a table
+        nothing has ever written (its only writer lived in the retired
+        phase1_integration module, and the slot keys are 'morning_1' etc.
+        anyway), so both time columns came back NULL for everyone and the
+        admin page's "Present Today" was meaningless.
+
+        Returns tuples of
+            (name, roll_no, email, morning_time, afternoon_time, first_time)
+        where `first_time` is the earliest mark of the day regardless of slot.
+        A whole-day manual or bulk mark carries no session_type, so it shows up
+        in `first_time` only — which is why presence must be judged on that
+        column and not on the two slot columns.
+        """
+        timezone = pytz.timezone('Asia/Kolkata')
+        today = datetime.now(timezone).date().strftime('%Y-%m-%d')
         cursor = self.conn.cursor()
 
-        cursor.execute('''
-            SELECT s.name, s.student_id, s.email, 
-                sa_morning.arrival_time as morning_time,
-                sa_afternoon.arrival_time as afternoon_time
+        # Every active student's name and email, so it has to respect the
+        # caller's institute.
+        where, params = (tenancy.student_filter(self.conn, session, "s.course_id")
+                         if session else ("", []))
+
+        sql = """
+            SELECT s.name, s.student_id, s.email,
+                   MIN(CASE WHEN a.session_type LIKE 'morning%' THEN a.time_in END)
+                       AS morning_time,
+                   MIN(CASE WHEN a.session_type LIKE 'afternoon%' THEN a.time_in END)
+                       AS afternoon_time,
+                   MIN(a.time_in) AS first_time
             FROM students s
-            LEFT JOIN session_attendance sa_morning ON s.id = sa_morning.student_id 
-                AND sa_morning.date = ? AND sa_morning.session_type = 'morning'
-            LEFT JOIN session_attendance sa_afternoon ON s.id = sa_afternoon.student_id 
-                AND sa_afternoon.date = ? AND sa_afternoon.session_type = 'afternoon'
+            LEFT JOIN attendance a
+                   ON a.student_id = s.id AND a.date = ?
             WHERE s.status = 'active'
+        """ + where + """
+            GROUP BY s.id, s.name, s.student_id, s.email
             ORDER BY s.name
-        ''', (today, today))
+        """
+        cursor.execute(sql, tuple([today] + params))
 
         return cursor.fetchall()
 
-    
-    def mark_manual_session_attendance(self, student_id: int, date_str: str, session_type: str, reason: str = None):
-        """Mark session attendance manually - FIXED to use slot_attendance and handle full day"""
+    # mark_manual_session_attendance() was removed here. It wrote only to
+    # `slot_attendance`, never to `attendance` — the table every report,
+    # analytic and export reads — so a teacher's manual mark left the student
+    # absent in every figure that mattered. /api/attendance/manual/session now
+    # delegates to the bulk-mark path, which writes the right table and also
+    # refuses Sundays, holidays and batches the caller does not own.
+
+    def get_student_count(self, session=None):
+        """Active students the caller is allowed to see.
+
+        Unscoped this reported every institute's students on a shared
+        deployment — both a leak and simply the wrong number on screen.
+        """
+        where, params = (tenancy.student_filter(self.conn, session)
+                         if session else ("", []))
         cursor = self.conn.cursor()
-
-        # Reject Sundays and holidays. The previous check here looked only at
-        # holidays, ignored Sundays entirely, and matched any batch's holiday
-        # rather than this student's — see working_days.check.
-        row = cursor.execute(
-            "SELECT course_id FROM students WHERE id = ?", (student_id,)
-        ).fetchone()
-        ok_day, why = working_days.check(self.conn, row[0] if row else None, date_str)
-        if not ok_day:
-            return False, why
-
-
-        timezone = pytz.timezone('Asia/Kolkata')
-        now = datetime.now(timezone)
-        current_time = now.strftime('%H:%M:%S')
-        current_timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
-
-        slots_to_mark = []
-        if session_type == 'full_day':
-            slots_to_mark = ['morning_1', 'morning_2', 'afternoon_1', 'afternoon_2']
-        else:
-            slots_to_mark = [session_type]
-            
-        marked_count = 0
-        already_marked = 0
-        
-        for slot in slots_to_mark:
-            # Check if already marked for this session in slot_attendance
-            cursor.execute('''
-                SELECT id FROM slot_attendance 
-                WHERE student_id = ? AND date = ? AND slot_id = ?
-            ''', (student_id, date_str, slot))
-            
-            if cursor.fetchone():
-                already_marked += 1
-                continue
-            
-            # Mark session attendance in slot_attendance table
-            cursor.execute('''
-                INSERT INTO slot_attendance 
-                (student_id, date, slot_id, time_marked, is_manual, manual_reason, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (student_id, date_str, slot, current_time, True, reason, current_timestamp))
-            marked_count += 1
-        
-        self.conn.commit()
-        
-        if marked_count > 0:
-            msg = f"Successfully marked {marked_count} session(s)"
-            if already_marked > 0:
-                msg += f" ({already_marked} were already marked)"
-            return True, msg
-        else:
-            return False, "All selected sessions were already marked for this date"
-        
-    def get_student_count(self):
-        """Get total number of active students"""
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
+        cursor.execute(
+            'SELECT COUNT(*) FROM students WHERE status = "active"' + where,
+            tuple(params))
         return cursor.fetchone()[0]
            
 
@@ -1447,6 +1792,36 @@ sweep_stale_registration_files()
 # slot manager (it reads those tables at construction time).
 attendance_manager = create_slot_manager_instance()
 
+
+def get_slot_manager():
+    """The one AttendanceSlotManager, instead of a fresh one per request.
+
+    Six handlers called create_slot_manager_instance() on every request, two
+    of them the hottest paths in the app: /api/attendance/live-count, which
+    every terminal and every open attendance page polls every 10 seconds, and
+    /api/detect_attendance_slots, which each terminal posts to every 3
+    seconds. Its constructor is not cheap and, worse, not read-only:
+
+        a new DB connection
+        5x CREATE TABLE IF NOT EXISTS  + commit     <- a write lock
+        load_session_configs()         4 SELECTs
+        ensure_default_configs()       + commit     <- another write lock
+
+    So each terminal took roughly 80 write locks a minute on a database that
+    takes one writer at a time, purely to re-create tables that already
+    existed. Four terminals at a slot boundary -- exactly when marking is
+    heaviest -- is over 300 a minute. That is what SQLITE_BUSY_TIMEOUT_MS was
+    quietly absorbing.
+
+    Nothing needed the fresh instance: config changes already call
+    reload_config() on this shared one (see PUT /api/admin/session-config),
+    which is the only state it caches.
+    """
+    global attendance_manager
+    if attendance_manager is None:
+        attendance_manager = create_slot_manager_instance()
+    return attendance_manager
+
 # Session management helpers
 def get_user_from_session(request: Request) -> Optional[dict]:
     """Simple session check - you can enhance this later"""
@@ -1467,8 +1842,10 @@ class SimpleAdminLogin(BaseModel):
     username: str
     password: str
 
-class SimpleFaceLogin(BaseModel):
-    image_data: str
+# There was a SimpleFaceLogin model here, for POST /api/face-login, which
+# took a base64 image and returned a signed-in student session. It is gone:
+# see the note above the student login handler for why a face is an
+# attendance signal here and never a credential.
 
 from auth_utils import verify_password, hash_password, default_student_password
 
@@ -1505,14 +1882,22 @@ def authenticate_user(username: str, password: str, roles: List[str]) -> Optiona
 
     Returns a user_info dict on success, else None.
     """
-    row = attendance_system.conn.execute(
-        "SELECT id, username, name, password_hash, role, is_active, must_change_password "
-        "FROM users WHERE username = ?",
-        (username,),
-    ).fetchone()
+    try:
+        row = attendance_system.conn.execute(
+            "SELECT id, username, name, password_hash, role, is_active, "
+            "must_change_password, institute_id FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+    except Exception:
+        # Pre-migrate_phase10 database: no institute_id column yet.
+        row = attendance_system.conn.execute(
+            "SELECT id, username, name, password_hash, role, is_active, "
+            "must_change_password, NULL FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
     if not row:
         return None
-    uid, uname, name, pw_hash, role, is_active, must_change = row
+    uid, uname, name, pw_hash, role, is_active, must_change, institute_id = row
     if not is_active or role not in roles:
         return None
     if not verify_password(password, pw_hash):
@@ -1523,6 +1908,10 @@ def authenticate_user(username: str, password: str, roles: List[str]) -> Optiona
         "name": name or uname,
         "role": role,
         "must_change_password": bool(must_change),
+        # Carried on the session so every later request knows which institute
+        # this principal belongs to without another lookup. NULL for a
+        # superadmin, which tenancy.institute_for_session reads as "all".
+        "institute_id": institute_id,
     }
 
 # API Routes
@@ -1558,19 +1947,53 @@ async def simple_login_page(request: Request):
     """Simple dual login page"""
     return templates.TemplateResponse("simple_login.html", {"request": request})
 
-def audit(session, action, target=None, details=None, course_id=None):
-    """Record a sensitive action (who did what). Best-effort: never raises."""
+def audit(session, action, target=None, details=None, course_id=None,
+          institute_id=_UNSET):
+    """Record a sensitive action (who did what). Best-effort: never raises.
+
+    `institute_id` decides who may later read the entry:
+
+        a number  the institute it belongs to; its admins see it
+        None      platform level; only a superadmin sees it
+
+    Left unset it is inferred — the batch's institute if there is one, else
+    the actor's. A superadmin acting with no batch in play therefore records
+    a platform-level entry, which is what stopped one customer's dashboard
+    showing that another customer had just been created.
+    """
     try:
         info = (session or {}).get("user_info", {}) or {}
-        attendance_system.conn.execute(
-            "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, target, details, course_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ((session or {}).get("user_type"), info.get("id"),
-             info.get("name") or info.get("username"),
-             action, str(target) if target is not None else None,
-             str(details) if details is not None else None, course_id),
-        )
-        attendance_system.conn.commit()
+        conn = attendance_system.conn
+
+        if institute_id is _UNSET:
+            institute_id = None
+            if course_id is not None:
+                institute_id = tenancy.institute_of_course(conn, course_id)
+            if institute_id is None:
+                institute_id = tenancy.institute_for_session(session)
+
+        try:
+            conn.execute(
+                "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, "
+                "target, details, course_id, institute_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                ((session or {}).get("user_type"), info.get("id"),
+                 info.get("name") or info.get("username"),
+                 action, str(target) if target is not None else None,
+                 str(details) if details is not None else None, course_id,
+                 institute_id),
+            )
+        except Exception:
+            # Pre-migrate_phase11 database: no institute_id column yet.
+            conn.execute(
+                "INSERT INTO audit_log (actor_type, actor_id, actor_name, action, "
+                "target, details, course_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ((session or {}).get("user_type"), info.get("id"),
+                 info.get("name") or info.get("username"),
+                 action, str(target) if target is not None else None,
+                 str(details) if details is not None else None, course_id),
+            )
+        conn.commit()
     except Exception as e:
         print(f"[WARN] audit log skipped ({action}): {e}")
 
@@ -1646,7 +2069,12 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
             return {"success": False,
                     "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."}
 
-        user_info = authenticate_user(username, password, roles=["admin", "teacher"])
+        # 'superadmin' belongs here: migrate_phase10 added the role and
+        # require_superadmin guards the platform console, but this list did
+        # not include it — so the role existed and nobody could ever log in
+        # as one.
+        user_info = authenticate_user(username, password,
+                                      roles=["superadmin", "admin", "teacher"])
         if not user_info:
             record_login_failure(username)
             return {"success": False, "message": "Invalid username or password"}
@@ -1656,7 +2084,8 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
         session_token = SessionManager.create_session(role, user_info)
         _set_session_cookie(response, session_token)
 
-        redirect = "/dashboard" if role == "admin" else "/teacher"
+        redirect = {"superadmin": "/superadmin",
+                    "admin": "/dashboard"}.get(role, "/teacher")
         if user_info.get("must_change_password"):
             redirect = "/change-password"
 
@@ -1674,7 +2103,25 @@ async def simple_admin_login(login_data: SimpleAdminLogin, response: Response):
 
 @app.post("/api/user-login")
 async def user_login(login_data: SimpleAdminLogin, response: Response):
-    """Student login: roll number (student_id) + password, against students table."""
+    """Student login: roll number (student_id) + password, against students table.
+
+    This is the only way a student signs in. There used to be a second one,
+    POST /api/face-login, which took a base64 image and handed back a student
+    session cookie — no password. It was reachable, unauthenticated, and
+    documented in the README, but no page in the app ever called it.
+
+    It is deleted rather than hardened, because an HTTP endpoint cannot tell a
+    live face from a photograph of one. Nothing attests that the bytes came
+    from a camera at all: a student's photo lifted off social media, posted to
+    the endpoint, returned their account. It was also the one login path with
+    no throttle, so the gallery could be brute-forced at will.
+
+    The attendance terminal matches faces too, and that is fine, because the
+    difference is what a match buys you. There a face is an attendance signal,
+    on a staff-provisioned kiosk, behind a per-batch PIN, in the room, with a
+    liveness check and a correctable outcome. Here it would have been a
+    credential, and an account takeover is not correctable.
+    """
     try:
         student_id = (login_data.username or "").strip()
         password = login_data.password or ""
@@ -1711,6 +2158,8 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
             "course_id": row[5],
             "must_change_password": bool(row[6]),
             "has_face": bool(row[7]),
+            # A student's institute follows their batch.
+            "institute_id": tenancy.institute_of_course(attendance_system.conn, row[5]),
         }
         session_token = SessionManager.create_session("student", user_info)
         _set_session_cookie(response, session_token)
@@ -1729,123 +2178,6 @@ async def user_login(login_data: SimpleAdminLogin, response: Response):
     except Exception as e:
         print(f"[ERROR] Student login error: {str(e)}")
         return {"success": False, "message": f"Login failed: {str(e)}"}
-
-@app.post("/api/face-login")
-async def simple_face_login(login_data: SimpleFaceLogin, response: Response):
-    """Simple face login - uses existing face recognition"""
-    try:
-        # Use your existing face recognition code
-        if not FACE_RECOGNITION_AVAILABLE:
-            return {
-                "success": False,
-                "message": "Face recognition not available",
-                "faces_detected": 0
-            }
-        
-        # Convert base64 to image
-        if login_data.image_data.startswith('data:image'):
-            image_data_clean = login_data.image_data.split(',')[1]
-        else:
-            image_data_clean = login_data.image_data
-        
-        image_bytes = base64.b64decode(image_data_clean)
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        image_array = np.array(image)
-        
-        # Use your existing face detection
-        detected_faces = asian_face_recognizer.detect_faces_optimized(image_array)
-        
-        if len(detected_faces) == 0:
-            return {
-                "success": False,
-                "message": "No face detected",
-                "faces_detected": 0
-            }
-        
-        if len(detected_faces) > 1:
-            return {
-                "success": False,
-                "message": "Multiple faces detected",
-                "faces_detected": len(detected_faces)
-            }
-        
-        face_encoding = detected_faces[0]['embedding']
-        
-        # Find best match using your existing system
-        if len(attendance_system.known_face_encodings) > 0:
-            similarities = []
-            for known_encoding in attendance_system.known_face_encodings:
-                face_norm = face_encoding / np.linalg.norm(face_encoding)
-                known_norm = known_encoding / np.linalg.norm(known_encoding)
-                similarity = np.dot(face_norm, known_norm)
-                similarities.append(similarity)
-            
-            best_match_index = np.argmax(similarities)
-            best_similarity = similarities[best_match_index]
-            
-            RECOGNITION_THRESHOLD = 0.60
-            
-            if best_similarity > RECOGNITION_THRESHOLD:
-                db_id = attendance_system.known_face_ids[best_match_index]
-                student_name = attendance_system.known_face_names[best_match_index]
-
-                # Look up roll number / batch for a consistent student session
-                srow = attendance_system.conn.execute(
-                    "SELECT student_id, course_id, must_change_password FROM students WHERE id = ?",
-                    (db_id,),
-                ).fetchone()
-                roll_no = srow[0] if srow else db_id
-                course_id = srow[1] if srow else None
-                must_change = bool(srow[2]) if srow else False
-
-                user_info = {
-                    "id": db_id,
-                    "name": student_name,
-                    "student_id": roll_no,
-                    "role": "student",
-                    "course_id": course_id,
-                    "must_change_password": must_change,
-                    "has_face": True,
-                }
-
-                session_token = SessionManager.create_session("student", user_info)
-                _set_session_cookie(response, session_token)
-
-                return {
-                    "success": True,
-                    "message": "Face login successful",
-                    "student": {
-                        "id": db_id,
-                        "name": student_name,
-                        "confidence": float(best_similarity)
-                    },
-                    "redirect_url": "/change-password" if must_change else "/student",
-                    "faces_detected": 1
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": "Face not recognized",
-                    "faces_detected": 1
-                }
-        else:
-            return {
-                "success": False,
-                "message": "No students registered",
-                "faces_detected": 1
-            }
-            
-    except Exception as e:
-        return {
-            "success": False,
-            "message": f"Face login failed: {str(e)}",
-            "faces_detected": 0
-        }
-
 
 # ==================================================================
 # Attendance Terminal (kiosk) — per-batch PIN (Phase 8)
@@ -1869,12 +2201,42 @@ class TerminalLogin(BaseModel):
 
 
 @app.get("/api/terminal/batches")
-async def terminal_batches():
-    """Public: list active batches that have a terminal PIN set (for the login picker)."""
+async def terminal_batches(institute: Optional[str] = None):
+    """Public: active batches with a terminal PIN set, for the login picker.
+
+    THE CROSS-TENANT HAZARD THIS FIXES: this is unauthenticated by design — the
+    kiosk has to show the picker before anyone signs in — and it used to return
+    every active batch on the deployment. With several institutes that hands
+    anyone who opens the login page a list of every customer's batch names.
+
+    So: one institute, behave as before. Several, and the caller must name one
+    (`?institute=<slug>`); without it the batch list comes back empty and the
+    institute list is returned instead, for the picker to choose from. Institute
+    names are already public at the login screen; which batches a customer runs
+    is not.
+    """
     try:
-        rows = attendance_system.conn.execute(
-            "SELECT id, name FROM courses WHERE is_active = 1 AND terminal_pin_hash IS NOT NULL ORDER BY name"
-        ).fetchall()
+        conn = attendance_system.conn
+        sql = ("SELECT id, name FROM courses "
+               "WHERE is_active = 1 AND terminal_pin_hash IS NOT NULL")
+        params = []
+
+        if not tenancy.is_single_tenant(conn):
+            institute_id = tenancy.institute_by_slug(conn, institute)
+            if institute_id is None:
+                return {
+                    "success": True,
+                    "batches": [],
+                    "institute_required": True,
+                    "institutes": [
+                        {"slug": i["slug"], "name": i["name"]}
+                        for i in tenancy.list_institutes(conn)
+                    ],
+                }
+            sql += " AND institute_id = ?"
+            params.append(institute_id)
+
+        rows = conn.execute(sql + " ORDER BY name", params).fetchall()
         return {"success": True, "batches": [{"id": r[0], "name": r[1]} for r in rows]}
     except Exception as e:
         return {"success": False, "message": str(e), "batches": []}
@@ -1934,6 +2296,16 @@ async def terminal_login(data: TerminalLogin, response: Response):
             course_ids.append(cid)
             batch_names.append(row[0])
 
+        # A combined terminal must not straddle two institutes. Holding both
+        # PINs is not the point: one kiosk showing two customers' students a
+        # shared "just marked" list is a data leak whoever typed the PINs.
+        institutes = {tenancy.institute_of_course(attendance_system.conn, cid)
+                      for cid in course_ids}
+        if len(institutes) > 1:
+            return {"success": False,
+                    "message": "Those batches belong to different institutes and "
+                               "cannot share one terminal."}
+
         if len(course_ids) == 1:
             display = f"Terminal · {batch_names[0]}"
         else:
@@ -1948,6 +2320,10 @@ async def terminal_login(data: TerminalLogin, response: Response):
             "name": display,
             "batch_name": " + ".join(batch_names),
             "batch_names": batch_names,
+            # Every batch on a combined terminal is already verified to belong
+            # to the same institute above, so the first one names it.
+            "institute_id": tenancy.institute_of_course(
+                attendance_system.conn, course_ids[0]),
         }
         token = SessionManager.create_session("terminal", user_info)
         _set_session_cookie(response, token)
@@ -2041,25 +2417,58 @@ async def web_manifest():
 
 
 @app.get("/about", response_class=HTMLResponse)
-async def about_page():
-    """About Us page"""
-    try:
-        # Fixed path: files are in templates/ folder
-        with open('templates/about.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="About page not found in templates folder")
+async def about_page(request: Request, institute: Optional[str] = None,
+                     session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Who this deployment belongs to, from the institute's own record.
 
-@app.get("/contact", response_class=HTMLResponse) 
+    This page and /contact used to be hardcoded marketing for one institute —
+    its campus, its programmes, its achievements, and on the contact page a
+    named individual with direct phone numbers. They were also read straight
+    off disk rather than rendered, so they COULD not show anything else. Every
+    institute onboarded would have seen them.
+
+    Which institute: the signed-in one, else ?institute=<slug>, else the only
+    one. With several and no way to tell, it names them rather than guessing —
+    institute names are already public at the login screen.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session)
+    if iid is None and institute:
+        iid = tenancy.institute_by_slug(conn, institute)
+    if iid is None and tenancy.is_single_tenant(conn):
+        iid = tenancy.default_institute_id(conn)
+
+    record, others = None, []
+    if iid:
+        try:
+            r = conn.execute(
+                "SELECT name, slug, tagline, about, address, phone, website, "
+                "contact_email FROM institutes WHERE id = ? AND is_active = 1",
+                (iid,)).fetchone()
+            if r:
+                record = {"name": r[0], "slug": r[1], "tagline": r[2], "about": r[3],
+                          "address": r[4], "phone": r[5], "website": r[6],
+                          "contact_email": r[7]}
+        except Exception:
+            record = None
+    if record is None:
+        others = tenancy.list_institutes(conn)
+
+    return templates.TemplateResponse("about.html", {
+        "request": request, "institute": record, "others": others,
+    })
+
+
+@app.get("/contact", response_class=HTMLResponse)
 async def contact_page():
-    """Contact Us page"""
-    try:
-        # Fixed path: files are in templates/ folder
-        with open('templates/contact.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Contact page not found in templates folder")
-    
+    """Merged into /about, which now carries the contact details too.
+
+    It was linked from nowhere in the entire app, and held a personal profile
+    with direct phone numbers that would have shipped to every customer.
+    """
+    return RedirectResponse(url="/about", status_code=307)
+
+
 
 @app.get("/register", response_class=HTMLResponse)
 async def registration_page(request: Request, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -2086,9 +2495,28 @@ async def attendance_page(request: Request, session: Optional[Dict[str, Any]] = 
 
 @app.get("/students", response_class=HTMLResponse)
 async def students_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
-    return templates.TemplateResponse("students.html", {
+    """Kept as a permanent redirect target: /people replaced it.
+
+    Students were listed on four surfaces and none was complete. Rather than
+    leave a stale one reachable from bookmarks and old links, this now serves
+    the merged page.
+    """
+    return RedirectResponse(url="/people", status_code=307)
+
+
+@app.get("/people", response_class=HTMLResponse)
+async def people_page(request: Request,
+                      session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Students, teachers and the not-yet-enrolled, in one place.
+
+    Also the first place in the app where you can look up ONE student: their
+    data previously lived in a sparkline modal, a slots endpoint and the
+    subject breakdown, with no page that joined them.
+    """
+    return templates.TemplateResponse("people.html", {
         "request": request,
-        "face_recognition_available": FACE_RECOGNITION_AVAILABLE
+        "face_recognition_available": FACE_RECOGNITION_AVAILABLE,
+        "is_admin": session.get("user_type") == "admin",
     })
 
 @app.get("/teacher", response_class=HTMLResponse)
@@ -2353,23 +2781,635 @@ async def email_status(session: Dict[str, Any] = Depends(require_admin_access)):
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/admin/overview")
+async def admin_overview(session: Dict[str, Any] = Depends(require_admin_access)):
+    """Everything the dashboard needs to answer three questions at a glance:
+    is anything broken, what is waiting on me, and what is happening today.
+
+    Assembled server-side on purpose. The old dashboard made the browser call
+    five endpoints and still showed none of this; doing it here keeps the page
+    to one request for the parts that must agree with each other.
+
+    Scoped to the caller's institute. On a single-institute deployment
+    tenancy.visible_course_ids() returns None and every query stays unscoped,
+    exactly as before.
+    """
+    conn = attendance_system.conn
+    allowed = tenancy.visible_course_ids(conn, session)
+
+    def scope(column="course_id"):
+        """(sql_fragment, params) limiting a query to the visible batches."""
+        if allowed is None:
+            return "", []
+        if not allowed:
+            return f" AND {column} IN (SELECT NULL)", []   # matches nothing
+        marks = ",".join("?" for _ in allowed)
+        return f" AND {column} IN ({marks})", list(allowed)
+
+    def count(sql, params=()):
+        try:
+            row = conn.execute(sql, tuple(params)).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    today = datetime.now(pytz.timezone("Asia/Kolkata")).date().strftime("%Y-%m-%d")
+
+    # ---- health -----------------------------------------------------------
+    liveness_active = bool(getattr(anti_spoof_checker, "ready", False)
+                           and not getattr(anti_spoof_checker, "disabled", False))
+    db_ok, db_bytes = True, None
+    try:
+        conn.execute("SELECT 1 FROM students LIMIT 1").fetchone()
+        if not is_postgres() and os.path.exists("attendance.db"):
+            db_bytes = os.path.getsize("attendance.db")
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
+    except Exception:
+        db_ok = False
+
+    last_backup = None
+    try:
+        entries = [os.path.join("backups", f) for f in os.listdir("backups")]
+        stamps = [os.path.getmtime(p) for p in entries if os.path.isfile(p)]
+        if stamps:
+            last_backup = datetime.fromtimestamp(max(stamps)).isoformat(timespec="seconds")
+    except Exception:
+        last_backup = None
+
+    import mailer as _mailer
+    email_sent = count("SELECT COUNT(*) FROM email_log WHERE status = 'sent'")
+    email_failed = count("SELECT COUNT(*) FROM email_log WHERE status = 'failed'")
+    # 'skipped' means SMTP is not configured, so the send was never attempted.
+    # Without this the card shows 0 sent / 0 failed and reads like a fault
+    # rather than a setting nobody has filled in.
+    email_skipped = count("SELECT COUNT(*) FROM email_log WHERE status = 'skipped'")
+
+    health = {
+        "service": {"ok": True,
+                    "uptime_seconds": int((datetime.now() - APP_STARTED_AT).total_seconds())},
+        "database": {"ok": db_ok, "bytes": db_bytes,
+                     "backend": "postgresql" if is_postgres() else "sqlite"},
+        "face_model": {"ok": FACE_RECOGNITION_AVAILABLE,
+                       "faces_loaded": len(attendance_system.known_face_encodings)},
+        "liveness": {"ok": liveness_active,
+                     "threshold": getattr(anti_spoof_checker, "threshold", None)
+                     if liveness_active else None,
+                     "warning": None if liveness_active else
+                     "Anti-spoofing is not enforcing — a printed photo or a phone "
+                     "screen can mark attendance."},
+        "email": {"ok": _mailer.is_configured() and email_failed == 0,
+                  "configured": _mailer.is_configured(),
+                  "sent": email_sent, "failed": email_failed,
+                  "skipped": email_skipped},
+        "backup": {"ok": last_backup is not None, "last": last_backup},
+    }
+    health["attention"] = [k for k, v in health.items()
+                           if isinstance(v, dict) and v.get("ok") is False]
+
+    # ---- waiting on you ---------------------------------------------------
+    cs, cp = scope()
+    queues = {
+        "leave": count("SELECT COUNT(*) FROM leave_requests WHERE status = 'pending'" + cs, cp),
+        "grievances": count("SELECT COUNT(*) FROM grievances WHERE status = 'pending'" + cs, cp),
+        "face_requests": count(
+            "SELECT COUNT(*) FROM face_registration_requests WHERE status = 'pending'" + cs, cp),
+        "profile_requests": count(
+            "SELECT COUNT(*) FROM profile_change_requests WHERE status = 'pending'" + cs, cp),
+        # Not a request queue, but the same kind of blockage: a student with no
+        # face enrolled cannot be marked by the camera at all, and nothing else
+        # in the app says so.
+        "no_face": count(
+            "SELECT COUNT(*) FROM students WHERE face_encoding IS NULL "
+            "AND status IN ('active','pending_registration')" + cs, cp),
+    }
+    queues["total"] = sum(v for k, v in queues.items())
+
+    # Leave that starts within two days is the part that cannot wait.
+    soon = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
+    queues["leave_starting_soon"] = count(
+        "SELECT COUNT(*) FROM leave_requests WHERE status = 'pending' "
+        "AND start_date <= ?" + cs, [soon] + cp)
+
+    # ---- today, per batch -------------------------------------------------
+    batch_sql = "SELECT id, name, terminal_pin_hash IS NOT NULL FROM courses WHERE is_active = 1"
+    bs, bp = scope("id")
+    try:
+        batch_rows = conn.execute(batch_sql + bs + " ORDER BY name", tuple(bp)).fetchall()
+    except Exception:
+        batch_rows = []
+
+    today_rows = []
+    for cid, cname, has_pin in batch_rows:
+        total = count("SELECT COUNT(*) FROM students WHERE course_id = ? "
+                      "AND status IN ('active','pending_registration')", (cid,))
+        present = count("SELECT COUNT(DISTINCT student_id) FROM attendance "
+                        "WHERE date = ? AND course_id = ?", (today, cid))
+        slot = None
+        try:
+            cur_slot = attendance_manager.get_current_slot(course_id=cid) if attendance_manager else None
+            if cur_slot:
+                info = cur_slot.get("slot_info", {})
+                slot = {"name": info.get("name"),
+                        "ends": info.get("end_time").strftime("%H:%M")
+                        if info.get("end_time") else None,
+                        "minutes_left": cur_slot.get("time_remaining")}
+        except Exception:
+            slot = None
+        today_rows.append({
+            "course_id": cid, "batch": cname,
+            "total": total, "present": present,
+            "pct": round(present / total * 100) if total else 0,
+            "has_terminal": bool(has_pin), "slot": slot,
+        })
+
+    ok_day, why_not = working_days.check(conn, None, date.today())
+
+    # ---- consent ----------------------------------------------------------
+    consent = {"total": 0, "consented": 0}
+    try:
+        consent["total"] = count(
+            "SELECT COUNT(*) FROM students WHERE status IN "
+            "('active','pending_registration')" + cs, cp)
+        consent["consented"] = count(
+            "SELECT COUNT(DISTINCT s.id) FROM students s "
+            "JOIN consent_records r ON r.student_id = s.id "
+            "WHERE r.granted = 1 AND r.policy_version = ? "
+            "AND s.status IN ('active','pending_registration')"
+            + cs.replace("course_id", "s.course_id"),
+            [CONSENT_POLICY_VERSION] + cp)
+    except Exception:
+        pass
+    consent["pending"] = max(0, consent["total"] - consent["consented"])
+    # The card prints "policy v<x>" and was falling back to a hardcoded
+    # "1.0" because this was never sent, so bumping CONSENT_POLICY_VERSION
+    # (which re-asks every student for consent) left the dashboard still
+    # claiming the old one.
+    consent["policy_version"] = CONSENT_POLICY_VERSION
+    consent["policy_version"] = CONSENT_POLICY_VERSION
+
+    institute = None
+    try:
+        iid = tenancy.institute_for_session(session) or tenancy.default_institute_id(conn)
+        if iid:
+            row = conn.execute("SELECT id, name FROM institutes WHERE id = ?", (iid,)).fetchone()
+            if row:
+                institute = {"id": row[0], "name": row[1]}
+    except Exception:
+        institute = None
+
+    return {
+        "success": True,
+        "institute": institute,
+        "today": {"date": today, "is_working_day": ok_day, "reason": why_not,
+                  "batches": today_rows},
+        "health": health,
+        "queues": queues,
+        "consent": consent,
+    }
+
+
+def require_superadmin(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
+    """Platform level: sees across institutes, belongs to none.
+
+    Deliberately not folded into require_admin_access. An institute admin
+    having platform powers is the whole thing tenancy exists to prevent.
+    """
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    if (session.get("user_info") or {}).get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Platform owner access required")
+    return session
+
+
+@app.get("/api/platform/institutes")
+async def platform_institutes(session: Dict[str, Any] = Depends(require_superadmin)):
+    """Every institute, with the numbers that say whether it is healthy."""
+    conn = attendance_system.conn
+    out = []
+    try:
+        rows = conn.execute(
+            "SELECT id, name, slug, contact_email, is_active, created_at "
+            "FROM institutes ORDER BY name").fetchall()
+    except Exception as e:
+        return {"success": False, "message": str(e), "institutes": []}
+
+    today = datetime.now(pytz.timezone("Asia/Kolkata")).date().strftime("%Y-%m-%d")
+
+    def one(sql, params=()):
+        try:
+            r = conn.execute(sql, tuple(params)).fetchone()
+            return int(r[0]) if r and r[0] is not None else 0
+        except Exception:
+            return 0
+
+    for r in rows:
+        iid = r[0]
+        batches = one("SELECT COUNT(*) FROM courses WHERE institute_id = ? "
+                      "AND is_active = 1", (iid,))
+        students = one(
+            "SELECT COUNT(*) FROM students s JOIN courses c ON c.id = s.course_id "
+            "WHERE c.institute_id = ? AND s.status IN ('active','pending_registration')",
+            (iid,))
+        enrolled = one(
+            "SELECT COUNT(*) FROM students s JOIN courses c ON c.id = s.course_id "
+            "WHERE c.institute_id = ? AND s.face_encoding IS NOT NULL", (iid,))
+        marks_today = one(
+            "SELECT COUNT(DISTINCT a.student_id) FROM attendance a "
+            "JOIN courses c ON c.id = a.course_id "
+            "WHERE c.institute_id = ? AND a.date = ?", (iid, today))
+        terminals = one("SELECT COUNT(*) FROM courses WHERE institute_id = ? "
+                        "AND is_active = 1 AND terminal_pin_hash IS NOT NULL", (iid,))
+        staff = one("SELECT COUNT(*) FROM users WHERE institute_id = ? AND is_active = 1",
+                    (iid,))
+        admins = one("SELECT COUNT(*) FROM users WHERE institute_id = ? "
+                     "AND role = 'admin' AND is_active = 1", (iid,))
+        pending = sum(one(
+            f"SELECT COUNT(*) FROM {t} q JOIN courses c ON c.id = q.course_id "
+            f"WHERE c.institute_id = ? AND q.status = 'pending'", (iid,))
+            for t in ("leave_requests", "grievances",
+                      "face_registration_requests", "profile_change_requests"))
+
+        # What a platform owner needs to spot without opening the tenant.
+        warnings = []
+        # First, because it is the one that makes the institute unusable:
+        # provisioning creates the tenant, not its way in.
+        if not admins:
+            warnings.append("no administrator — nobody can run this institute")
+        if batches and not terminals:
+            warnings.append("no terminal PIN on any batch")
+        if students and not enrolled:
+            warnings.append("nobody has enrolled a face")
+        if not staff:
+            warnings.append("no active staff account")
+
+        out.append({
+            "id": iid, "name": r[1], "slug": r[2], "contact_email": r[3],
+            "is_active": bool(r[4]), "created_at": str(r[5])[:19] if r[5] else None,
+            "batches": batches, "students": students, "face_enrolled": enrolled,
+            "marks_today": marks_today, "terminals": terminals, "staff": staff,
+            "admins": admins, "pending_approvals": pending, "warnings": warnings,
+        })
+
+    return {
+        "success": True,
+        "institutes": out,
+        "totals": {
+            "institutes": len(out),
+            "active": sum(1 for i in out if i["is_active"]),
+            "students": sum(i["students"] for i in out),
+            "marks_today": sum(i["marks_today"] for i in out),
+            "needs_attention": sum(1 for i in out if i["warnings"]),
+        },
+    }
+
+
+class InstituteCreate(BaseModel):
+    name: str
+    contact_email: Optional[str] = None
+
+
+@app.post("/api/platform/institutes")
+async def platform_create_institute(data: InstituteCreate,
+                                    session: Dict[str, Any] = Depends(require_superadmin)):
+    """Provision a new institute. Does NOT create its admin account.
+
+    Creating a login is a separate, deliberate act — a provisioned institute
+    with no way in is recoverable; one with a password someone has to guess
+    the origin of is not.
+    """
+    conn = attendance_system.conn
+    name = (data.name or "").strip()
+    if not name:
+        return {"success": False, "message": "Name is required"}
+
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "institute"
+    try:
+        if conn.execute("SELECT 1 FROM institutes WHERE slug = ?", (slug,)).fetchone():
+            return {"success": False,
+                    "message": f"An institute with the identifier '{slug}' already exists"}
+        # Names are not unique in the schema, only slugs — but two rows reading
+        # "Northgate Institute" in this console cannot be told apart, and the
+        # name is what appears on every page and report inside the tenant.
+        if conn.execute("SELECT 1 FROM institutes WHERE LOWER(name) = ?",
+                        (name.lower(),)).fetchone():
+            return {"success": False,
+                    "message": f"An institute named '{name}' already exists"}
+        conn.execute(
+            "INSERT INTO institutes (name, slug, contact_email, is_active) "
+            "VALUES (?, ?, ?, 1)",
+            (name, slug, (data.contact_email or "").strip() or None))
+        conn.commit()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    # Platform level: that a new customer exists is nobody else's business.
+    audit(session, "create_institute", target=name, details=f"slug={slug}",
+          institute_id=None)
+    return {"success": True, "message": f"Created {name}", "slug": slug}
+
+
+class InstituteAdminCreate(BaseModel):
+    username: str
+    password: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+@app.get("/api/platform/institutes/{institute_id}/admins")
+async def platform_list_admins(institute_id: int,
+                               session: Dict[str, Any] = Depends(require_superadmin)):
+    """Who can administer this institute."""
+    conn = attendance_system.conn
+    try:
+        rows = conn.execute(
+            "SELECT id, username, name, email, is_active, must_change_password "
+            "FROM users WHERE role = 'admin' AND institute_id = ? ORDER BY username",
+            (institute_id,)).fetchall()
+    except Exception as e:
+        return {"success": False, "message": str(e), "admins": []}
+    return {"success": True, "admins": [
+        {"id": r[0], "username": r[1], "name": r[2], "email": r[3],
+         "is_active": bool(r[4]), "must_change_password": bool(r[5])} for r in rows]}
+
+
+@app.post("/api/platform/institutes/{institute_id}/admins")
+async def platform_create_admin(institute_id: int, data: InstituteAdminCreate,
+                                session: Dict[str, Any] = Depends(require_superadmin)):
+    """Give a newly provisioned institute its own administrator.
+
+    Without this a new institute is unusable: provisioning creates the tenant,
+    but the only admin account on the deployment belongs to the first
+    institute, and tenancy quite correctly confines it there. Every institute
+    needs its own.
+
+    The password is supplied by the caller rather than generated, matching how
+    teacher accounts are created, and must_change_password is set so the new
+    administrator replaces it at first login.
+    """
+    conn = attendance_system.conn
+    username = (data.username or "").strip()
+    if not username or not data.password:
+        return {"success": False, "message": "Username and password are required"}
+    if len(data.password) < 8:
+        return {"success": False, "message": "Password must be at least 8 characters"}
+
+    try:
+        inst = conn.execute("SELECT name FROM institutes WHERE id = ?",
+                            (institute_id,)).fetchone()
+        if not inst:
+            raise HTTPException(status_code=404, detail="No such institute")
+
+        # Usernames are unique across the deployment, not per institute: the
+        # login form has no institute field, so two tenants cannot both own
+        # "admin" and still be told apart at sign-in.
+        if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+            return {"success": False,
+                    "message": f"Username '{username}' is already taken. Usernames are "
+                               f"shared across institutes, so try '{username}.{inst[0].split()[0].lower()}'"}
+
+        conn.execute(
+            "INSERT INTO users (username, name, email, password_hash, role, is_active, "
+            "must_change_password, institute_id) VALUES (?, ?, ?, ?, 'admin', 1, 1, ?)",
+            (username, (data.name or username).strip(),
+             (data.email or "").strip() or None,
+             hash_password(data.password), institute_id))
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        return {"success": False, "message": str(e)}
+
+    # Attributed to the institute, not the platform: that institute's own
+    # admins should be able to see how their account came to exist. It reveals
+    # nothing about any other customer.
+    audit(session, "create_institute_admin", target=username,
+          details=f"institute={inst[0]}", institute_id=institute_id)
+    return {"success": True,
+            "message": f"'{username}' can now administer {inst[0]}. "
+                       f"They will be asked to change the password at first login."}
+
+
+@app.post("/api/platform/institutes/{institute_id}/active")
+async def platform_set_active(institute_id: int, data: dict = Body(...),
+                              session: Dict[str, Any] = Depends(require_superadmin)):
+    """Suspend or restore an institute. Nothing is deleted."""
+    conn = attendance_system.conn
+    active = 1 if data.get("is_active") else 0
+    try:
+        row = conn.execute("SELECT name FROM institutes WHERE id = ?",
+                           (institute_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No such institute")
+        conn.execute("UPDATE institutes SET is_active = ? WHERE id = ?",
+                     (active, institute_id))
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    audit(session, "suspend_institute" if not active else "restore_institute",
+          target=row[0], institute_id=None)
+    return {"success": True,
+            "message": f"{row[0]} {'restored' if active else 'suspended'}"}
+
+
+@app.get("/superadmin", response_class=HTMLResponse)
+async def superadmin_page(request: Request,
+                          session: Dict[str, Any] = Depends(require_superadmin)):
+    """The platform owner's console: every institute at once."""
+    return templates.TemplateResponse("superadmin.html", {
+        "request": request,
+        "user_name": (session.get("user_info") or {}).get("name", ""),
+    })
+
+
+@app.get("/api/admin/institute")
+async def get_institute(session: Dict[str, Any] = Depends(require_admin_access)):
+    """This institute's own profile, plus the policy values it runs under.
+
+    The policy numbers come from environment variables and are read-only here
+    on purpose: changing them needs a restart, and silently editing a field
+    that does not take effect is worse than showing it as fixed.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session) or tenancy.default_institute_id(conn)
+    institute = None
+    if iid:
+        try:
+            r = conn.execute(
+                "SELECT id, name, slug, contact_email, is_active, created_at, "
+                "tagline, about, address, phone, website "
+                "FROM institutes WHERE id = ?", (iid,)).fetchone()
+            if r:
+                institute = {"id": r[0], "name": r[1], "slug": r[2],
+                             "contact_email": r[3], "is_active": bool(r[4]),
+                             "created_at": str(r[5])[:19] if r[5] else None,
+                             "tagline": r[6], "about": r[7], "address": r[8],
+                             "phone": r[9], "website": r[10]}
+        except Exception:
+            institute = None
+
+    def count(sql):
+        try:
+            return int(conn.execute(sql).fetchone()[0])
+        except Exception:
+            return 0
+
+    return {
+        "success": True,
+        "institute": institute,
+        "is_multi_tenant": not tenancy.is_single_tenant(conn),
+        "totals": {
+            "batches": count("SELECT COUNT(*) FROM courses WHERE is_active = 1"),
+            "students": count("SELECT COUNT(*) FROM students "
+                              "WHERE status IN ('active','pending_registration')"),
+            "staff": count("SELECT COUNT(*) FROM users WHERE is_active = 1"),
+        },
+        "policy": {
+            "late_grace_minutes": LATE_GRACE_MINUTES,
+            "leave_max_days": int(os.getenv("LEAVE_MAX_DAYS", "30") or 30),
+            "login_max_attempts": login_throttle.MAX_ATTEMPTS,
+            "login_lockout_minutes": login_throttle.LOCKOUT_MINUTES,
+            "consent_policy_version": CONSENT_POLICY_VERSION,
+            # The floor for marking somebody present off a camera.
+            # Visible because an operator tuning FACE_MATCH_THRESHOLD
+            # otherwise has no way to confirm the value took effect.
+            "face_match_threshold": FACE_MATCH_THRESHOLD,
+            "biometric_retention_days": int(
+                os.getenv("BIOMETRIC_RETENTION_DAYS", "90") or 90),
+            "cookie_secure": os.getenv("COOKIE_SECURE", "1") != "0",
+            "database": "postgresql" if is_postgres() else "sqlite",
+        },
+    }
+
+
+@app.put("/api/admin/institute")
+async def update_institute(data: dict = Body(...),
+                           session: Dict[str, Any] = Depends(require_admin_access)):
+    """Rename this institute, or set its contact address.
+
+    The name is what students and staff see at the top of every page and in
+    every report heading, so a deployment sold to another institute is renamed
+    here rather than by editing templates.
+    """
+    conn = attendance_system.conn
+    iid = tenancy.institute_for_session(session) or tenancy.default_institute_id(conn)
+    if not iid:
+        return {"success": False, "message": "No institute exists yet — run migrate_phase10.py"}
+
+    name = (data.get("name") or "").strip()
+    if not name:
+        return {"success": False, "message": "Name is required"}
+    if len(name) > 120:
+        return {"success": False, "message": "Name is too long"}
+
+    # Everything except the name is per-field: a key that is absent is left
+    # alone, a key that is present and empty is cleared. contact_email used to
+    # be written unconditionally alongside the name, so any caller sending
+    # {name, tagline} silently wiped the institute's email address.
+    # The rest of these render on the public /about page, so an institute
+    # controls what its own students and staff see rather than inheriting
+    # someone else's.
+    sets, values = [], []
+    for field, limit in (("contact_email", 160), ("tagline", 160),
+                         ("about", 4000), ("address", 400),
+                         ("phone", 60), ("website", 200)):
+        if field not in data:
+            continue
+        val = (data.get(field) or "").strip()
+        if len(val) > limit:
+            return {"success": False,
+                    "message": f"{field.replace('_', ' ').capitalize()} "
+                               f"is too long (max {limit})"}
+        if field == "contact_email" and val and "@" not in val:
+            return {"success": False,
+                    "message": "That does not look like an email address"}
+        sets.append(f"{field} = ?")
+        values.append(val or None)
+
+    try:
+        conn.execute(
+            "UPDATE institutes SET name = ?"
+            + ("".join(", " + s for s in sets)) + " WHERE id = ?",
+            tuple([name] + values + [iid]))
+        conn.commit()
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+    # Name the fields rather than their values: `about` is 4000 characters and
+    # the log is read as a list.
+    touched = [s.split(" =")[0] for s in sets]
+    audit(session, "update_institute", target=name,
+          details="fields=" + (", ".join(["name"] + touched)))
+    return {"success": True, "message": "Saved"}
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request,
+                        session: Dict[str, Any] = Depends(require_admin_access)):
+    """Institute profile, system health, email and the destructive actions.
+
+    Replaces /admin, which was a grab-bag named after a role rather than a
+    task, carried a button calling an endpoint that did not exist, and had no
+    way to change the one thing a new customer must change first: their name.
+    """
+    return templates.TemplateResponse("settings.html", {"request": request})
+
+
 @app.get("/api/admin/audit-log")
 async def get_audit_log(limit: int = 100, action: Optional[str] = None,
                         session: Dict[str, Any] = Depends(require_admin_access)):
-    """Recent sensitive actions: who marked/deleted/approved what."""
+    """Recent sensitive actions: who marked/deleted/approved what.
+
+    Scoped to the caller's institute. Unscoped, an institute admin saw every
+    platform-level action a superadmin had taken — including that another
+    institute had just been created, and the username of its administrator.
+    Platform-level rows (institute_id NULL) are for the superadmin alone.
+    """
     try:
         limit = max(1, min(int(limit or 100), 500))
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
+
+        where, params = [], []
         if action:
+            where.append("action = ?")
+            params.append(action)
+
+        if not tenancy.is_superadmin(session):
+            iid = tenancy.institute_for_session(session)
+            if iid is None and not tenancy.is_single_tenant(conn):
+                # Multi-tenant but the session predates tenancy: show nothing
+                # rather than guess, the same rule the rest of the app follows.
+                return {"success": True, "entries": []}
+            if iid is not None:
+                where.append("institute_id = ?")
+                params.append(iid)
+            else:
+                # Single institute: everything except platform-level rows,
+                # which are the superadmin's own business.
+                where.append("institute_id IS NOT NULL OR actor_type <> 'superadmin'")
+
+        clause = (" WHERE " + " AND ".join(f"({w})" for w in where)) if where else ""
+        try:
             rows = cur.execute(
                 "SELECT actor_type, actor_name, action, target, details, created_at "
-                "FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT ?", (action, limit)
-            ).fetchall()
-        else:
+                "FROM audit_log" + clause + " ORDER BY id DESC LIMIT ?",
+                tuple(params + [limit])).fetchall()
+        except Exception:
+            # Pre-migrate_phase11: no institute_id column. Fall back to the
+            # unscoped read rather than failing the page, but keep platform
+            # rows out of it.
             rows = cur.execute(
                 "SELECT actor_type, actor_name, action, target, details, created_at "
-                "FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+                "FROM audit_log WHERE actor_type <> 'superadmin' "
+                "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return {"success": True, "entries": [{
             "actor_type": r[0], "actor_name": r[1], "action": r[2],
             "target": r[3], "details": r[4], "at": str(r[5])[:19],
@@ -2405,8 +3445,14 @@ async def email_test(data: dict = Body(...), session: Dict[str, Any] = Depends(r
 async def get_student_slot_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed slot-based attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_slot_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
     
@@ -2414,8 +3460,27 @@ async def get_student_slot_attendance(student_id: int, session: Dict[str, Any] =
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
-    """Admin dashboard page"""
-    return templates.TemplateResponse("admin.html", {"request": request})
+    """Kept as a redirect: /settings replaced this page.
+
+    It was named after a role rather than a task and mixed a bulk-upload form
+    in with a database wipe. Bookmarks and old links land on the new page
+    rather than a 404.
+    """
+    return RedirectResponse(url="/settings", status_code=307)
+
+@app.get("/insights", response_class=HTMLResponse)
+async def insights_page(request: Request,
+                        session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """The one home for analytics.
+
+    Trends, heatmaps, weekday patterns and at-risk students were rendered three
+    separate ways: the reports page's Overview tab, the teacher portal's
+    Analytics tab and the dashboard. The charts here are the reports page's,
+    moved rather than rewritten, so the figures cannot disagree with what
+    people were reading before.
+    """
+    return templates.TemplateResponse("insights.html", {"request": request})
+
 
 @app.get("/attendance-management", response_class=HTMLResponse)
 async def attendance_management_page(request: Request, session: Dict[str, Any] = Depends(require_admin_access)):
@@ -2428,7 +3493,15 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
     """Detect faces in image and mark attendance"""
     if not FACE_RECOGNITION_AVAILABLE:
         return {"success": False, "message": "Face recognition not available"}
-    
+
+    # Only this institute's students may be matched. On a single-institute
+    # deployment this is the whole gallery, exactly as before.
+    match_institute_id = tenancy.institute_for_session(session)
+    gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
+        match_institute_id)
+    # Resolved once for the whole frame, not once per face.
+    frame_gallery = attendance_system.match_gallery(match_institute_id)
+
     try:
         # Convert base64 to image
         if image_data.image_data.startswith('data:image'):
@@ -2458,6 +3531,9 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
         recognized_students = []
         unknown_faces = 0
         spoofed_faces = 0
+        # Per-batch lookups, memoised for the life of this frame; see below.
+        frame_cache = {}
+        wrote_in_frame = False
         
         for face_data in detected_faces:
             # --- ANTI-SPOOFING GATE ---
@@ -2483,28 +3559,16 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
             # --- END ANTI-SPOOFING GATE ---
             
             face_encoding = face_data['embedding']
-            
-            # Find best match
-            if len(attendance_system.known_face_encodings) > 0:
-                # Calculate similarities using dot product (for InsightFace embeddings)
-                similarities = []
-                for known_encoding in attendance_system.known_face_encodings:
-                    # Normalize embeddings
-                    face_norm = face_encoding / np.linalg.norm(face_encoding)
-                    known_norm = known_encoding / np.linalg.norm(known_encoding)
-                    similarity = np.dot(face_norm, known_norm)
-                    similarities.append(similarity)
-                
-                best_match_index = np.argmax(similarities)
-                best_similarity = similarities[best_match_index]
-                
-                # Threshold for recognition (adjust as needed)
-                RECOGNITION_THRESHOLD = 0.60  
-                
-                if best_similarity > RECOGNITION_THRESHOLD:
-                    student_id = attendance_system.known_face_ids[best_match_index]
-                    student_name = attendance_system.known_face_names[best_match_index]
-                    
+
+            # Find best match, against THIS session's institute only.
+            # One pre-normalised matmul in best_match(), not a Python loop per
+            # known face; see AttendanceSystem._build_match_matrices.
+            if len(gallery_ids) > 0:
+                student_id, student_name, best_similarity = best_match(
+                    face_encoding, match_institute_id, frame_gallery)
+
+                if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
+
                     # Check if already marked today
                     timezone = pytz.timezone('Asia/Kolkata')
                     today = datetime.now(timezone).date()
@@ -2525,11 +3589,30 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                             "SELECT course_id FROM students WHERE id = ?", (student_id,)
                         ).fetchone()
                         s_course_id = s_course[0] if s_course else None
-                        late = compute_is_late(course_id=s_course_id)
 
-                        # No attendance on a Sunday or a holiday, by any route.
-                        ok_day, why = working_days.check(
-                            attendance_system.conn, s_course_id, today)
+                        # Everything below depends on the BATCH, not the
+                        # student, and one frame is usually one batch in front
+                        # of one camera. Computed once per batch per frame
+                        # rather than once per face: the late check, the
+                        # working-day check (which reads holidays), the current
+                        # slot, and that slot's subject.
+                        if s_course_id not in frame_cache:
+                            _ok, _why = working_days.check(
+                                attendance_system.conn, s_course_id, today)
+                            _slot = (attendance_manager.get_current_slot(
+                                course_id=s_course_id) if attendance_manager else None)
+                            _key = (_slot or {}).get("slot_key")
+                            frame_cache[s_course_id] = {
+                                "late": compute_is_late(course_id=s_course_id),
+                                "ok_day": _ok, "why": _why, "slot_key": _key,
+                                # Recorded at mark time, so a later timetable
+                                # change cannot rewrite history.
+                                "subject_id": timetable.subject_for_slot(
+                                    attendance_system.conn, s_course_id, today, _key),
+                            }
+                        cached = frame_cache[s_course_id]
+                        late = cached["late"]
+                        ok_day, why = cached["ok_day"], cached["why"]
                         if not ok_day:
                             recognized_students.append({
                                 "student_id": student_id,
@@ -2540,13 +3623,8 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                             })
                             continue
 
-                        slot = (attendance_manager.get_current_slot(course_id=s_course_id)
-                                if attendance_manager else None)
-                        slot_key = (slot or {}).get("slot_key")
-                        # Record which module this class was, at mark time — a
-                        # later timetable change must not rewrite history.
-                        subject_id = timetable.subject_for_slot(
-                            attendance_system.conn, s_course_id, today, slot_key)
+                        slot_key = cached["slot_key"]
+                        subject_id = cached["subject_id"]
                         cursor.execute('''
                             INSERT INTO attendance (student_id, date, time_in, is_manual, is_late,
                                                     course_id, session_type, subject_id)
@@ -2554,7 +3632,7 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
                         ''', (student_id, today, datetime.now().time().strftime('%H:%M:%S'),
                               False, late, s_course_id, slot_key, subject_id))
 
-                        attendance_system.conn.commit()
+                        wrote_in_frame = True
                         status = "marked"
                         message = f"Attendance marked for {student_name}"
                         if late:
@@ -2580,6 +3658,22 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
             else:
                 unknown_faces += 1
         
+        # One commit for the frame rather than one per student. A group
+        # shot is one event: either those students were seen together or they
+        # were not. On the VM's WAL-mode SQLite each commit is an fsync taken
+        # while other terminals wait for the single writer slot.
+        if wrote_in_frame:
+            try:
+                attendance_system.conn.commit()
+            except Exception as e:
+                attendance_system.conn.rollback()
+                print(f"[ERROR] could not commit the frame's marks: {e}")
+                return {"success": False,
+                        "faces_detected": len(detected_faces),
+                        "recognized_students": [],
+                        "unknown_faces": unknown_faces,
+                        "message": "Attendance could not be saved. Please try again."}
+
         return {
             "success": True,
             "faces_detected": len(detected_faces),
@@ -2589,6 +3683,13 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
         }
         
     except Exception as e:
+        # The frame's marks are only committed at the end, so an error
+        # part-way through must not leave a half-written group in an open
+        # transaction for the next request to commit by accident.
+        try:
+            attendance_system.conn.rollback()
+        except Exception:
+            pass
         print(f"[ERROR] Detection failed: {str(e)}")
         return {
             "success": False,
@@ -2645,12 +3746,12 @@ async def get_today_attendance(session: Dict[str, Any] = Depends(require_teacher
     every batch, and it is not batch-scoped. Only the admin page consumes it,
     so a kiosk has no reason to reach it.
     """
-    return attendance_system.get_today_attendance()
+    return attendance_system.get_today_attendance(session)
 
 @app.get("/api/students/count")
 async def get_student_count(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get total number of students"""
-    count = attendance_system.get_student_count()
+    count = attendance_system.get_student_count(session)
     return {"total_students": count}
 
 @app.get("/api/system/status")
@@ -2670,21 +3771,108 @@ async def get_system_status(response: Response):
     if not healthy:
         response.status_code = 503
 
+    # Whether liveness is actually enforcing. With it off, a printed photo or a
+    # phone screen will mark attendance, and nothing on any screen said so —
+    # the only way to find out was to read .env on the server. Surfaced here so
+    # the admin dashboard and healthcheck.sh can both see it.
+    liveness_active = bool(
+        getattr(anti_spoof_checker, "ready", False)
+        and not getattr(anti_spoof_checker, "disabled", False)
+    )
+
     payload = {
         "status": "ok" if healthy else "degraded",
         "face_recognition_available": FACE_RECOGNITION_AVAILABLE,
         "opencv_available": OPENCV_AVAILABLE,
         "database_connected": db_ok,
-        "students_loaded": len(attendance_system.known_face_encodings)
+        "students_loaded": len(attendance_system.known_face_encodings),
+        "liveness_active": liveness_active,
+        "liveness_threshold": (
+            getattr(anti_spoof_checker, "threshold", None) if liveness_active else None
+        ),
+        "liveness_on_registration": bool(
+            os.getenv("ANTISPOOF_ON_REGISTRATION", "").strip()
+            in ("1", "true", "True", "yes")
+        ),
     }
+    if not liveness_active:
+        payload["liveness_warning"] = (
+            "Anti-spoofing is NOT enforcing — a printed photo or a phone screen "
+            "can mark attendance. Validate a threshold with "
+            "`python test_antispoof.py --camera` then `--suggest`, set "
+            "ANTISPOOF_THRESHOLD in .env and remove ANTISPOOF_DISABLED."
+        )
     if db_error:
         payload["error"] = db_error
     return payload
 
 @app.get("/api/students/list")
-async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+async def list_students(q: Optional[str] = None,
+                        course_id: Optional[int] = None,
+                        limit: int = 500,
+                        offset: int = 0,
+                        session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """The roster behind /people.
+
+    It was entirely unscoped: no institute filter and no batch filter, so
+    every teacher and every admin got every institute's students with names
+    and email addresses. It is the first entry in this file's own
+    "endpoints whose exposure mattered most" test list, guarded for
+    authentication and never scoped for tenancy — being authenticated is not
+    the same as being entitled.
+
+    It also returned every student, always. One institute of 60 is nothing;
+    a deployment with a few thousand across ten institutes is a response
+    nobody reads the end of, built by a GROUP BY over the whole of
+    `attendance`. It now takes `limit`/`offset` and reports `total` and
+    `has_more`, so there is a ceiling on what one request can ever produce.
+
+    `q` and `course_id` filter server-side. They exist because pagination
+    without them is worse than neither: /people searched the full array it
+    had been given, so a paginated roster would have searched only the page
+    you happened to be on. The page uses the client-side path while
+    everything fits in one response — instant, no round trip per keystroke —
+    and switches to these once it does not.
+    """
     try:
+        scope, scope_params = visible_student_filter(session, "s.course_id")
+        where = scope
+        params = list(scope_params)
+
+        if course_id is not None:
+            assert_course_allowed(session, course_id)
+            where += " AND s.course_id = ?"
+            params.append(int(course_id))
+
+        term = (q or "").strip()
+        if term:
+            # Name or roll number, which is what the page's own box matched.
+            #
+            # LIKE treats % and _ as patterns, so the term has to be escaped
+            # or a search for "%" returns the entire roster as though the box
+            # were empty, and "_" matches any single character. Harmless to a
+            # typist, confusing to anyone searching a name with an underscore,
+            # and the sort of thing that turns into a complaint about search
+            # being "wrong".
+            escaped = (term.lower().replace("\\", "\\\\")
+                                   .replace("%", "\\%")
+                                   .replace("_", "\\_"))
+            where += (" AND (LOWER(s.name) LIKE ? ESCAPE '\\'"
+                      " OR LOWER(s.student_id) LIKE ? ESCAPE '\\')")
+            like = f"%{escaped}%"
+            params.extend([like, like])
+
+        # A caller asking for a million rows gets 1000. The default is high
+        # enough that the ordinary institute never sees a second page.
+        limit = max(1, min(int(limit), 1000))
+        offset = max(0, int(offset))
+
         cursor = attendance_system.conn.cursor()
+        total = cursor.execute(
+            "SELECT COUNT(*) FROM students s WHERE s.status IN "
+            "('active', 'pending_registration')" + where, tuple(params)
+        ).fetchone()[0]
+
         cursor.execute('''
             SELECT s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                    COUNT(a.id) as attendance_count,
@@ -2693,11 +3881,12 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
             FROM students s
             LEFT JOIN attendance a ON s.id = a.student_id
             LEFT JOIN courses c ON c.id = s.course_id
-            WHERE s.status IN ('active', 'pending_registration')
+            WHERE s.status IN ('active', 'pending_registration')''' + where + '''
             GROUP BY s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                      s.joining_date, s.status, s.course_id, c.name
             ORDER BY s.name
-        ''')
+            LIMIT ? OFFSET ?
+        ''', tuple(params + [limit, offset]))
 
         students = []
         for row in cursor.fetchall():
@@ -2717,61 +3906,35 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
                 "model": "buffalo_l_w600k_512D"
             })
         
-        return {"success": True, "students": students}
-    
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-@app.get("/api/dashboard/stats")
-async def get_dashboard_stats(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Get dashboard statistics"""
-    try:
-        today = datetime.now().date().strftime('%Y-%m-%d')
-        cursor = attendance_system.conn.cursor()
-        
-        # Get total students
-        cursor.execute('SELECT COUNT(*) FROM students WHERE status = "active"')
-        total_students = cursor.fetchone()[0]
-        
-        # Get today's attendance count
-        cursor.execute('SELECT COUNT(*) FROM attendance WHERE date = ?', (today,))
-        present_today = cursor.fetchone()[0]
-        
-        # Calculate stats
-        absent_today = total_students - present_today
-        attendance_rate = (present_today / total_students * 100) if total_students > 0 else 0
-        
-        print(f"Dashboard stats: Total={total_students}, Present={present_today}, Absent={absent_today}, Rate={attendance_rate}%")
-        
         return {
             "success": True,
-            "stats": {
-                "total_students": total_students,
-                "present_today": present_today,
-                "absent_today": absent_today,
-                "attendance_rate": round(attendance_rate, 1)
-            }
+            "students": students,
+            # `total` is the count that matches the filter, not the page, so
+            # the page can say "12 of 340" honestly and know whether its own
+            # client-side search would be lying.
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(students) < total,
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Dashboard stats error: {str(e)}")
-        return {
-            "success": False,
-            "message": str(e),
-            "stats": {
-                "total_students": 0,
-                "present_today": 0,
-                "absent_today": 0,
-                "attendance_rate": 0
-            }
-        }
+        return {"success": False, "message": str(e)}
 
 @app.get("/api/attendance/student/{student_id}")
 async def get_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -3293,7 +4456,7 @@ async def get_session_configuration(course_id: Optional[int] = None,
                                     session: Dict[str, Any] = Depends(require_admin_access)):
     """Get session configuration for a batch (defaults to the first active batch)."""
     try:
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         if course_id is None:
             row = attendance_system.conn.execute(
                 "SELECT id FROM courses WHERE is_active = 1 ORDER BY id LIMIT 1"
@@ -3312,18 +4475,32 @@ async def update_session_configuration(
 ):
     """Update session timing configuration (scoped to a batch when course_id given)."""
     try:
-        manager = create_slot_manager_instance()
+        # The batch comes from the body, not the URL, which is why the sweep
+        # for id-taking endpoints missed it. Slot timings decide whether a
+        # student can mark at all, so editing another institute's is a real
+        # write across the boundary.
+        if data.get('course_id') is not None:
+            assert_course_allowed(session, data['course_id'])
+
+        manager = get_slot_manager()
         success, message = manager.update_session_timing(
             session_type=session_type,
             start_time=data['start_time'],
             end_time=data['end_time'],
             course_id=data.get('course_id')
         )
-        if success and attendance_manager is not None:
-            # The app-wide manager is built once at import; without this its
-            # fallback view keeps the old timings until the next restart.
-            attendance_manager.reload_config()
+        if success:
+            # The manager is built once at import and caches the timings, so
+            # without this the app keeps the old ones until the next restart.
+            # It is also the only cached state it has, which is why sharing
+            # one instance across requests is safe.
+            manager.reload_config()
         return {"success": success, "message": message}
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -3336,7 +4513,7 @@ async def get_current_slot_info(course_id: Optional[int] = None,
     belongs to no batch in particular - pass the batch you are looking at.
     """
     try:
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         current_slot = manager.get_current_slot(course_id=course_id)
         next_slot = manager.get_next_slot(course_id=course_id)
 
@@ -3354,10 +4531,9 @@ async def get_current_slot_info(course_id: Optional[int] = None,
 async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_admin_access)):
     """Reload slot configuration from database"""
     try:
-        manager = create_slot_manager_instance()
-        manager.reload_config()
-        if attendance_manager is not None:
-            attendance_manager.reload_config()
+        # One manager now, so one reload. This used to build a throwaway
+        # instance, reload that, and then reload the app-wide one as well.
+        get_slot_manager().reload_config()
         return {"success": True, "message": "Slot configuration reloaded successfully"}
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -3366,18 +4542,35 @@ async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_ad
 async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)):
     """Clear all student data, attendance records, and face encodings"""
     try:
-        cursor = attendance_system.conn.cursor()
-        
-        # Delete all records from tables in order to avoid foreign key issues
-        cursor.execute('DELETE FROM slot_attendance')
-        cursor.execute('DELETE FROM session_attendance')
-        cursor.execute('DELETE FROM attendance')
-        cursor.execute('DELETE FROM face_encodings')
-        cursor.execute('DELETE FROM students')
-        cursor.execute('DELETE FROM registration_sessions')
-        cursor.execute('DELETE FROM daily_attendance_summary')
-        
-        attendance_system.conn.commit()
+        conn = attendance_system.conn
+        cursor = conn.cursor()
+
+        # Scope the wipe to the caller's own institute. Unscoped, an admin at
+        # one institute clicking "delete all student data" would take every
+        # other institute's students, attendance and face encodings with it —
+        # the most destructive action in the app, and it did not know tenancy
+        # existed. On a single-institute deployment the filter is empty and
+        # this behaves exactly as before.
+        where, params = tenancy.student_filter(conn, session)
+        ids = [r[0] for r in cursor.execute(
+            "SELECT id FROM students WHERE 1=1" + where, tuple(params)).fetchall()]
+
+        if ids:
+            marks = ",".join("?" for _ in ids)
+            for table in ("slot_attendance", "attendance", "face_encodings"):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE student_id IN ({marks})", tuple(ids))
+            cursor.execute(f"DELETE FROM students WHERE id IN ({marks})", tuple(ids))
+
+        # A registration session has no student yet, so it is not
+        # student-scoped and is only cleared when the wipe covers the whole
+        # deployment. (daily_attendance_summary used to be cleared here too;
+        # migrate_phase13 dropped that table, so the DELETE would now throw
+        # and take the whole wipe down with it.)
+        if not where:
+            cursor.execute('DELETE FROM registration_sessions')
+
+        conn.commit()
         
         # Reload face encodings (will be empty)
         attendance_system.load_student_faces()
@@ -3521,6 +4714,7 @@ async def create_course(data: CourseCreate, session: Dict[str, Any] = Depends(re
 async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
     """Update a batch's details or active status."""
     try:
+        assert_course_allowed(session, course_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -3572,6 +4766,7 @@ async def update_course(course_id: int, data: CourseUpdate, session: Dict[str, A
 async def delete_course(course_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
     """Delete a batch (only if it has no students; otherwise deactivate instead)."""
     try:
+        assert_course_allowed(session, course_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM courses WHERE id = ?", (course_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -3602,10 +4797,22 @@ async def delete_course(course_id: int, session: Dict[str, Any] = Depends(requir
 async def list_teachers(session: Dict[str, Any] = Depends(require_admin_access)):
     """List teacher accounts with their assigned batches."""
     try:
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
         teachers = []
+
+        # Staff belong to an institute. Unscoped this listed every tenant's
+        # teachers — names and email addresses — to any admin.
+        scope, sparams = "", []
+        iid = tenancy.institute_for_session(session)
+        if iid is not None and not tenancy.is_single_tenant(conn):
+            scope = " AND institute_id = ?"
+            sparams = [iid]
+
         for r in cur.execute(
-            "SELECT id, username, name, is_active, email FROM users WHERE role = 'teacher' ORDER BY username"
+            "SELECT id, username, name, is_active, email FROM users "
+            "WHERE role = 'teacher'" + scope + " ORDER BY username",
+            tuple(sparams),
         ).fetchall():
             batches = cur.execute(
                 "SELECT c.id, c.name FROM teacher_batches tb "
@@ -3629,17 +4836,33 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
         username = (data.username or "").strip()
         if not username or not data.password:
             return {"success": False, "message": "Username and password are required"}
-        cur = attendance_system.conn.cursor()
+        conn = attendance_system.conn
+        cur = conn.cursor()
         if cur.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
             return {"success": False, "message": f"Username '{username}' already exists"}
+
+        # Inherit the creating admin's institute. Without this every teacher
+        # was created with institute_id NULL, which tenancy reads as "not
+        # confined" — a teacher who could see across institutes.
+        institute_id = (tenancy.institute_for_session(session)
+                        or tenancy.default_institute_id(conn))
+
         cur.execute(
-            "INSERT INTO users (username, name, email, password_hash, role, is_active, must_change_password) "
-            "VALUES (?, ?, ?, ?, 'teacher', 1, 1)",
+            "INSERT INTO users (username, name, email, password_hash, role, is_active, "
+            "must_change_password, institute_id) "
+            "VALUES (?, ?, ?, ?, 'teacher', 1, 1, ?)",
             (username, (data.name or username).strip(), (data.email or "").strip() or None,
-             hash_password(data.password)),
+             hash_password(data.password), institute_id),
         )
         user_id = cur.lastrowid
+
+        # A batch from another institute would hand this teacher cross-tenant
+        # access by the back door.
         for cid in (data.batch_ids or []):
+            if not tenancy.session_may_touch_course(conn, session, cid):
+                conn.rollback()
+                return {"success": False,
+                        "message": "That batch belongs to a different institute"}
             if is_postgres():
                 cur.execute(
                     "INSERT INTO teacher_batches (user_id, course_id) VALUES (?, ?) ON CONFLICT (user_id, course_id) DO NOTHING",
@@ -3661,6 +4884,7 @@ async def create_teacher(data: TeacherCreate, session: Dict[str, Any] = Depends(
 async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, Any] = Depends(require_admin_access)):
     """Update a teacher: name, active status, password reset, and batch assignments."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         row = cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone()
         if not row:
@@ -3705,6 +4929,7 @@ async def update_teacher(user_id: int, data: TeacherUpdate, session: Dict[str, A
 async def delete_teacher(user_id: int, session: Dict[str, Any] = Depends(require_admin_access)):
     """Delete a teacher account and its batch assignments."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Teacher not found")
@@ -3766,7 +4991,19 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
     """Update student details including joining date"""
     try:
         cursor = attendance_system.conn.cursor()
-        # Batch scope for teachers
+
+        # Institute AND batch scope. The teacher check below runs only when
+        # teacher_allowed_course_ids() returns a list, and it returns None for
+        # an admin meaning "all batches" — so for an admin this whole block
+        # used to be skipped and nothing was checked at all. An admin at one
+        # institute could rename or move another institute's student.
+        assert_student_allowed(session, student_id)
+
+        # Moving a student into a batch is a write to that batch, so the
+        # destination needs the same check as the source.
+        if data.get("course_id") is not None:
+            assert_course_allowed(session, data["course_id"])
+
         allowed = teacher_allowed_course_ids(session)
         if allowed is not None:
             row = cursor.execute("SELECT course_id FROM students WHERE id = ?", (student_id,)).fetchone()
@@ -3791,6 +5028,11 @@ async def update_student(student_id: int, data: dict = Body(...), session: Dict[
         cursor.execute(sql, values)
         attendance_system.conn.commit()
         return {"success": True, "message": "Student updated successfully"}
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -3806,6 +5048,12 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
 
         if not student:
             raise HTTPException(status_code=404, detail="Student not found")
+
+        # Institute scope. The teacher check below is skipped entirely for an
+        # admin (teacher_allowed_course_ids returns None for them), so without
+        # this an admin at one institute could delete another institute's
+        # student outright.
+        assert_student_allowed(session, student_id)
 
         allowed = teacher_allowed_course_ids(session)
         if allowed is not None and student[1] not in allowed:
@@ -3829,6 +5077,11 @@ async def delete_student(student_id: int, session: Dict[str, Any] = Depends(requ
               details=f"student_db_id={student_id}", course_id=student[1])
         return {"success": True, "message": f"Student {student[0]} deleted successfully"}
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": f"Failed to delete student: {str(e)}"}
 
@@ -3862,6 +5115,7 @@ async def reset_teacher_password(user_id: int, data: dict = Body(default={}),
                                  session: Dict[str, Any] = Depends(require_admin_access)):
     """Admin resets a teacher's password (to a provided value or 'teacher@123')."""
     try:
+        assert_staff_allowed(session, user_id)
         cur = attendance_system.conn.cursor()
         if not cur.execute("SELECT id FROM users WHERE id = ? AND role = 'teacher'", (user_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Teacher not found")
@@ -4251,35 +5505,49 @@ async def session_status(session: Optional[Dict[str, Any]] = Depends(get_current
 
 
 
-@app.get("/api/navigation/home")
-async def navigate_home(session: Optional[Dict[str, Any]] = Depends(get_current_session)):
-    """Smart home navigation based on user type"""
-    from fastapi.responses import RedirectResponse
-    
-    if not session:
-        return {"success": False, "redirect_url": "/login"}
-    
-    user_type = session.get("user_type", "")
-    
-    if user_type == "admin":
-        return {"success": True, "redirect_url": "/dashboard", "message": "Redirecting to admin dashboard"}
-    elif user_type == "user":
-        return {"success": True, "redirect_url": "/attendance", "message": "You are already on your home page"}
-    else:
-        return {"success": False, "redirect_url": "/login", "message": "Invalid session"}
-    
-
 @app.post("/api/attendance/manual/session")
 async def mark_manual_session_attendance_api(data: dict = Body(...), session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Mark session attendance manually"""
+    """Mark one student present manually. Delegates to the bulk-mark path.
+
+    There were two endpoints writing attendance by different routes, and they
+    did not agree. This one called AttendanceSystem.mark_manual_session_
+    attendance(), which writes ONLY to `slot_attendance` — so a teacher's
+    manual mark never reached `attendance`, the table every report, analytic
+    and export reads. The student stayed absent in every figure that matters.
+
+    bulk-mark is the correct path: it checks the batch belongs to the caller,
+    refuses Sundays and holidays, and writes `attendance`. Rather than keep two
+    implementations in step, this is now a thin adapter onto that one.
+    """
     try:
-        success, message = attendance_system.mark_manual_session_attendance(
-            data['student_id'],
-            data['date'],
-            data['session_type'],
-            data.get('reason')
-        )
-        return {"success": success, "message": message}
+        student_id = data.get("student_id")
+        the_date = (data.get("date") or "").strip()
+        if not student_id or not the_date:
+            return {"success": False, "message": "student_id and date are required"}
+
+        row = attendance_system.conn.execute(
+            "SELECT course_id FROM students WHERE id = ?", (student_id,)
+        ).fetchone()
+        if not row or row[0] is None:
+            return {"success": False, "message": "Student not found, or not in a batch"}
+
+        # The old API used 'full_day' for a whole-day mark and expanded it into
+        # four slot rows. A whole-day mark is one row with no session_type —
+        # which is also what reports.day_credit() already treats as a full day.
+        slot = data.get("session_type") or None
+        if slot in ("full_day", "whole_day", "all"):
+            slot = None
+
+        return await bulk_mark_attendance_api({
+            "course_id": row[0],
+            "date": the_date,
+            "status": "present",
+            "session_type": slot,
+            "student_ids": [student_id],
+            "reason": data.get("reason") or "Manual mark",
+        }, session)
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4299,22 +5567,47 @@ async def teacher_batch_students(course_id: int, date: Optional[str] = None,
         assert_course_allowed(session, course_id)
         the_date = date or datetime.now(timezone).date().strftime("%Y-%m-%d")
         cur = attendance_system.conn.cursor()
-        students = []
-        for r in cur.execute(
-            "SELECT id, student_id, name, (face_encoding IS NOT NULL), email, dob FROM students "
-            "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
+
+        # Two queries, not one per student. This ran a SELECT against
+        # `attendance` for every row in the batch, so a 60-student roster cost
+        # 61 round trips and the teacher portal's main page paid it on every
+        # visit.
+        rows = cur.execute(
+            "SELECT id, student_id, name, (face_encoding IS NOT NULL), email, dob "
+            "FROM students WHERE course_id = ? "
+            "AND status IN ('active','pending_registration') ORDER BY name",
             (course_id,),
-        ).fetchall():
+        ).fetchall()
+
+        marks_by_student = {}
+        if rows:
+            # Keyed on the student ids, not on course_id. The per-student query
+            # this replaces matched on student_id and date alone, and an
+            # attendance row can carry a NULL or stale course_id -- written
+            # before that column was populated, or left behind by a batch
+            # move. Narrowing by course_id here would have quietly turned
+            # those students absent.
+            ids = [r[0] for r in rows]
             marks = cur.execute(
-                "SELECT session_type, time_in, is_manual FROM attendance WHERE student_id = ? AND date = ?",
-                (r[0], the_date),
+                "SELECT student_id, session_type FROM attendance "
+                "WHERE date = ? AND student_id IN (%s)"
+                % ",".join("?" for _ in ids),
+                tuple([the_date] + ids)
             ).fetchall()
-            present = len(marks) > 0
-            sessions_present = [m[0] for m in marks if m[0]]
+            for sid, session_type in marks:
+                marks_by_student.setdefault(sid, []).append(session_type)
+
+        students = []
+        for r in rows:
+            # A student with a row but a NULL session_type is present without a
+            # named slot -- a whole-day manual mark. Still present, so the
+            # emptiness of the list must not stand in for absence.
+            slots = marks_by_student.get(r[0])
             students.append({
                 "id": r[0], "student_id": r[1], "name": r[2], "has_face": bool(r[3]),
                 "email": r[4], "dob": r[5],
-                "present": present, "sessions": sessions_present,
+                "present": slots is not None,
+                "sessions": [s for s in (slots or []) if s],
             })
         present_count = sum(1 for s in students if s["present"])
         return {
@@ -4820,7 +6113,18 @@ async def set_consent(request: Request, data: dict = Body(...),
 @app.get("/api/admin/consent-status")
 async def consent_status_report(course_id: Optional[int] = None,
                                 session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Who has and has not consented — the record you need if anyone asks."""
+    """Who has and has not consented — the record you need if anyone asks.
+
+    The dashboard's consent card reads the totals from /api/admin/overview;
+    this is its drill-down, because "4 have not responded" is only actionable
+    once you know which four.
+
+    Scoped by institute as well as by batch. It filtered on
+    teacher_allowed_course_ids() alone, which returns None for an admin
+    meaning "every batch" — so the whole filter was skipped and one customer's
+    admin got a roll-by-roll consent register for every other customer. The
+    same shape of bug as update_student, and for the same reason.
+    """
     try:
         allowed = teacher_allowed_course_ids(session)
         sql = ("SELECT s.id, s.student_id, s.name, s.course_id, c.name, "
@@ -4833,7 +6137,12 @@ async def consent_status_report(course_id: Optional[int] = None,
                "WHERE s.status IN ('active','pending_registration')")
         params = [CONSENT_PURPOSE, CONSENT_POLICY_VERSION,
                   CONSENT_PURPOSE, CONSENT_POLICY_VERSION]
+        scope_sql, scope_params = tenancy.student_filter(
+            attendance_system.conn, session, "s.course_id")
+        sql += scope_sql
+        params.extend(scope_params)
         if course_id:
+            assert_course_allowed(session, course_id)
             sql += " AND s.course_id = ?"
             params.append(course_id)
         sql += " ORDER BY s.name"
@@ -4851,6 +6160,8 @@ async def consent_status_report(course_id: Optional[int] = None,
         return {"success": True, "policy_version": CONSENT_POLICY_VERSION,
                 "students": out, "total": len(out), "consented": granted_n,
                 "pending": len(out) - granted_n}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -5670,6 +6981,81 @@ async def student_register_face_status(session: Dict[str, Any] = Depends(require
         return {"success": False, "message": str(e)}
 
 
+@app.get("/api/approvals/summary")
+async def approvals_summary(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """How many of each kind are waiting, for the nav badge and the inbox.
+
+    Deliberately available to teachers AND admins. The four queues used to live
+    only inside the teacher portal, and navbar.js renders that link for
+    teachers only — so an admin had no route to them at all and no idea
+    anything was waiting.
+
+    Scoped the same way the queue endpoints themselves are: admins see every
+    batch in their institute, teachers only the batches they are assigned.
+    """
+    try:
+        conn = attendance_system.conn
+        allowed = teacher_allowed_course_ids(session)
+        if allowed is None:
+            allowed = tenancy.visible_course_ids(conn, session)
+
+        if allowed is None:
+            clause, params = "", []
+        elif not allowed:
+            clause, params = " AND course_id IN (SELECT NULL)", []
+        else:
+            marks = ",".join("?" for _ in allowed)
+            clause, params = f" AND course_id IN ({marks})", list(allowed)
+
+        def pending(table):
+            try:
+                row = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE status = 'pending'" + clause,
+                    tuple(params)).fetchone()
+                return int(row[0]) if row else 0
+            except Exception:
+                return 0
+
+        counts = {
+            "leave": pending("leave_requests"),
+            "grievances": pending("grievances"),
+            "face_requests": pending("face_registration_requests"),
+            "profile_requests": pending("profile_change_requests"),
+        }
+
+        # Leave that starts within two days cannot wait for the next login.
+        soon = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM leave_requests WHERE status = 'pending' "
+                "AND start_date <= ?" + clause, tuple([soon] + params)).fetchone()
+            counts["leave_urgent"] = int(row[0]) if row else 0
+        except Exception:
+            counts["leave_urgent"] = 0
+
+        counts["total"] = (counts["leave"] + counts["grievances"]
+                           + counts["face_requests"] + counts["profile_requests"])
+        return {"success": True, "counts": counts}
+    except Exception as e:
+        return {"success": False, "message": str(e), "counts": {"total": 0}}
+
+
+@app.get("/approvals", response_class=HTMLResponse)
+async def approvals_page(request: Request,
+                         session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """One inbox for everything waiting on a decision.
+
+    These four queues were four tabs inside the teacher portal, which is both
+    the wrong altitude — they are the work, not a sub-view of a profile page —
+    and unreachable for admins.
+    """
+    return templates.TemplateResponse("approvals.html", {
+        "request": request,
+        "user_name": session.get("user_info", {}).get("name", ""),
+        "is_admin": session.get("user_type") == "admin",
+    })
+
+
 @app.get("/api/teacher/face-requests")
 async def teacher_face_requests(status: str = "pending",
                                 session: Dict[str, Any] = Depends(require_teacher_or_admin)):
@@ -5917,20 +7303,41 @@ async def bulk_export_attendance(
     include_holidays: bool = False,
     session: Dict[str, Any] = Depends(require_teacher_or_admin)
 ):
-    """Export bulk slot-based attendance data as CSV"""
+    """Export slot-based attendance as CSV, for the caller's own students.
+
+    This was the worst of the three unscoped list endpoints, because it hands
+    back a file: the student_summary format wrote every institute's students
+    into one CSV with name, roll number and email, and daily_summary counted
+    them all into one headcount. An admin at one customer could download
+    another customer's roster.
+
+    Both formats are now driven by the same scoped id set, so there is one
+    place to get it wrong rather than two.
+    """
     try:
         from fastapi.responses import StreamingResponse
         import csv
-        
+
         start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-        
+
         cursor = attendance_system.conn.cursor()
-        
-        # Get all students
-        cursor.execute('SELECT id, name, student_id, email FROM students WHERE status = "active" ORDER BY name')
+
+        scope, scope_params = visible_student_filter(session, "course_id")
+        cursor.execute(
+            'SELECT id, name, student_id, email FROM students '
+            'WHERE status = "active"' + scope + ' ORDER BY name',
+            tuple(scope_params))
         students = cursor.fetchall()
-        
+
+        # The per-day counts below aggregate slot_attendance directly rather
+        # than walking `students`, so they need the same restriction. An empty
+        # roster must produce an empty IN (), not an unfiltered count.
+        student_ids = [r[0] for r in students]
+        id_marks = ",".join("?" for _ in student_ids) if student_ids else "NULL"
+        day_scope = f" AND student_id IN ({id_marks})"
+        day_params = list(student_ids)
+
         # Get holidays if not including them
         holiday_dates = []
         if not include_holidays:
@@ -5942,7 +7349,38 @@ async def bulk_export_attendance(
         
         if format == 'daily_summary':  # FIXED: was 'daily'
             writer.writerow(['Date', 'Day', 'Total Students', 'Full Day Present', 'Half Day Present', 'Absent', 'Morning Sessions', 'Afternoon Sessions'])
-            
+
+            # One query for the whole range, not four per day. This loop used
+            # to run four COUNT(DISTINCT) queries for every date in the range,
+            # so a six-month export was about 1,200 round trips; it is now one.
+            # Grouping by date in SQL also means an empty range costs nothing.
+            per_day = {}
+            for row in cursor.execute(
+                "SELECT date,"
+                " COUNT(DISTINCT CASE WHEN slot_id LIKE 'morning%' THEN student_id END),"
+                " COUNT(DISTINCT CASE WHEN slot_id LIKE 'afternoon%' THEN student_id END),"
+                " COUNT(DISTINCT student_id) FROM slot_attendance"
+                " WHERE date BETWEEN ? AND ?" + day_scope +
+                " GROUP BY date",
+                tuple([start_date, end_date] + day_params)
+            ).fetchall():
+                per_day[str(row[0])] = [row[1] or 0, row[2] or 0, 0, row[3] or 0]
+
+            # Full days need a per-student HAVING, so they come as a second
+            # grouped query rather than folding into the one above.
+            for row in cursor.execute(
+                "SELECT date, COUNT(*) FROM ("
+                "  SELECT date, student_id FROM slot_attendance"
+                "  WHERE date BETWEEN ? AND ?" + day_scope +
+                "  GROUP BY date, student_id"
+                "  HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0"
+                "     AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0"
+                ") GROUP BY date",
+                tuple([start_date, end_date] + day_params)
+            ).fetchall():
+                bucket = per_day.setdefault(str(row[0]), [0, 0, 0, 0])
+                bucket[2] = row[1] or 0
+
             current_date = start_date_obj  # FIXED: use _obj version
             while current_date <= end_date_obj:  # FIXED: use _obj version
                 if not include_weekends and current_date.weekday() == 6:
@@ -5955,40 +7393,11 @@ async def bulk_export_attendance(
                 
                 date_str = current_date.strftime('%Y-%m-%d')
                 day_name = current_date.strftime('%A')
-                
-                # Count morning sessions (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id LIKE 'morning%'
-                ''', (date_str,))
-                morning_count = cursor.fetchone()[0]
-                
-                # Count afternoon sessions (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id LIKE 'afternoon%'
-                ''', (date_str,))
-                afternoon_count = cursor.fetchone()[0]
-                
-                # Count students with both sessions equivalent
-                cursor.execute('''
-                    SELECT student_id FROM slot_attendance 
-                    WHERE date = ? 
-                    GROUP BY student_id 
-                    HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0 
-                       AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0
-                ''', (date_str,))
-                full_day_records = cursor.fetchall()
-                full_day_count = len(full_day_records)
-                
-                # Total unique students
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ?
-                ''', (date_str,))
-                total_present_students = cursor.fetchone()[0]
+
+                counts = per_day.get(date_str, (0, 0, 0, 0))
+                morning_count, afternoon_count, full_day_count, total_present_students = counts
                 half_day_count = total_present_students - full_day_count
-                
+
                 absent_count = len(students) - total_present_students
                 
                 writer.writerow([
@@ -6002,49 +7411,42 @@ async def bulk_export_attendance(
         elif format == 'student_summary':  # FIXED: was 'student'
             writer.writerow(['Student Name', 'Student ID', 'Email', 'Full Days', 'Half Days', 'Absent Days', 'Total Sessions', 'Attendance %'])
             
+            # One grouped query for every student in the range, instead of two
+            # per student. A 200-student six-month export ran 400 queries and
+            # recomputed the identical working-day count 200 times.
+            per_student = {}
+            if student_ids:
+                for sid, d, morn, aft in cursor.execute(
+                    "SELECT student_id, date,"
+                    " SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END),"
+                    " SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END)"
+                    " FROM slot_attendance WHERE date BETWEEN ? AND ?" + day_scope +
+                    " GROUP BY student_id, date",
+                    tuple([start_date, end_date] + day_params)
+                ).fetchall():
+                    bucket = per_student.setdefault(sid, {"full": 0, "half": 0, "sessions": 0})
+                    bucket["sessions"] += (morn or 0) + (aft or 0)
+                    if (morn or 0) > 0 and (aft or 0) > 0:
+                        bucket["full"] += 1
+                    elif (morn or 0) > 0 or (aft or 0) > 0:
+                        bucket["half"] += 1
+
+            # The same for everyone in the export, so counted once.
+            total_working_days = 0
+            current_date = start_date_obj
+            while current_date <= end_date_obj:
+                if ((include_weekends or current_date.weekday() != 6)
+                        and current_date not in holiday_dates):
+                    total_working_days += 1
+                current_date += timedelta(days=1)
+
             for student in students:
                 student_id, name, student_id_str, email = student
-                
-                # Get slot data for this student (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT date, 
-                           SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) as morn_count,
-                           SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) as aft_count
-                    FROM slot_attendance 
-                    WHERE student_id = ? AND date BETWEEN ? AND ?
-                    GROUP BY date
-                ''', (student_id, start_date, end_date))  # FIXED: use string versions
-                
-                daily_sessions = cursor.fetchall()
-                
-                full_days = 0
-                half_days = 0
-                for _, morn, aft in daily_sessions:
-                    if morn > 0 and aft > 0:
-                        full_days += 1
-                    elif morn > 0 or aft > 0:
-                        half_days += 1
-                
-                # Get total session count
-                cursor.execute('''
-                    SELECT COUNT(*) FROM slot_attendance 
-                    WHERE student_id = ? AND date BETWEEN ? AND ?
-                ''', (student_id, start_date, end_date))  # FIXED: use string versions
-                total_sessions = cursor.fetchone()[0]
-                
-                # Calculate working days
-                total_working_days = 0
-                current_date = start_date_obj  # FIXED: use _obj version
-                while current_date <= end_date_obj:  # FIXED: use _obj version
-                    if not include_weekends and current_date.weekday() == 6:
-                        current_date += timedelta(days=1)
-                        continue
-                    if current_date in holiday_dates:
-                        current_date += timedelta(days=1)
-                        continue
-                    total_working_days += 1
-                    current_date += timedelta(days=1)
-                
+                tally = per_student.get(student_id, {"full": 0, "half": 0, "sessions": 0})
+                full_days = tally["full"]
+                half_days = tally["half"]
+                total_sessions = tally["sessions"]
+
                 absent_days = total_working_days - full_days - half_days
                 effective_present_days = full_days + (half_days * 0.5)
                 percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0
@@ -6108,6 +7510,11 @@ async def bulk_export_attendance(
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
     
@@ -6116,6 +7523,7 @@ async def bulk_export_attendance(
 async def get_student_details(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get individual student details including joining date"""
     try:
+        assert_student_allowed(session, student_id)
         cursor = attendance_system.conn.cursor()
         cursor.execute('''
             SELECT id, student_id, name, email, photo_count, verification_score, 
@@ -6142,6 +7550,94 @@ async def get_student_details(student_id: int, session: Dict[str, Any] = Depends
                 "status": student[8]
             }
         }
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/students/{student_id}/profile")
+async def student_profile_detail(student_id: int,
+                                 session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """Everything about one student, in one request.
+
+    There was no single place to look a student up. Their data was spread over
+    a sparkline modal, a slots endpoint, the subject breakdown and three
+    partial list pages, so answering "how is this student doing" meant visiting
+    several screens and joining them by eye.
+    """
+    try:
+        conn = attendance_system.conn
+        row = conn.execute(
+            "SELECT s.id, s.student_id, s.name, s.email, s.course_id, c.name, "
+            "       s.status, s.joining_date, s.dob, s.photo_count, "
+            "       s.face_encoding IS NOT NULL, s.must_change_password "
+            "FROM students s LEFT JOIN courses c ON c.id = s.course_id "
+            "WHERE s.id = ?", (student_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Student not found")
+
+        course_id = row[4]
+        if course_id is not None:
+            assert_course_allowed(session, course_id)
+            if not tenancy.session_may_touch_course(conn, session, course_id):
+                raise HTTPException(status_code=403, detail="Not your institute")
+
+        student = {
+            "id": row[0], "roll_no": row[1], "name": row[2], "email": row[3],
+            "course_id": course_id, "batch": row[5] or "—", "status": row[6],
+            "joining_date": str(row[7])[:10] if row[7] else None,
+            "dob": row[8], "photo_count": row[9] or 0,
+            # The single most actionable fact: without a face the camera can
+            # never mark them, and nothing else in the app surfaces it.
+            "has_face": bool(row[10]),
+            "must_change_password": bool(row[11]),
+        }
+
+        attendance_summary = None
+        try:
+            import reports as _reports
+            attendance_summary = _reports.student_cumulative_report(student_id)
+        except Exception as e:
+            attendance_summary = {"error": str(e)}
+
+        subjects = []
+        try:
+            subjects = timetable.subject_attendance(conn, course_id, student_db_id=student_id)
+        except Exception:
+            subjects = []
+
+        def pending(table):
+            try:
+                r = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE student_id = ? AND status = 'pending'",
+                    (student_id,)).fetchone()
+                return int(r[0]) if r else 0
+            except Exception:
+                return 0
+
+        consented, consent_record = consent_state(student_id)
+
+        return {
+            "success": True,
+            "student": student,
+            "attendance": attendance_summary,
+            "subjects": subjects,
+            "requests": {
+                "leave": pending("leave_requests"),
+                "grievances": pending("grievances"),
+                "face": pending("face_registration_requests"),
+                "profile": pending("profile_change_requests"),
+            },
+            "consent": {"granted": consented,
+                        "policy_version": CONSENT_POLICY_VERSION,
+                        "record": consent_record},
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -6150,6 +7646,7 @@ async def get_student_details(student_id: int, session: Dict[str, Any] = Depends
 async def export_student_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Export individual student slot attendance as CSV"""
     try:
+        assert_student_allowed(session, student_id)
         from fastapi.responses import StreamingResponse
         import csv
         import io
@@ -6236,6 +7733,11 @@ async def export_student_attendance(student_id: int, session: Dict[str, Any] = D
             headers={"Content-Disposition": f"attachment; filename={filename}"}
         )
         
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[ERROR] Export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
@@ -6245,18 +7747,18 @@ async def export_student_attendance(student_id: int, session: Dict[str, Any] = D
 
 
 
-# ADD THIS LINE HERE:
-add_phase1_api_endpoints(app, attendance_system)
-
-
-
-
 @app.get("/api/attendance/student/{student_id}/sessions")
 async def get_student_session_attendance(student_id: int, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """Get detailed session-based attendance data for a specific student"""
     try:
+        assert_student_allowed(session, student_id)
         data = attendance_system.get_student_attendance_data(student_id)
         return data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
     
@@ -6264,15 +7766,20 @@ async def get_student_session_attendance(student_id: int, session: Dict[str, Any
 
 @app.get("/api/attendance/today/slots")
 async def get_today_slot_attendance(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Get today's slot-based attendance (the working system)"""
+    """Today's slot-by-slot attendance, scoped to the caller's own students.
+
+    Unscoped until now, so it listed every institute's students by name,
+    roll number and email alongside the four slot times.
+    """
     try:
-        today = datetime.now().date()
         timezone = pytz.timezone('Asia/Kolkata')
-        today = datetime.now(timezone).date()
+        # As a string, not a date: sqlite3's implicit date adapter is
+        # deprecated in 3.12, and every other query here already binds the
+        # ISO text that slot_attendance.date actually stores.
+        today = datetime.now(timezone).date().strftime('%Y-%m-%d')
+        scope, scope_params = visible_student_filter(session, "s.course_id")
         cursor = attendance_system.conn.cursor()
 
-
-        
         cursor.execute('''
             SELECT s.name, s.student_id, s.email, 
                    sa_m1.created_at as morning_1_time,
@@ -6289,12 +7796,14 @@ async def get_today_slot_attendance(session: Dict[str, Any] = Depends(require_te
                 AND sa_a1.date = ? AND sa_a1.slot_id = 'afternoon_1'
             LEFT JOIN slot_attendance sa_a2 ON s.id = sa_a2.student_id 
                 AND sa_a2.date = ? AND sa_a2.slot_id = 'afternoon_2'
-            WHERE s.status = 'active'
+            WHERE s.status = 'active' ''' + scope + '''
             ORDER BY s.name
-        ''', (today, today, today, today))
-        
+        ''', (today, today, today, today, *scope_params))
+
         return cursor.fetchall()
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error loading slot attendance: {e}")
         return []
@@ -6336,7 +7845,13 @@ async def get_at_risk_data(threshold: int = 75, course_id: Optional[int] = None,
 async def get_student_sparkline(student_id: int, days: int = 14, session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """14-day per-day attendance sparkline for a single student"""
     try:
+        assert_student_allowed(session, student_id)
         return analytics_manager.get_student_sparkline(student_id=student_id, days=days)
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -6363,9 +7878,14 @@ async def get_live_attendance_count(course_id: Optional[int] = None,
             if allowed is not None and len(allowed) == 1:
                 scope_course_id = allowed[0]
 
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         count_data = manager.get_live_student_count(course_id=scope_course_id)
         return count_data
+    # A bare `except Exception` swallows HTTPException too, turning a
+    # 403 or 404 into a 200 with success:false. The caller cannot tell
+    # 'forbidden' from 'something broke'.
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in live count: {e}")
         return {
@@ -6389,6 +7909,15 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
     """
     if not FACE_RECOGNITION_AVAILABLE:
         return {"success": False, "message": "Face recognition not available"}
+
+    # Only this institute's students may be matched. The per-batch filter below
+    # is a separate, narrower rule: a terminal is scoped to its batches, and the
+    # institute scope is what stops another customer's student matching at all.
+    match_institute_id = tenancy.institute_for_session(session)
+    gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
+        match_institute_id)
+    # Resolved once for the whole frame, not once per face.
+    frame_gallery = attendance_system.match_gallery(match_institute_id)
 
     # Terminal sessions restrict marking to their batch
     terminal_batch_ids = None
@@ -6431,10 +7960,14 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             }
         
         # Initialize slot manager
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         recognized_students = []
         unknown_faces = 0
         spoofed_faces = 0
+        # Batch-level lookups, memoised for the life of this frame: the
+        # working-day check and the slot's subject are the same for everyone
+        # standing in front of the camera.
+        frame_cache = {}
         
         for face_data in detected_faces:
             # --- ANTI-SPOOFING GATE ---
@@ -6460,24 +7993,15 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             # --- END ANTI-SPOOFING GATE ---
 
             face_encoding = face_data['embedding']
-            
-            # Find best match (same logic as existing)
-            if len(attendance_system.known_face_encodings) > 0:
-                similarities = []
-                for known_encoding in attendance_system.known_face_encodings:
-                    face_norm = face_encoding / np.linalg.norm(face_encoding)
-                    known_norm = known_encoding / np.linalg.norm(known_encoding)
-                    similarity = np.dot(face_norm, known_norm)
-                    similarities.append(similarity)
-                
-                best_match_index = np.argmax(similarities)
-                best_similarity = similarities[best_match_index]
-                
-                RECOGNITION_THRESHOLD = 0.60
-                
-                if best_similarity > RECOGNITION_THRESHOLD:
-                    student_id = attendance_system.known_face_ids[best_match_index]
-                    student_name = attendance_system.known_face_names[best_match_index]
+
+            # Find best match, against THIS session's institute only.
+            # One pre-normalised matmul in best_match(), not a Python loop per
+            # known face; see AttendanceSystem._build_match_matrices.
+            if len(gallery_ids) > 0:
+                student_id, student_name, best_similarity = best_match(
+                    face_encoding, match_institute_id, frame_gallery)
+
+                if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
 
                     # Terminal: skip students who aren't in this batch
                     if terminal_batch_ids is not None and student_id not in terminal_batch_ids:
@@ -6497,10 +8021,14 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
                         })
                         continue
 
-                    # Use slot manager for attendance marking
+                    # One transaction for the whole frame, committed after the
+                    # loop. A terminal can recognise a row of students in a
+                    # single shot, and this used to commit per student.
                     attendance_result = manager.mark_attendance_with_slot(
                         student_id=student_id,
-                        detection_confidence=best_similarity
+                        detection_confidence=best_similarity,
+                        defer_commit=True,
+                        frame_cache=frame_cache,
                     )
                     
                     face_location = face_data['location']
@@ -6509,12 +8037,16 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
                         # Successfully marked
                         recognized_students.append({
                             "student_id": student_id,
+                            # The roll number, for the terminal's confirmation
+                            # card — a student checks that before walking off.
+                            "roll_no": attendance_result.get('student_id'),
                             "name": student_name,
                             "confidence": float(best_similarity),
                             "status": "marked",
                             "message": attendance_result['message'],
                             "liveness_score": liveness['score'],
                             "slot_name": attendance_result.get('slot_name', ''),
+                            "time_marked": attendance_result.get('time_marked'),
                             "location": {
                                 "top": int(face_location[0]),
                                 "right": int(face_location[1]),
@@ -6539,37 +8071,95 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
                                 "left": int(face_location[3])
                             }
                         })
-                    elif attendance_result.get('outside_slot'):
-                        # Outside slot hours - return special response
-                        return {
-                            "success": False,
-                            "faces_detected": len(detected_faces),
-                            "recognized_students": [],
-                            "unknown_faces": 0,
-                            "outside_slot": True,
-                            "face_detected": True,
-                            "student_name": student_name,
+                    elif attendance_result.get('non_working_day') or \
+                            attendance_result.get('outside_slot'):
+                        # Both of these used to `return` from inside this loop,
+                        # which threw away every student already marked in this
+                        # frame and never looked at the remaining faces. A group
+                        # standing together would get nobody marked because one
+                        # of them hit the condition first.
+                        #
+                        # They are also not necessarily whole-frame conditions:
+                        # slot timings are per batch, so on a combined terminal
+                        # one batch can be mid-session while another is closed.
+                        # Recorded per student, and the loop carries on.
+                        blocked = ("non_working_day"
+                                   if attendance_result.get('non_working_day')
+                                   else "outside_slot")
+                        recognized_students.append({
+                            "student_id": student_id,
+                            "name": student_name,
                             "confidence": float(best_similarity),
+                            "status": blocked,
                             "message": attendance_result['message'],
-                            "next_slot": attendance_result.get('next_slot')
-                        }
+                            "next_slot": attendance_result.get('next_slot'),
+                            "location": {
+                                "top": int(face_location[0]),
+                                "right": int(face_location[1]),
+                                "bottom": int(face_location[2]),
+                                "left": int(face_location[3])
+                            }
+                        })
                 else:
                     unknown_faces += 1
             else:
                 unknown_faces += 1
-        
-        success = len(recognized_students) > 0
-        message = f"Processed {len(detected_faces)} faces, recognized {len(recognized_students)} students"
-        
-        return {
+
+        # One commit for the frame. The manager holds its own connection --
+        # separate from attendance_system.conn -- so this is the one that
+        # matters. Each mark_attendance_with_slot() above deferred it, so
+        # without this the whole group sits in an open transaction.
+        try:
+            manager.conn.commit()
+        except Exception as e:
+            manager.conn.rollback()
+            print(f"[ERROR] could not commit the frame's marks: {e}")
+            return {"success": False, "faces_detected": len(detected_faces),
+                    "recognized_students": [], "unknown_faces": unknown_faces,
+                    "message": "Attendance could not be saved. Please try again."}
+
+        marked_now = [s for s in recognized_students
+                      if s.get("status") in ("marked", "already_marked")]
+        success = len(marked_now) > 0
+
+        if success:
+            message = (f"Marked {sum(1 for s in recognized_students if s.get('status') == 'marked')}"
+                       f" of {len(detected_faces)} face(s)")
+        else:
+            message = (f"Processed {len(detected_faces)} faces, "
+                       f"recognized {len(recognized_students)} students")
+
+        out = {
             "success": success,
             "faces_detected": len(detected_faces),
             "recognized_students": recognized_students,
             "unknown_faces": unknown_faces,
-            "message": message
+            "message": message,
         }
+
+        # The old top-level flags are what the staff page and the kiosk read for
+        # the whole-screen "closed" / "no class today" states. Only raise them
+        # when NOBODY was marked and everyone recognised hit the same wall —
+        # otherwise a group where four were marked and one was out of slot would
+        # show the whole terminal as closed.
+        for flag in ("non_working_day", "outside_slot"):
+            blocked_rows = [s for s in recognized_students if s.get("status") == flag]
+            if blocked_rows and not marked_now and len(blocked_rows) == len(recognized_students):
+                out[flag] = True
+                out["face_detected"] = True
+                out["student_name"] = blocked_rows[0]["name"]
+                out["message"] = blocked_rows[0]["message"]
+                if blocked_rows[0].get("next_slot"):
+                    out["next_slot"] = blocked_rows[0]["next_slot"]
+        return out
         
     except Exception as e:
+        # The frame's marks are deferred, so an error part-way through must
+        # not leave a half-written group in an open transaction.
+        try:
+            get_slot_manager().conn.rollback()
+        except Exception:
+            pass
         print(f"[ERROR] Slot detection failed: {str(e)}")
         return {
             "success": False,

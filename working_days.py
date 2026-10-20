@@ -41,21 +41,68 @@ def day_name(value):
 
 
 def holiday_name(conn, course_id, the_date):
-    """The name of the holiday on this date for this batch, or None."""
+    """The name of the holiday on this date for this batch, or None.
+
+    A holiday with course_id NULL applies to every batch — but only within its
+    own institute. Before multi-tenancy that distinction did not exist and the
+    clause was simply `course_id IS NULL OR course_id = ?`, which on a shared
+    deployment would hand one institute's public holiday to another's students
+    and silently wipe a day of attendance for a customer who never declared it.
+
+    The institute is derived from the batch rather than passed in, so every
+    existing caller is scoped correctly without changing its signature.
+    """
     d = as_date(the_date)
     if not d:
         return None
     try:
+        import tenancy
+        clause, params = tenancy.holiday_scope_clause(
+            conn, tenancy.institute_of_course(conn, course_id))
+    except Exception:
+        clause, params = "", []       # pre-migration database: unscoped, as before
+    try:
         row = conn.execute(
             "SELECT name FROM holidays WHERE date = ? "
-            "AND (course_id IS NULL OR course_id = ?) LIMIT 1",
-            (d.strftime("%Y-%m-%d"), course_id),
+            "AND (course_id IS NULL OR course_id = ?)" + clause + " LIMIT 1",
+            tuple([d.strftime("%Y-%m-%d"), course_id] + params),
         ).fetchone()
     except Exception:
         return None
     if not row:
         return None
     return row[0] or "Holiday"
+
+
+def holiday_dates(conn, course_id):
+    """Set of dates that are holidays for this batch.
+
+    The one place the holiday scoping rule lives. reports.py, timetable.py and
+    analytics_manager.py each had their own copy of
+    `course_id IS NULL OR course_id = ?`, so making holidays institute-aware in
+    only some of them would have left a batch's attendance percentage depending
+    on which screen you looked at. They all call this now.
+    """
+    try:
+        import tenancy
+        clause, params = tenancy.holiday_scope_clause(
+            conn, tenancy.institute_of_course(conn, course_id))
+    except Exception:
+        clause, params = "", []       # pre-migration database: unscoped, as before
+
+    out = set()
+    try:
+        rows = conn.execute(
+            "SELECT date FROM holidays WHERE (course_id IS NULL OR course_id = ?)" + clause,
+            tuple([course_id] + params),
+        ).fetchall()
+    except Exception:
+        return out
+    for row in rows:
+        d = as_date(row[0])
+        if d:
+            out.add(d)
+    return out
 
 
 def check(conn, course_id, the_date):

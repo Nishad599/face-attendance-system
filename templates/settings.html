@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        /* ================================================================
+           SETTINGS
+           Replaces /admin, which was named after a role rather than a task,
+           mixed a bulk-upload form in with a database wipe, and carried a
+           "Check System" button calling an endpoint that existed nowhere.
+
+           It also had no way to change the one thing a new customer must
+           change first — their own name — which was hardcoded in templates.
+           ================================================================ */
+
+        .num {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .st-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+            align-items: start;
+        }
+
+        @media (max-width: 980px) {
+            .st-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .st-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+
+        .st-card h2 {
+            margin: 0 0 4px;
+            font-size: 1.05rem;
+        }
+
+        .st-card p.sub {
+            color: var(--text-secondary);
+            font-size: 0.88rem;
+            margin: 0 0 14px;
+        }
+
+        .st-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.89rem;
+        }
+
+        .st-row:last-child {
+            border-bottom: none;
+        }
+
+        .st-row .k {
+            color: var(--text-secondary);
+        }
+
+        .st-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+        }
+
+        .st-chip.ok {
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
+        }
+
+        .st-chip.warn {
+            background: var(--status-warn-surface);
+            color: var(--status-warn-text);
+        }
+
+        .st-chip.off {
+            background: var(--bg-page);
+            color: var(--text-secondary);
+        }
+
+        /* Destructive actions are visually separated and last on the page, so
+           nobody reaches them while looking for something else. */
+        .st-danger {
+            border: 1.5px solid var(--status-bad-border);
+            background: var(--status-bad-surface);
+        }
+
+        .st-danger h2 {
+            color: var(--status-bad-text);
+        }
+
+        .st-danger p.sub {
+            color: var(--status-bad-text);
+        }
+
+        .st-log {
+            font-size: 0.82rem;
+            max-height: 220px;
+            overflow: auto;
+        }
+
+        .st-log div {
+            padding: 5px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .muted {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="app-page">
+        <div class="app-page-header">
+            <h1>Settings</h1>
+            <p class="muted">Who this deployment belongs to, whether it is healthy,
+                and the things you cannot undo.</p>
+        </div>
+
+        <!-- Institute profile: the first thing a new customer changes -->
+        <div class="st-card">
+            <h2>Institute</h2>
+            <p class="sub">The name shown on every page and in every report heading.</p>
+            <div class="st-grid" style="margin-bottom:0;">
+                <div>
+                    <div class="app-form-group">
+                        <label class="app-form-label" for="instName">Name</label>
+                        <input type="text" id="instName" class="app-form-input" maxlength="120">
+                    </div>
+                    <div class="app-form-group">
+                        <label class="app-form-label" for="instEmail">Contact email</label>
+                        <input type="email" id="instEmail" class="app-form-input"
+                               placeholder="office@example.edu">
+                    </div>
+
+                    <!-- These render on the public /about page, which used to be
+                         hardcoded marketing for one institute. -->
+                    <details style="margin-bottom:14px;">
+                        <summary style="cursor:pointer;font-weight:600;font-size:.93rem;">
+                            Public page details
+                        </summary>
+                        <p class="muted" style="font-size:.84rem;margin:8px 0 12px;">
+                            Shown on <a href="/about">/about</a> to anyone, signed in or
+                            not. Leave a field empty and it simply does not appear.
+                        </p>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instTagline">Tagline</label>
+                            <input type="text" id="instTagline" class="app-form-input"
+                                   maxlength="160">
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instAbout">About</label>
+                            <textarea id="instAbout" class="app-form-input" rows="4"
+                                      maxlength="4000"></textarea>
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instAddress">Address</label>
+                            <textarea id="instAddress" class="app-form-input" rows="2"
+                                      maxlength="400"></textarea>
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instPhone">Phone</label>
+                            <input type="text" id="instPhone" class="app-form-input"
+                                   maxlength="60">
+                        </div>
+                        <div class="app-form-group">
+                            <label class="app-form-label" for="instWebsite">Website</label>
+                            <input type="url" id="instWebsite" class="app-form-input"
+                                   maxlength="200" placeholder="https://example.edu">
+                        </div>
+                    </details>
+
+                    <button class="app-btn app-btn-primary" onclick="saveInstitute()">
+                        <i class="fa-solid fa-floppy-disk"></i> Save
+                    </button>
+                    <span id="instMsg" style="margin-left:10px;font-size:.88rem;"></span>
+                </div>
+                <div>
+                    <div class="st-row"><span class="k">Identifier</span>
+                        <span class="num" id="instSlug">—</span></div>
+                    <div class="st-row"><span class="k">Batches</span>
+                        <span class="num" id="totBatches">—</span></div>
+                    <div class="st-row"><span class="k">Students</span>
+                        <span class="num" id="totStudents">—</span></div>
+                    <div class="st-row"><span class="k">Staff accounts</span>
+                        <span class="num" id="totStaff">—</span></div>
+                    <div class="st-row"><span class="k">Tenancy</span>
+                        <span id="instTenancy">—</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="st-grid">
+            <!-- System -->
+            <div>
+                <div class="st-card">
+                    <h2>System</h2>
+                    <p class="sub">Live health, the same probe <code>healthcheck.sh</code> uses.</p>
+                    <div id="sysRows"><div class="muted">Checking…</div></div>
+                    <div id="sysWarn" style="display:none;margin-top:12px;"></div>
+                    <button class="app-btn app-btn-subtle app-btn-sm" style="margin-top:12px;"
+                            onclick="loadSystem()">
+                        <i class="fa-solid fa-arrows-rotate"></i> Re-check
+                    </button>
+                </div>
+
+                <div class="st-card">
+                    <h2>Policy</h2>
+                    <p class="sub">Set in <code>.env</code> and applied at startup, so they are
+                        shown here rather than edited — a field that silently needs a restart is
+                        worse than one that is clearly fixed.</p>
+                    <div id="policyRows"><div class="muted">Loading…</div></div>
+                </div>
+            </div>
+
+            <!-- Email -->
+            <div>
+                <div class="st-card">
+                    <h2>Email</h2>
+                    <p class="sub">Welcome mails, password resets, monthly reports and alerts.</p>
+                    <div id="emailRows"><div class="muted">Loading…</div></div>
+
+                    <div class="app-form-group" style="margin-top:14px;">
+                        <label class="app-form-label" for="testTo">Send a test to</label>
+                        <input type="email" id="testTo" class="app-form-input"
+                               placeholder="you@example.com">
+                    </div>
+                    <button class="app-btn app-btn-subtle" onclick="sendTest()">
+                        <i class="fa-solid fa-paper-plane"></i> Send test
+                    </button>
+                    <span id="testMsg" style="margin-left:10px;font-size:.88rem;"></span>
+
+                    <div class="st-log" id="emailLog" style="margin-top:14px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Danger zone, last and visually separate -->
+        <div class="st-card st-danger">
+            <h2>Danger zone</h2>
+            <p class="sub">There is no undo and no confirmation beyond this page.
+                Take a backup first — see <code>BACKUP_GUIDE.md</code>.</p>
+            <div class="st-row" style="border-bottom:none;">
+                <div>
+                    <strong>Delete all student data</strong>
+                    <div class="muted" style="font-size:.84rem;margin-top:3px;">
+                        Students, attendance, face encodings and registration sessions.
+                        Batches, staff accounts and holidays are kept.
+                    </div>
+                </div>
+                <button class="app-btn app-btn-danger" onclick="clearAll()">
+                    <i class="fa-solid fa-trash"></i> Delete everything
+                </button>
+            </div>
+            <div id="clearMsg" style="margin-top:10px;font-size:.88rem;"></div>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function row(k, v) {
+            return '<div class="st-row"><span class="k">' + k + '</span><span>' + v + '</span></div>';
+        }
+
+        function chip(ok, text) {
+            return '<span class="st-chip ' + (ok ? 'ok' : 'warn') + '">' + esc(text) + '</span>';
+        }
+
+        /* ---------- Institute ---------- */
+
+        async function loadInstitute() {
+            try {
+                const d = await (await fetch('/api/admin/institute')).json();
+                if (!d.success) return;
+                const i = d.institute || {};
+                document.getElementById('instName').value = i.name || '';
+                document.getElementById('instEmail').value = i.contact_email || '';
+                ['tagline', 'about', 'address', 'phone', 'website'].forEach(function (f) {
+                    const el = document.getElementById(
+                        'inst' + f.charAt(0).toUpperCase() + f.slice(1));
+                    if (el) el.value = i[f] || '';
+                });
+                document.getElementById('instSlug').textContent = i.slug || '—';
+                document.getElementById('totBatches').textContent = d.totals.batches;
+                document.getElementById('totStudents').textContent = d.totals.students;
+                document.getElementById('totStaff').textContent = d.totals.staff;
+                document.getElementById('instTenancy').innerHTML = d.is_multi_tenant
+                    ? '<span class="st-chip warn">several institutes</span>'
+                    : '<span class="st-chip off">single institute</span>';
+
+                const p = d.policy;
+                document.getElementById('policyRows').innerHTML =
+                    row('Late after', p.late_grace_minutes + ' min past slot start') +
+                    row('Longest leave request', p.leave_max_days + ' days') +
+                    row('Lockout', p.login_max_attempts + ' tries · ' +
+                        p.login_lockout_minutes + ' min') +
+                    row('Consent policy', 'v' + esc(p.consent_policy_version)) +
+                    row('Face match threshold',
+                        '<span class="num">' + p.face_match_threshold.toFixed(2) +
+                        '</span> cosine similarity') +
+                    row('Face data retention', p.biometric_retention_days + ' days after a course ends') +
+                    row('Secure cookies', p.cookie_secure
+                        ? chip(true, 'on') : chip(false, 'OFF — plain HTTP')) +
+                    row('Database', '<span class="num">' + esc(p.database) + '</span>');
+            } catch (e) { }
+        }
+
+        async function saveInstitute() {
+            const msg = document.getElementById('instMsg');
+            msg.textContent = 'Saving…';
+            msg.style.color = 'var(--text-secondary)';
+            try {
+                const d = await (await fetch('/api/admin/institute', {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: document.getElementById('instName').value,
+                        contact_email: document.getElementById('instEmail').value,
+                        tagline: document.getElementById('instTagline').value,
+                        about: document.getElementById('instAbout').value,
+                        address: document.getElementById('instAddress').value,
+                        phone: document.getElementById('instPhone').value,
+                        website: document.getElementById('instWebsite').value
+                    })
+                })).json();
+                msg.textContent = d.message || (d.success ? 'Saved' : 'Failed');
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                if (d.success) loadInstitute();
+            } catch (e) {
+                msg.textContent = 'Connection failed';
+                msg.style.color = 'var(--status-bad-text)';
+            }
+        }
+
+        /* ---------- System ---------- */
+
+        async function loadSystem() {
+            const box = document.getElementById('sysRows');
+            try {
+                const d = await (await fetch('/api/system/status')).json();
+                box.innerHTML =
+                    row('Status', chip(d.status === 'ok', d.status || 'unknown')) +
+                    row('Database', chip(d.database_connected, d.database_connected ? 'connected' : 'down')) +
+                    row('Face model', chip(d.face_recognition_available,
+                        d.face_recognition_available ? 'buffalo_l' : 'unavailable')) +
+                    row('Faces loaded', '<span class="num">' + (d.students_loaded || 0) + '</span>') +
+                    row('Liveness', d.liveness_active
+                        ? chip(true, 'enforcing · ' + d.liveness_threshold)
+                        : chip(false, 'OFF')) +
+                    row('Liveness on registration',
+                        d.liveness_on_registration ? chip(true, 'on') : '<span class="muted">off</span>');
+
+                const warn = document.getElementById('sysWarn');
+                if (d.liveness_warning) {
+                    warn.style.display = '';
+                    warn.className = 'app-alert app-alert-warning';
+                    warn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i><div>' +
+                        esc(d.liveness_warning) + '</div>';
+                } else {
+                    warn.style.display = 'none';
+                }
+            } catch (e) {
+                box.innerHTML = '<div class="muted">Could not reach the health probe.</div>';
+            }
+        }
+
+        /* ---------- Email ---------- */
+
+        async function loadEmail() {
+            const box = document.getElementById('emailRows');
+            try {
+                const d = await (await fetch('/api/admin/email-status')).json();
+                if (!d.success) { box.innerHTML = '<div class="muted">Unavailable.</div>'; return; }
+                const c = d.recent_counts || {};
+                box.innerHTML =
+                    row('Configured', d.configured
+                        ? chip(true, 'yes') : chip(false, 'no — nothing is sent')) +
+                    row('From', esc(d.from_name || '—') +
+                        (d.smtp_user ? ' &lt;' + esc(d.smtp_user) + '&gt;' : '')) +
+                    row('Links point to', '<span class="num">' + esc(d.base_url || '—') + '</span>') +
+                    row('Recent', (c.sent || 0) + ' sent · ' + (c.failed || 0) +
+                        ' failed · ' + (c.skipped || 0) + ' skipped');
+
+                const log = document.getElementById('emailLog');
+                log.innerHTML = (d.recent || []).length
+                    ? (d.recent || []).slice(0, 8).map(function (r) {
+                        return '<div><span class="num muted">' + esc(r.sent_at || '') + '</span> · ' +
+                            esc(r.status) + ' · ' + esc(r.kind || '') + ' → ' + esc(r.to) +
+                            (r.error ? ' <span style="color:var(--status-bad-text);">' + esc(r.error) + '</span>' : '') +
+                            '</div>';
+                    }).join('')
+                    : '<div class="muted">Nothing sent yet.</div>';
+            } catch (e) {
+                box.innerHTML = '<div class="muted">Unavailable.</div>';
+            }
+        }
+
+        async function sendTest() {
+            const to = document.getElementById('testTo').value.trim();
+            const msg = document.getElementById('testMsg');
+            if (!to) { msg.textContent = 'Enter an address.'; msg.style.color = 'var(--status-bad-text)'; return; }
+            msg.textContent = 'Sending…';
+            msg.style.color = 'var(--text-secondary)';
+            try {
+                const d = await (await fetch('/api/admin/email-test', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to: to })
+                })).json();
+                msg.textContent = d.message || (d.success ? 'Sent' : 'Failed');
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                loadEmail();
+            } catch (e) {
+                msg.textContent = 'Connection failed';
+                msg.style.color = 'var(--status-bad-text)';
+            }
+        }
+
+        /* ---------- Danger zone ---------- */
+
+        async function clearAll() {
+            // Two gates, the second requiring the word to be typed: this wipes
+            // every student, their attendance and their face encodings.
+            if (!confirm('Delete ALL student data? Students, attendance and face ' +
+                'encodings will be gone. Batches and staff accounts are kept.')) return;
+            const typed = prompt('This cannot be undone. Type DELETE to confirm:');
+            if (typed !== 'DELETE') {
+                document.getElementById('clearMsg').textContent = 'Cancelled.';
+                document.getElementById('clearMsg').style.color = 'var(--text-secondary)';
+                return;
+            }
+            const msg = document.getElementById('clearMsg');
+            msg.textContent = 'Deleting…';
+            try {
+                const d = await (await fetch('/api/admin/clear_all_data', { method: 'POST' })).json();
+                msg.textContent = d.message || (d.success ? 'Done' : 'Failed');
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                if (d.success) loadInstitute();
+            } catch (e) {
+                msg.textContent = 'Connection failed';
+                msg.style.color = 'var(--status-bad-text)';
+            }
+        }
+
+        async function performLogout() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            loadInstitute();
+            loadSystem();
+            loadEmail();
+        });
+    </script>
+</body>
+
+</html>

@@ -58,7 +58,7 @@ jobs:
       run: |
         set -e
         cd "$HOME/${APP_DIR}"
-        for m in migrate_phase1.py migrate_phase2.py migrate_phase3.py migrate_phase4.py migrate_phase5.py migrate_phase6.py migrate_phase7.py migrate_phase8.py; do
+        for m in migrate_phase1.py migrate_phase2.py migrate_phase3.py migrate_phase4.py migrate_phase5.py migrate_phase6.py migrate_phase7.py migrate_phase8.py migrate_phase9.py migrate_phase10.py migrate_phase11.py migrate_phase12.py migrate_phase13.py; do
           [ -f "$m" ] && ./venv/bin/python "$m" || true
         done
 

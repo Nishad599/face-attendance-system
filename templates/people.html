@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>People — CDAC Attendance</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/theme.js"></script>
+    <style>
+        /* ================================================================
+           PEOPLE
+           Students were spread over four surfaces: /students (list, edit,
+           delete), the teacher portal's Students tab (add, bulk upload),
+           /admin/batches' Pending tab, and the reports page's own roster.
+           Teachers lived in a third place again. None of them was complete,
+           and there was no page for ONE student at all — their data sat in a
+           sparkline modal, a slots endpoint and the subject breakdown.
+
+           One list, one search, one detail panel. The panel is a panel rather
+           than a modal so the list you were reading stays on screen.
+           ================================================================ */
+
+        .num {
+            font-family: 'IBM Plex Mono', ui-monospace, monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .pp-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .pp-head h1 {
+            margin: 0;
+            font-size: 1.7rem;
+        }
+
+        .pp-toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .pp-toolbar input[type="search"],
+        .pp-toolbar select {
+            min-height: 40px;
+        }
+
+        .pp-count {
+            color: var(--text-secondary);
+            font-size: 0.86rem;
+            margin-left: auto;
+        }
+
+        .pp-wrap {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 20px;
+        }
+
+        .pp-wrap.open {
+            grid-template-columns: minmax(0, 1fr) 380px;
+        }
+
+        @media (max-width: 1100px) {
+            .pp-wrap.open {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .pp-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .pp-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .pp-table th {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            color: var(--text-secondary);
+            font-weight: 700;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            background: var(--bg-card);
+        }
+
+        .pp-table td {
+            padding: 11px 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .pp-table tbody tr {
+            cursor: pointer;
+        }
+
+        .pp-table tbody tr:hover {
+            background: var(--bg-page);
+        }
+
+        .pp-table tbody tr.sel {
+            background: var(--status-info-surface);
+        }
+
+        .pp-scroll {
+            max-height: 62vh;
+            overflow: auto;
+        }
+
+        .pp-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .pp-chip.ok {
+            background: var(--status-ok-surface);
+            color: var(--status-ok-text);
+        }
+
+        .pp-chip.warn {
+            background: var(--status-warn-surface);
+            color: var(--status-warn-text);
+        }
+
+        .pp-chip.off {
+            background: var(--bg-page);
+            color: var(--text-secondary);
+        }
+
+        .pp-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 18px;
+            align-self: start;
+            position: sticky;
+            top: 72px;
+            max-height: calc(100dvh - 92px);
+            overflow: auto;
+        }
+
+        .pp-panel h2 {
+            margin: 0;
+            font-size: 1.15rem;
+        }
+
+        .pp-stat {
+            display: flex;
+            gap: 10px;
+            margin: 14px 0;
+        }
+
+        .pp-stat > div {
+            flex: 1;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            border-radius: 9px;
+            padding: 10px 12px;
+        }
+
+        .pp-stat .v {
+            font-size: 1.25rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        .pp-stat .l {
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .pp-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 7px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.88rem;
+        }
+
+        .pp-row:last-child {
+            border-bottom: none;
+        }
+
+        .pp-row .k {
+            color: var(--text-secondary);
+        }
+
+        .pp-sec {
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+            color: var(--text-secondary);
+            margin: 16px 0 8px;
+        }
+
+        .pp-empty {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            padding: 18px;
+        }
+
+        .pp-bar {
+            height: 8px;
+            border-radius: 999px;
+            background: var(--bg-page);
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            margin-top: 6px;
+        }
+
+        .pp-bar span {
+            display: block;
+            height: 100%;
+            background: var(--status-ok-solid);
+        }
+
+        .pp-bar span.low {
+            background: var(--status-bad-solid);
+        }
+
+        .muted {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+
+<body>
+    {% include "_navbar.html" %}
+
+    <div class="app-page">
+
+        <div class="pp-head">
+            <div>
+                <h1>People</h1>
+                <div class="muted" style="font-size:.93rem;margin-top:5px;">
+                    Students, teachers and anyone still waiting to be enrolled.
+                </div>
+            </div>
+            <div class="d-flex gap-8" style="flex-wrap:wrap;">
+                <a class="app-btn app-btn-subtle" href="/register">
+                    <i class="fa-solid fa-camera"></i> Register a face
+                </a>
+                {% if is_admin %}
+                <a class="app-btn app-btn-subtle" href="/admin/batches">
+                    <i class="fa-solid fa-layer-group"></i> Batches &amp; teachers
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="app-tabs">
+            <button class="app-tab active" data-tab="students" onclick="switchTab('students')">Students</button>
+            <button class="app-tab" data-tab="teachers" onclick="switchTab('teachers')">Teachers</button>
+            <button class="app-tab" data-tab="pending" onclick="switchTab('pending')">Not enrolled</button>
+        </div>
+
+        <!-- ===== STUDENTS ===== -->
+        <div id="tab-students">
+            <div class="pp-toolbar">
+                <label for="q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Search students</label>
+                <input type="search" id="q" class="app-form-input" style="max-width:280px;"
+                       placeholder="Search name or roll number…" oninput="onSearchInput()">
+                <label for="batchFilter" class="muted" style="font-size:.86rem;">Batch</label>
+                <select id="batchFilter" class="app-form-input" style="max-width:220px;"
+                        onchange="onFilterChange()">
+                    <option value="">All batches</option>
+                </select>
+                <label for="faceFilter" class="muted" style="font-size:.86rem;">Face</label>
+                <select id="faceFilter" class="app-form-input" style="max-width:160px;"
+                        onchange="renderStudents()">
+                    <option value="">Any</option>
+                    <option value="yes">Enrolled</option>
+                    <option value="no">Not enrolled</option>
+                </select>
+                <span class="pp-count" id="count"></span>
+            </div>
+
+            <!-- Bulk upload lived on /admin, next to a database wipe, and in
+                 the teacher portal. It belongs with the people it creates. -->
+            <details class="pp-card" style="padding:14px 16px;margin-bottom:16px;">
+                <summary style="cursor:pointer;font-weight:600;font-size:.93rem;">
+                    <i class="fa-solid fa-file-arrow-up"></i> Add several students from a file
+                </summary>
+                <p class="muted" style="font-size:.86rem;margin:10px 0;">
+                    Download the template, fill one row per student, upload it. Existing
+                    roll numbers are skipped, not overwritten.
+                </p>
+                <div class="d-flex gap-8" style="flex-wrap:wrap;align-items:center;">
+                    <a class="app-btn app-btn-subtle app-btn-sm"
+                       href="/api/students/bulk-upload/template">
+                        <i class="fa-solid fa-download"></i> Template
+                    </a>
+                    <input type="file" id="bulkFile" accept=".csv,.xlsx,.xls"
+                           class="app-form-input" style="max-width:280px;"
+                           aria-label="Student file">
+                    <button class="app-btn app-btn-primary app-btn-sm" onclick="uploadBulk()">
+                        <i class="fa-solid fa-upload"></i> Upload
+                    </button>
+                </div>
+                <div id="bulkMsg" style="margin-top:10px;font-size:.88rem;"></div>
+            </details>
+
+            <div class="pp-wrap" id="wrap">
+                <div class="pp-card">
+                    <div class="pp-scroll" id="studentRows">
+                        <div class="pp-empty">Loading…</div>
+                    </div>
+                    <!-- Only appears once the roster outgrows one response. -->
+                    <div id="moreRow" hidden style="padding:12px;text-align:center;">
+                        <button class="app-btn app-btn-sm app-btn-subtle"
+                                id="moreBtn" onclick="loadMore()"></button>
+                    </div>
+                </div>
+                <aside class="pp-panel" id="panel" style="display:none;" aria-live="polite"></aside>
+            </div>
+        </div>
+
+        <!-- ===== TEACHERS ===== -->
+        <div id="tab-teachers" style="display:none;">
+            <div class="pp-card">
+                <div class="pp-scroll" id="teacherRows">
+                    <div class="pp-empty">Loading…</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== NOT ENROLLED ===== -->
+        <div id="tab-pending" style="display:none;">
+            <p class="muted" style="font-size:.9rem;margin:0 0 12px;">
+                These students have an account but no face on file, so the camera
+                cannot mark them. Until that is fixed they are absent every day.
+            </p>
+            <div class="pp-card">
+                <div class="pp-scroll" id="pendingRows">
+                    <div class="pp-empty">Loading…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function esc(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+            });
+        }
+
+        function rateColour(r) {
+            return r < 75 ? 'var(--status-bad-text)' : (r < 85 ? 'var(--status-warn-text)' : 'var(--status-ok-text)');
+        }
+
+        let STUDENTS = [];
+        let selectedId = null;
+
+        function switchTab(tab) {
+            document.querySelectorAll('.app-tab').forEach(function (b) {
+                b.classList.toggle('active', b.dataset.tab === tab);
+            });
+            ['students', 'teachers', 'pending'].forEach(function (t) {
+                document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
+            });
+            if (tab === 'teachers') loadTeachers();
+            if (tab === 'pending') loadPending();
+        }
+
+        /* ---------- Students ---------- */
+
+        /* The roster used to arrive in full, always, and search filtered the
+           array in the browser. That is the right behaviour for one institute
+           of sixty and the wrong one for a few thousand across ten, so the
+           endpoint now paginates.
+
+           Paginating alone would have quietly broken search: filtering the
+           array you were given means searching only the page you are on. So
+           the page keeps the instant client-side path while the whole roster
+           fits in one response (TOTAL === STUDENTS.length), and hands search
+           and the batch filter to the server once it does not. */
+        let TOTAL = 0;
+        let SERVER_SIDE = false;
+        let searchTimer = null;
+
+        async function loadStudents(opts) {
+            opts = opts || {};
+            const params = new URLSearchParams();
+            if (SERVER_SIDE) {
+                const q = (document.getElementById('q').value || '').trim();
+                const batch = document.getElementById('batchFilter').value;
+                if (q) params.set('q', q);
+                if (batch) params.set('course_id', batch);
+                if (opts.append) params.set('offset', String(STUDENTS.length));
+            }
+            try {
+                const url = '/api/students/list' + (params.toString() ? '?' + params : '');
+                const d = await (await fetch(url)).json();
+                if (!d.success) throw new Error(d.message || 'failed');
+                STUDENTS = opts.append ? STUDENTS.concat(d.students || []) : (d.students || []);
+                TOTAL = d.total || STUDENTS.length;
+                // One response short of the whole roster is the signal to stop
+                // pretending the browser has all of it.
+                if (d.has_more) SERVER_SIDE = true;
+                renderStudents();
+            } catch (e) {
+                document.getElementById('studentRows').innerHTML =
+                    '<div class="pp-empty">Could not load students.</div>';
+            }
+        }
+
+        /* The batch list comes from /api/courses, not from the students.
+           Deriving it from the roster meant a paginated page only offered the
+           batches that happened to appear on it — and a batch with no students
+           yet never appeared at all. */
+        async function loadBatchFilter() {
+            try {
+                const d = await (await fetch('/api/courses')).json();
+                const sel = document.getElementById('batchFilter');
+                sel.innerHTML = '<option value="">All batches</option>' +
+                    (d.courses || []).map(function (c) {
+                        return '<option value="' + c.id + '">' + esc(c.name) + '</option>';
+                    }).join('');
+            } catch (e) { /* the filter is a convenience; the roster still loads */ }
+        }
+
+        /* Typing is debounced only when it costs a round trip. */
+        function onSearchInput() {
+            if (!SERVER_SIDE) { renderStudents(); return; }
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () { loadStudents(); }, 250);
+        }
+
+        function onFilterChange() {
+            if (SERVER_SIDE) loadStudents(); else renderStudents();
+        }
+
+        function visibleStudents() {
+            const q = (document.getElementById('q').value || '').trim().toLowerCase();
+            const batch = document.getElementById('batchFilter').value;
+            const face = document.getElementById('faceFilter').value;
+            return STUDENTS.filter(function (s) {
+                // Name, roll and batch are already applied by the server once
+                // we are paginating; re-applying them here is harmless but
+                // the face filter is the only one it has never handled.
+                if (SERVER_SIDE) return faceMatches(s, face);
+                if (batch && String(s.course_id) !== batch) return false;
+                if (face === 'yes' && !s.photo_count) return false;
+                if (face === 'no' && s.photo_count) return false;
+                if (!q) return true;
+                return (s.name || '').toLowerCase().indexOf(q) !== -1 ||
+                    String(s.student_id || '').toLowerCase().indexOf(q) !== -1;
+            });
+        }
+
+        async function loadMore() {
+            const btn = document.getElementById('moreBtn');
+            btn.disabled = true;
+            btn.textContent = 'Loading…';
+            try {
+                await loadStudents({append: true});
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function updateMoreRow(shown) {
+            const row = document.getElementById('moreRow');
+            // Judged on how many are loaded against how many match, not on
+            // how many are on screen: the face filter is applied in the
+            // browser, so a page of thirty can render as three.
+            const remaining = TOTAL - STUDENTS.length;
+            row.hidden = !(SERVER_SIDE && remaining > 0);
+            if (!row.hidden) {
+                document.getElementById('moreBtn').textContent =
+                    'Load ' + Math.min(remaining, 500) + ' more of ' + remaining;
+            }
+        }
+
+        function faceMatches(s, face) {
+            if (face === 'yes') return !!s.photo_count;
+            if (face === 'no') return !s.photo_count;
+            return true;
+        }
+
+        function renderStudents() {
+            const rows = visibleStudents();
+            document.getElementById('count').textContent = SERVER_SIDE
+                ? rows.length + ' shown · ' + TOTAL + ' match'
+                : rows.length + ' of ' + STUDENTS.length + ' students';
+            updateMoreRow(rows.length);
+
+            if (!rows.length) {
+                document.getElementById('studentRows').innerHTML =
+                    '<div class="pp-empty">No students match. ' +
+                    (STUDENTS.length ? '' : '<a href="/register">Register the first one</a>.') +
+                    '</div>';
+                return;
+            }
+
+            document.getElementById('studentRows').innerHTML =
+                '<table class="pp-table"><thead><tr>' +
+                '<th>ROLL NO</th><th>NAME</th><th>BATCH</th><th>FACE</th>' +
+                '<th>MARKS</th><th>LAST SEEN</th></tr></thead><tbody>' +
+                rows.map(function (s) {
+                    const face = s.photo_count
+                        ? '<span class="pp-chip ok"><i class="fa-solid fa-check"></i>' +
+                          s.photo_count + '</span>'
+                        : '<span class="pp-chip warn"><i class="fa-solid fa-triangle-exclamation"></i>none</span>';
+                    const inactive = s.status !== 'active'
+                        ? ' <span class="pp-chip off">' + esc(s.status) + '</span>' : '';
+                    return '<tr onclick="openStudent(' + s.id + ')" ' +
+                        (s.id === selectedId ? 'class="sel"' : '') + '>' +
+                        '<td><strong class="num">' + esc(s.student_id) + '</strong></td>' +
+                        '<td>' + esc(s.name) + inactive + '</td>' +
+                        '<td class="muted">' + esc(s.batch) + '</td>' +
+                        '<td>' + face + '</td>' +
+                        '<td class="num">' + (s.attendance_count || 0) + '</td>' +
+                        '<td class="muted">' + esc(s.last_attendance) + '</td></tr>';
+                }).join('') + '</tbody></table>';
+        }
+
+        async function openStudent(id) {
+            selectedId = id;
+            renderStudents();
+            document.getElementById('wrap').classList.add('open');
+            const panel = document.getElementById('panel');
+            panel.style.display = '';
+            panel.innerHTML = '<div class="pp-empty">Loading…</div>';
+            try {
+                const d = await (await fetch('/api/students/' + id + '/profile')).json();
+                if (!d.success) {
+                    panel.innerHTML = '<div class="pp-empty">' + esc(d.message || 'Could not load.') + '</div>';
+                    return;
+                }
+                panel.innerHTML = renderPanel(d);
+            } catch (e) {
+                panel.innerHTML = '<div class="pp-empty">Could not load this student.</div>';
+            }
+        }
+
+        function closePanel() {
+            selectedId = null;
+            document.getElementById('panel').style.display = 'none';
+            document.getElementById('wrap').classList.remove('open');
+            renderStudents();
+        }
+
+        function renderPanel(d) {
+            const s = d.student;
+            const a = d.attendance || {};
+            const rate = typeof a.rate === 'number' ? a.rate : null;
+            const reqTotal = Object.keys(d.requests || {}).reduce(function (n, k) {
+                return n + (d.requests[k] || 0);
+            }, 0);
+
+            let html = '<div class="d-flex" style="justify-content:space-between;gap:10px;align-items:flex-start;">' +
+                '<div><h2>' + esc(s.name) + '</h2>' +
+                '<div class="muted num" style="font-size:.86rem;margin-top:2px;">' + esc(s.roll_no) + '</div></div>' +
+                '<button class="app-btn app-btn-subtle app-btn-sm" onclick="closePanel()" ' +
+                'aria-label="Close panel"><i class="fa-solid fa-xmark"></i></button></div>';
+
+            if (rate !== null) {
+                const low = rate < 75 ? ' class="low"' : '';
+                html += '<div class="pp-stat">' +
+                    '<div><div class="v" style="color:' + rateColour(rate) + '">' + rate + '%</div>' +
+                    '<div class="l">course to date</div></div>' +
+                    '<div><div class="v num">' + (a.present_days != null ? a.present_days : '—') + '</div>' +
+                    '<div class="l">of ' + (a.working_days != null ? a.working_days : '—') + ' days</div></div>' +
+                    '</div>' +
+                    '<div class="pp-bar"><span' + low + ' style="width:' + Math.max(0, Math.min(100, rate)) + '%"></span></div>';
+                if (rate < 75 && a.days_needed != null) {
+                    html += '<div class="muted" style="font-size:.82rem;margin-top:8px;">Needs ' +
+                        a.days_needed + ' of the remaining ' + (a.remaining_days || 0) +
+                        ' days to reach 75%.</div>';
+                }
+            }
+
+            html += '<div class="pp-sec">DETAILS</div>' +
+                row('Batch', esc(s.batch)) +
+                row('Email', esc(s.email || '—')) +
+                row('Status', esc(s.status)) +
+                row('Joined', esc(s.joining_date || '—')) +
+                row('Face enrolled', s.has_face
+                    ? '<span class="pp-chip ok">yes · ' + s.photo_count + ' photos</span>'
+                    : '<span class="pp-chip warn">no — cannot be marked</span>') +
+                row('Consent', d.consent && d.consent.granted
+                    ? '<span class="pp-chip ok">given</span>'
+                    : '<span class="pp-chip warn">not given</span>');
+
+            if (reqTotal) {
+                html += '<div class="pp-sec">OPEN REQUESTS</div>';
+                const labels = { leave: 'Leave', grievances: 'Disputes', face: 'Face', profile: 'Details' };
+                Object.keys(d.requests).forEach(function (k) {
+                    if (d.requests[k]) html += row(labels[k] || k, d.requests[k]);
+                });
+                html += '<a class="app-btn app-btn-subtle app-btn-sm" href="/approvals" ' +
+                    'style="margin-top:10px;">Review in Approvals</a>';
+            }
+
+            if ((d.subjects || []).length) {
+                html += '<div class="pp-sec">BY MODULE</div>';
+                d.subjects.slice(0, 6).forEach(function (sub) {
+                    html += row(esc(sub.name),
+                        '<span style="color:' + rateColour(sub.rate) + ';font-weight:600;">' +
+                        sub.rate + '%</span>');
+                });
+            }
+
+            if ((a.recent_absences || []).length) {
+                html += '<div class="pp-sec">RECENT ABSENCES</div>' +
+                    '<div class="muted" style="font-size:.84rem;line-height:1.7;">' +
+                    a.recent_absences.map(esc).join(' · ') + '</div>';
+            }
+
+            html += '<div class="pp-sec">ACTIONS</div>' +
+                '<div class="d-flex gap-8" style="flex-wrap:wrap;">' +
+                '<a class="app-btn app-btn-subtle app-btn-sm" href="/api/attendance/export/' + s.id + '">' +
+                '<i class="fa-solid fa-file-csv"></i> Export</a>' +
+                (s.has_face ? '' :
+                    '<a class="app-btn app-btn-primary app-btn-sm" href="/register">' +
+                    '<i class="fa-solid fa-camera"></i> Enrol face</a>') +
+                '</div>';
+            return html;
+        }
+
+        function row(k, v) {
+            return '<div class="pp-row"><span class="k">' + k + '</span><span>' + v + '</span></div>';
+        }
+
+        /* ---------- Teachers ---------- */
+
+        async function loadTeachers() {
+            const box = document.getElementById('teacherRows');
+            if (box.dataset.loaded) return;
+            try {
+                const d = await (await fetch('/api/teachers')).json();
+                const t = d.teachers || [];
+                if (!t.length) {
+                    box.innerHTML = '<div class="pp-empty">No teacher accounts yet. ' +
+                        '<a href="/admin/batches">Create one</a>.</div>';
+                    return;
+                }
+                box.innerHTML = '<table class="pp-table"><thead><tr>' +
+                    '<th>USERNAME</th><th>NAME</th><th>EMAIL</th><th>BATCHES</th><th>STATUS</th>' +
+                    '</tr></thead><tbody>' + t.map(function (x) {
+                        const batches = (x.batches || []).length
+                            ? x.batches.map(function (b) {
+                                return '<span class="pp-chip off">' + esc(b.name) + '</span>';
+                            }).join(' ')
+                            : '<span class="pp-chip warn">none assigned</span>';
+                        return '<tr style="cursor:default;"><td><strong>' + esc(x.username) + '</strong></td>' +
+                            '<td>' + esc(x.name || '—') + '</td>' +
+                            '<td class="muted">' + esc(x.email || '—') + '</td>' +
+                            '<td>' + batches + '</td>' +
+                            '<td>' + (x.is_active
+                                ? '<span class="pp-chip ok">active</span>'
+                                : '<span class="pp-chip off">inactive</span>') + '</td></tr>';
+                    }).join('') + '</tbody></table>';
+                box.dataset.loaded = '1';
+            } catch (e) {
+                box.innerHTML = '<div class="pp-empty">Could not load teachers.</div>';
+            }
+        }
+
+        /* ---------- Not enrolled ---------- */
+
+        async function loadPending() {
+            const box = document.getElementById('pendingRows');
+            try {
+                const d = await (await fetch('/api/students/pending')).json();
+                const p = d.pending || [];
+                if (!p.length) {
+                    box.innerHTML = '<div class="pp-empty">Everyone has a face on file.</div>';
+                    return;
+                }
+                box.innerHTML = '<table class="pp-table"><thead><tr>' +
+                    '<th>ROLL NO</th><th>NAME</th><th>EMAIL</th><th>BATCH</th><th></th>' +
+                    '</tr></thead><tbody>' + p.map(function (x) {
+                        return '<tr style="cursor:default;"><td><strong class="num">' +
+                            esc(x.student_id) + '</strong></td>' +
+                            '<td>' + esc(x.name) + '</td>' +
+                            '<td class="muted">' + esc(x.email || '—') + '</td>' +
+                            '<td class="muted">' + esc(x.batch) + '</td>' +
+                            '<td><a class="app-btn app-btn-primary app-btn-sm" href="/register">Enrol</a></td>' +
+                            '</tr>';
+                    }).join('') + '</tbody></table>';
+            } catch (e) {
+                box.innerHTML = '<div class="pp-empty">Could not load.</div>';
+            }
+        }
+
+        async function uploadBulk() {
+            const input = document.getElementById('bulkFile');
+            const msg = document.getElementById('bulkMsg');
+            if (!input.files.length) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Choose a file first.';
+                return;
+            }
+            msg.style.color = 'var(--text-secondary)';
+            msg.textContent = 'Uploading…';
+            const fd = new FormData();
+            fd.append('file', input.files[0]);
+            try {
+                const d = await (await fetch('/api/students/bulk-upload', {
+                    method: 'POST', body: fd
+                })).json();
+                msg.style.color = d.success ? 'var(--status-ok-text)' : 'var(--status-bad-text)';
+                msg.textContent = d.message || (d.success ? 'Done' : 'Failed');
+                if (d.success) { input.value = ''; loadStudents(); }
+            } catch (e) {
+                msg.style.color = 'var(--status-bad-text)';
+                msg.textContent = 'Upload failed.';
+            }
+        }
+
+        async function performLogout() {
+            if (!confirm('Are you sure you want to logout?')) return;
+            try {
+                const r = await fetch('/api/logout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
+        }
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            await Promise.all([loadStudents(), loadBatchFilter()]);
+            // ?student=<id> opens that student straight away, so other pages can
+            // link to one person instead of saying "go and find them".
+            const want = parseInt(new URLSearchParams(location.search).get('student'));
+            if (want) openStudent(want);
+        });
+    </script>
+</body>
+
+</html>

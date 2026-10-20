@@ -1,152 +1,218 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>About CDAC — CDAC Attendance</title>
+    <title>{% if institute %}{{ institute.name }}{% else %}About{% endif %} — Attendance</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/app.css">
     <script src="/static/js/theme.js"></script>
-</head>
-<body>
+    <style>
+        /* ================================================================
+           ABOUT
+           This page and /contact were hardcoded marketing for one institute,
+           down to a named individual's direct phone numbers — and they were
+           read straight off disk rather than rendered, so they could not have
+           shown anything else. Every institute onboarded onto the deployment
+           would have seen them.
 
-    <!-- Navbar -->
+           Everything here now comes from the institute's own record. An
+           institute that has filled in nothing gets its name and nothing
+           else, which is right: an empty page beats someone else's.
+           ================================================================ */
+
+        .ab-wrap {
+            max-width: 760px;
+            margin: 0 auto;
+        }
+
+        .ab-head {
+            margin-bottom: 26px;
+        }
+
+        .ab-head h1 {
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: -0.01em;
+        }
+
+        .ab-tagline {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            margin-top: 8px;
+        }
+
+        .ab-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-lg);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .ab-card h2 {
+            margin: 0 0 12px;
+            font-size: 1.05rem;
+        }
+
+        .ab-body {
+            white-space: pre-line;
+            line-height: 1.65;
+            color: var(--text-primary);
+        }
+
+        .ab-row {
+            display: flex;
+            gap: 12px;
+            padding: 9px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.93rem;
+        }
+
+        .ab-row:last-child {
+            border-bottom: none;
+        }
+
+        .ab-row .k {
+            flex: none;
+            width: 92px;
+            color: var(--text-secondary);
+        }
+
+        .ab-empty {
+            color: var(--text-secondary);
+            font-size: 0.93rem;
+            line-height: 1.6;
+        }
+
+        .ab-list a {
+            display: block;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            margin-bottom: 8px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .ab-foot {
+            color: var(--text-secondary);
+            font-size: 0.84rem;
+            margin-top: 28px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+
+<body>
     {% include "_navbar.html" %}
 
     <div class="app-page">
-        <div class="app-breadcrumb"><a href="/dashboard">Dashboard</a> / About CDAC</div>
-<div class="minimal-header">
-        
-        
-        
-    </div>
+        <div class="ab-wrap">
 
+            {% if institute %}
+            <div class="ab-head">
+                <h1>{{ institute.name }}</h1>
+                {% if institute.tagline %}
+                <p class="ab-tagline">{{ institute.tagline }}</p>
+                {% endif %}
+            </div>
 
-    <!-- Hero Section -->
-    <section class="page-hero">
-        <div class="hero-content">
-            <h1 class="hero-title">About CDAC</h1>
-            <p class="hero-subtitle">Pioneering Advanced Computing Solutions Since 1988</p>
+            {% if institute.about %}
+            <div class="ab-card">
+                <div class="ab-body">{{ institute.about }}</div>
+            </div>
+            {% endif %}
+
+            {% if institute.address or institute.phone or institute.contact_email
+                  or institute.website %}
+            <div class="ab-card">
+                <h2>Contact</h2>
+                {% if institute.address %}
+                <div class="ab-row"><span class="k">Address</span>
+                    <span style="white-space:pre-line;">{{ institute.address }}</span></div>
+                {% endif %}
+                {% if institute.phone %}
+                <div class="ab-row"><span class="k">Phone</span>
+                    <span>{{ institute.phone }}</span></div>
+                {% endif %}
+                {% if institute.contact_email %}
+                <div class="ab-row"><span class="k">Email</span>
+                    <span><a href="mailto:{{ institute.contact_email }}">{{ institute.contact_email }}</a></span></div>
+                {% endif %}
+                {% if institute.website %}
+                <div class="ab-row"><span class="k">Website</span>
+                    <span><a href="{{ institute.website }}" rel="noopener noreferrer"
+                             target="_blank">{{ institute.website }}</a></span></div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="ab-card">
+                <h2>Contact</h2>
+                <p class="ab-empty">No contact details have been added yet.
+                    An administrator can fill them in under
+                    <a href="/settings">Settings</a>.</p>
+            </div>
+            {% endif %}
+
+            {% elif others %}
+            <div class="ab-head">
+                <h1>Attendance</h1>
+                <p class="ab-tagline">Several institutes use this system.
+                    Choose yours.</p>
+            </div>
+            <div class="ab-card ab-list">
+                {% for i in others %}
+                <a href="/about?institute={{ i.slug }}">{{ i.name }}</a>
+                {% endfor %}
+            </div>
+
+            {% else %}
+            <div class="ab-head">
+                <h1>Attendance</h1>
+            </div>
+            <div class="ab-card">
+                <p class="ab-empty">This deployment has not been set up yet.
+                    Once an institute exists, its details appear here.</p>
+            </div>
+            {% endif %}
+
+            <!-- About the software, not about any institute: true for everyone
+                 who runs it, so it is the one thing safe to hardcode. -->
+            <div class="ab-card">
+                <h2>About this system</h2>
+                <p class="ab-empty">
+                    Contactless attendance by face recognition. Students are marked
+                    present by looking at a camera — no cards and no roll-calls.
+                    Face data is held only on this server and never sent anywhere
+                    else. See the <a href="/privacy">privacy notice</a> for what is
+                    stored, why, and for how long.
+                </p>
+            </div>
+
+            <p class="ab-foot">
+                Attendance is recorded Monday to Saturday, excluding declared
+                holidays.
+            </p>
         </div>
-    </section>
-
-    <!-- Main Content -->
-    <div class="main-content">
-        
-
-        <section class="content-section">
-            <h2 class="section-title"><i class="fa-solid fa-landmark"></i> About CDAC</h2>
-            <p style="font-size: 1.2rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-                C-DAC Mumbai, earlier known as NCST, started operations in the Juhu campus in 1985. There are two campuses in Mumbai, at Juhu and at Kharghar. It has a rich history of cutting edge R&D in areas of Computer Graphics, Computer Networks, Language Translation, Educational Applications of AI, Resource Scheduling, etc. It was among the pioneers in bringing Internet to India through the ERNET project, and also in multi-lingual technologies.
-            </p>
-            
-            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;"><i class="fa-solid fa-bullseye"></i> Our Mission</h3>
-            <p style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-               Currently the Center is working in areas like Authentication Technologies, Disaster Recovery, Microservice based application development, Deep Learning applications, Mobile Computing, Blockchain Solutions, Virtual Labs, Educational games, Robotics, Accessibility, Online Assessment, etc.
-
-The Center runs the PG-DAC and PG-DBDA 6-month diploma programmes at both the campuses, with excellent placement records so far.            </p>
-
-            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;">🎓 PG Diploma in Big Data Analytics (PG DBDA)</h3>
-            <p style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 1rem;">
-                Our flagship Post Graduate Diploma in Big Data Analytics is designed to create industry-ready professionals capable of handling the massive data challenges of today's digital world.
-            </p>
-
-
-            <ul style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-                <li>Python & R Programming</li>
-                <li>Statistical Analysis & Machine Learning</li>
-                <li>Deep Learning & Neural Networks</li>
-                <li>Data Visualization & Analytics</li>
-                <li>Apache Spark & Hadoop</li>
-                <li>Cloud Platforms (AWS, Azure)</li>
-            </ul>
-
-
-                        <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;">🎓 PG Diploma in Adavanced Computing (PG DAC)</h3>
-            <p style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 1rem;">
-                Our flagship Post Graduate Diploma in Big Data Analytics is designed to create industry-ready professionals capable of handling the massive data challenges of today's digital world.
-            </p>
-                        <ul style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-                <li>Python & R Programming</li>
-                <li>Statistical Analysis & Machine Learning</li>
-                <li>Deep Learning & Neural Networks</li>
-                <li>Data Visualization & Analytics</li>
-                <li>Apache Spark & Hadoop</li>
-                <li>Cloud Platforms (AWS, Azure)</li>
-            </ul>
-
-            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;">👁️ Face Recognition Attendance System</h3>
-            <p style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 1rem;">
-                This innovative attendance management system represents the fusion of CDAC's expertise in artificial intelligence and practical application development. Built using advanced computer vision and machine learning algorithms, it demonstrates our commitment to creating technology solutions that solve real-world problems.
-            </p>
-            <ul style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-                <li>Real-time face detection and recognition</li>
-                <li>Automated attendance tracking with time slots</li>
-                <li>Comprehensive reporting and analytics</li>
-                <li>Secure data management</li>
-                <li>Mobile-responsive web interface</li>
-            </ul>
-
-            <h3 style="color: #0066cc; font-size: 1.8rem; margin: 2rem 0 1rem 0;">🏆 Excellence & Achievements</h3>
-            <ul style="font-size: 1.1rem; line-height: 1.8; color: #4a5568; margin-bottom: 2rem;">
-                <li><strong>PARAM Supercomputers:</strong> Designed India's first indigenous supercomputer series</li>
-                <li><strong>Technology Innovation:</strong> 150+ technology products and solutions developed</li>
-                <li><strong>Education Excellence:</strong> 50,000+ students trained with 90%+ placement rates</li>
-                <li><strong>Industry Impact:</strong> 35+ years of excellence in advanced computing</li>
-            </ul>
-        </section>
     </div>
 
     <script>
         async function performLogout() {
-            if (confirm('Are you sure you want to logout?')) {
-                try {
-                    const response = await fetch('/api/logout', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'include'
-                    });
-                    const result = await response.json();
-                    if (result.success) {
-                        localStorage.clear();
-                        sessionStorage.clear();
-                        window.location.href = '/login';
-                    } else {
-                        alert('Logout failed: ' + result.message);
-                    }
-                } catch (error) {
-                    console.error('Logout error:', error);
-                    window.location.href = '/login';
-                }
-            }
-        }
-
-        async function checkSession() {
+            if (!confirm('Are you sure you want to logout?')) return;
             try {
-                const response = await fetch('/api/session/status', { credentials: 'include' });
-                const result = await response.json();
-                if (!result.authenticated) {
-                    window.location.href = '/login';
-                } else if (result.user_type !== 'admin') {
-                    // Nav link visibility is handled centrally by static/js/navbar.js.
-                }
-            } catch (error) {
-                console.log('Session check failed:', error);
-            }
+                const r = await fetch('/api/logout', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include'
+                });
+                const d = await r.json();
+                if (d.success) { localStorage.clear(); sessionStorage.clear(); window.location.href = '/login'; }
+                else alert('Logout failed: ' + d.message);
+            } catch (e) { window.location.href = '/login'; }
         }
-
-        // Run check on load
-        document.addEventListener('DOMContentLoaded', checkSession);
-
-        setInterval(checkSession, 5 * 60 * 1000);
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden) {
-                checkSession();
-            }
-        });
     </script>
-    </div>
-
 </body>
+
 </html>

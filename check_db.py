@@ -9,12 +9,21 @@ from db import get_connection, is_postgres
 REQUIRED_COLUMNS = {
     "students": ["course_id", "password_hash", "must_change_password", "dob",
                  "joining_date"],
-    "courses": ["terminal_pin_hash", "half_day_enabled"],
     "attendance": ["course_id", "is_late", "subject_id"],
     "slot_attendance": ["course_id"],
-    "holidays": ["course_id"],
-    "users": ["email"],
+    "users": ["email", "institute_id"],
     "subjects": ["sequence", "faculty", "exam_date", "mid_quiz_date"],
+    # phase 10: tenancy. courses.institute_id is the anchor every other table
+    # reaches its institute through; holidays needs its own because an
+    # institute-wide holiday has no course_id to resolve from.
+    "courses": ["terminal_pin_hash", "half_day_enabled", "institute_id"],
+    "holidays": ["course_id", "institute_id"],
+    # phase 11: without this the audit log is read unscoped, and one
+    # institute's admin sees every platform-level action a superadmin took.
+    "audit_log": ["course_id", "institute_id"],
+    # phase 12: /about renders from these. Without them the route falls back
+    # to the institute's name alone, which is survivable but wrong.
+    "institutes": ["tagline", "about", "address", "phone", "website"],
 }
 REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    "email_log", "password_resets", "face_registration_requests",
@@ -24,7 +33,22 @@ REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
                    # phase 6
                    "subjects", "timetable", "consent_records",
                    # phase 7
-                   "academic_events"]
+                   "academic_events",
+                   # phase 10
+                   "institutes"]
+
+# Indexes the app's correctness depends on, not just its speed.
+# phase 9: `attendance` carries no UNIQUE constraint of its own, so the two
+# `INSERT OR IGNORE` writers only actually dedupe while this index exists.
+REQUIRED_INDEXES = {
+    "idx_attendance_unique_slot": "attendance",
+    # phase 13: slot_attendance had no index at all, and it is written on
+    # every mark and read by every report. The first of these answers "has
+    # this student already marked this slot today?", which runs once per
+    # recognised face.
+    "idx_slot_attendance_student_date": "slot_attendance",
+    "idx_slot_attendance_date_slot": "slot_attendance",
+}
 
 
 def table_exists(cur, table_name):
@@ -41,6 +65,24 @@ def table_exists(cur, table_name):
             (table_name,),
         )
         return cur.fetchone() is not None
+
+
+def index_exists(cur, index_name):
+    try:
+        if is_postgres():
+            cur.execute(
+                "SELECT 1 FROM pg_indexes "
+                "WHERE schemaname = 'public' AND indexname = %s",
+                (index_name,),
+            )
+        else:
+            cur.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+                (index_name,),
+            )
+        return cur.fetchone() is not None
+    except Exception:
+        return False
 
 
 def cols(cur, table):
@@ -90,6 +132,13 @@ def main():
             print(f"  [{'OK ' if ok else 'MISSING'}] {table}.{c}")
             if not ok:
                 missing.append(f"{table}.{c}")
+
+    print("\nIndexes:")
+    for idx, table in REQUIRED_INDEXES.items():
+        ok = index_exists(cur, idx)
+        print(f"  [{'OK ' if ok else 'MISSING'}] {idx} on {table}")
+        if not ok:
+            missing.append(f"index:{idx}")
 
     # Quick data sanity
     print("\nData:")

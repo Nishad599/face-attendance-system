@@ -95,7 +95,31 @@ None of these are installed by the deploy. Add them once with `crontab -e`:
 
 # Same-day "you weren't marked" nudge, Mon-Sat after the last slot
 30 17 * * 1-6 cd $HOME/student && ./venv/bin/python send_daily_nudge.py >> logs/nudge.log 2>&1
+
+# Delete face data past its retention window, Sunday 02:15 (after the backup)
+15 2 * * 0 cd $HOME/student && ./venv/bin/python purge_biometrics.py >> logs/purge.log 2>&1
 ```
+
+**The purge job is not optional.** `/privacy` tells every student "your face
+data is deleted within N days of your course ending", and until this script
+existed nothing deleted anything — `BIOMETRIC_RETENTION_DAYS` was only ever
+read in order to print that sentence. Without the cron entry the deployment
+makes a promise it does not keep, which under the DPDP Act is a
+storage-limitation failure and not merely a missing feature.
+
+Check what it would do before trusting it, and after any change to course end
+dates:
+
+```bash
+./venv/bin/python purge_biometrics.py --dry-run
+```
+
+It clears `students.face_encoding`, resets `photo_count` and removes the
+enrolment JPEGs under `student_photos/`. It deliberately keeps attendance
+records, consent records and the student's own details, because the same
+notice says those are kept. The clock runs from the **course end date**, so a
+running course or one with a blank `end_date` is never touched. Re-running is
+a no-op, and each institute gets its own `audit_log` entry.
 
 `cron` does not expand `$HOME` in every implementation — if a job silently does
 nothing, replace `$HOME` with the absolute path (`/home/nishadk/student`).
@@ -143,6 +167,17 @@ photo or a face on a phone screen can mark attendance. The crop bug that caused
 the over-rejection is fixed, but the threshold has never been validated against
 real hardware.
 
+Check at any time without reading `.env` on the server — `/api/system/status`
+reports it:
+
+```bash
+curl -sk https://127.0.0.1:8000/api/system/status | python3 -m json.tool
+```
+
+`"liveness_active": false` comes with a `liveness_warning` spelling out what is
+and is not being enforced. Once a validated threshold is in place the field
+flips to `true` and reports the threshold in use.
+
 This has to happen on the VM: the sandbox falls back to a Haar cascade because
 `buffalo_l` isn't installed there, so its bounding boxes — and therefore its
 scores — are not the ones production will see.
@@ -188,8 +223,23 @@ the restart, so a red run means something genuinely broke. To check by hand:
 cd $HOME/student && ./status.sh && ./venv/bin/python check_db.py && journalctl -u attendance -n 30 --no-pager
 ```
 
-`check_db.py` verifies every table and column the app expects. It is also run
-non-fatally at the end of each deploy.
+`check_db.py` verifies every table, column **and index** the app expects. It is
+also run non-fatally at the end of each deploy.
+
+One of those indexes carries correctness, not just speed:
+`idx_attendance_unique_slot` (added by `migrate_phase9.py`) is what makes the
+`INSERT OR IGNORE` in the two camera paths actually refuse a duplicate. If
+`check_db.py` reports it missing, attendance can be double-counted — run the
+migration rather than ignoring it:
+
+```bash
+./venv/bin/python migrate_phase9.py --dry-run   # report duplicates, change nothing
+./venv/bin/python migrate_phase9.py             # dedupe, then add the index
+```
+
+The dry run lists every duplicated (student, date, slot) group it found. The
+real run keeps the **earliest** mark in each group — the one reflecting when the
+student actually arrived — and deletes the rest, after backing up the database.
 
 ---
 

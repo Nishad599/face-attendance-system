@@ -73,17 +73,76 @@ class TestAttendanceRate:
         assert b_present == 1
         assert 0 < self._rate(b_present, total) < 75      # flagged at risk
 
-    def test_duplicate_marks_same_day_count_once(self, db, seeded):
-        """Two rows on one date must not inflate the present count."""
+    def test_duplicate_mark_is_rejected_by_the_database(self, db, seeded):
+        """A second identical mark cannot be stored at all (migrate_phase9).
+
+        This used to insert three duplicate rows and assert only that reports
+        counted the date once. That left the duplicates in the table, so any
+        caller using COUNT(*) rather than COUNT(DISTINCT date) double-counted
+        them. idx_attendance_unique_slot now refuses the write outright.
+        """
+        import sqlite3
+
         sid = seeded["ids"]["B"]
         day = seeded["work_days"][1].strftime("%Y-%m-%d")
-        for _ in range(3):
-            db.execute("INSERT INTO attendance (student_id, date, time_in, status, course_id) "
-                       "VALUES (?, ?, '09:00:00', 'present', 1)", (sid, day))
+
+        db.execute("INSERT INTO attendance (student_id, date, time_in, status, course_id) "
+                   "VALUES (?, ?, '09:00:00', 'present', 1)", (sid, day))
         db.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO attendance (student_id, date, time_in, status, course_id) "
+                       "VALUES (?, ?, '09:05:00', 'present', 1)", (sid, day))
+        db.rollback()
+
+        # INSERT OR IGNORE is what the camera paths actually use: it must now
+        # be a genuine no-op rather than a silent second row.
+        db.execute("INSERT OR IGNORE INTO attendance (student_id, date, time_in, status, course_id) "
+                   "VALUES (?, ?, '09:05:00', 'present', 1)", (sid, day))
+        db.commit()
+
+        rows = db.execute(
+            "SELECT COUNT(*) FROM attendance WHERE student_id = ? AND date = ?",
+            (sid, day)).fetchone()[0]
+        assert rows == 1
+
         distinct = db.execute(
             "SELECT COUNT(DISTINCT date) FROM attendance WHERE student_id = ?", (sid,)).fetchone()[0]
         assert distinct == 2       # the original day plus this one
+
+    def test_different_slots_same_day_are_both_kept(self, db, seeded):
+        """The index is per slot, not per day — half-day counting needs both."""
+        sid = seeded["ids"]["C"]
+        day = seeded["work_days"][2].strftime("%Y-%m-%d")
+        for slot in ("morning_1", "afternoon_1"):
+            db.execute(
+                "INSERT INTO attendance (student_id, date, time_in, status, "
+                "session_type, course_id) VALUES (?, ?, '09:00:00', 'present', ?, 1)",
+                (sid, day, slot))
+        db.commit()
+        rows = db.execute(
+            "SELECT COUNT(*) FROM attendance WHERE student_id = ? AND date = ?",
+            (sid, day)).fetchone()[0]
+        assert rows == 2
+
+    def test_whole_day_mark_cannot_be_duplicated(self, db, seeded):
+        """A NULL session_type is one whole-day row, not an unlimited supply.
+
+        Both backends treat NULLs as distinct in a unique index, which is why
+        the index is on COALESCE(session_type, '') — a bulk or manual whole-day
+        mark would otherwise still be free to duplicate.
+        """
+        import sqlite3
+
+        sid = seeded["ids"]["C"]
+        day = seeded["work_days"][3].strftime("%Y-%m-%d")
+        db.execute("INSERT INTO attendance (student_id, date, time_in, status, course_id) "
+                   "VALUES (?, ?, '09:00:00', 'present', 1)", (sid, day))
+        db.commit()
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute("INSERT INTO attendance (student_id, date, time_in, status, course_id) "
+                       "VALUES (?, ?, '10:00:00', 'present', 1)", (sid, day))
+        db.rollback()
 
 
 class TestLateArrival:

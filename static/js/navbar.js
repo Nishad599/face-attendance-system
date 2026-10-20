@@ -18,6 +18,7 @@
 
     // Where "home" is depends on who you are.
     var HOME_BY_ROLE = {
+        superadmin: '/superadmin',
         admin: '/dashboard',
         teacher: '/teacher',
         student: '/student',
@@ -71,9 +72,29 @@
             .then(function (d) {
                 if (!d || !d.authenticated) return;   // public page: links stay hidden
                 // user_type is the session's role ('user' is the legacy student value).
-                applyRole(d.user_type || d.role || '');
+                var role = d.user_type || d.role || '';
+                applyRole(role);
+                if (role === 'admin' || role === 'teacher') loadApprovalBadge();
             })
             .catch(function () { /* offline: a nav with no links is still usable */ });
+    }
+
+    // How many decisions are waiting, shown on the Approvals link. Staff
+    // should not have to open a page to discover that four students are
+    // waiting on a leave decision; best-effort, and silent on failure.
+    function loadApprovalBadge() {
+        var badge = document.getElementById('navApprovalCount');
+        if (!badge) return;
+        fetch('/api/approvals/summary', { credentials: 'include' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var n = d && d.success && d.counts ? d.counts.total : 0;
+                if (!n) { badge.hidden = true; return; }
+                badge.textContent = n > 99 ? '99+' : String(n);
+                badge.hidden = false;
+                badge.setAttribute('aria-label', n + ' waiting for approval');
+            })
+            .catch(function () { /* leave the badge hidden */ });
     }
 
     if (document.readyState === 'loading') {
