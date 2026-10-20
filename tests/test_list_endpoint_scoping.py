@@ -130,7 +130,7 @@ class TestListEndpointsAreScoped:
     # ---- the institute boundary ------------------------------------------
 
     @pytest.mark.parametrize("label,call", [
-        ("students/list", lambda a, s: a.list_students(s)),
+        ("students/list", lambda a, s: a.list_students(session=s)),
         ("today/slots", lambda a, s: a.get_today_slot_attendance(session=s)),
         ("bulk-export", lambda a, s: a.bulk_export_attendance(
             start_date=TODAY, end_date=TODAY, format="student_summary", session=s)),
@@ -141,7 +141,7 @@ class TestListEndpointsAreScoped:
             assert leaked not in body, f"{label} leaked {leaked}"
 
     @pytest.mark.parametrize("label,call", [
-        ("students/list", lambda a, s: a.list_students(s)),
+        ("students/list", lambda a, s: a.list_students(session=s)),
         ("today/slots", lambda a, s: a.get_today_slot_attendance(session=s)),
         ("bulk-export", lambda a, s: a.bulk_export_attendance(
             start_date=TODAY, end_date=TODAY, format="student_summary", session=s)),
@@ -156,7 +156,7 @@ class TestListEndpointsAreScoped:
     # ---- the batch boundary ----------------------------------------------
 
     @pytest.mark.parametrize("label,call", [
-        ("students/list", lambda a, s: a.list_students(s)),
+        ("students/list", lambda a, s: a.list_students(session=s)),
         ("today/slots", lambda a, s: a.get_today_slot_attendance(session=s)),
         ("bulk-export", lambda a, s: a.bulk_export_attendance(
             start_date=TODAY, end_date=TODAY, format="student_summary", session=s)),
@@ -172,7 +172,7 @@ class TestListEndpointsAreScoped:
         empty IN () has to mean none rather than no filter."""
         db.execute("DELETE FROM teacher_batches WHERE user_id = 9")
         db.commit()
-        body = self._text(world, _app.list_students(self._teacher()))
+        body = self._text(world, _app.list_students(session=self._teacher()))
         for roll in ("NG001", "NG002", "SP001"):
             assert roll not in body
 

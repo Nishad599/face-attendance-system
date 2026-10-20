@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from fastapi.responses import (HTMLResponse, Response, RedirectResponse,
                                JSONResponse)
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from urllib.parse import quote
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, EmailStr
@@ -135,6 +136,17 @@ class SessionAttendance(BaseModel):
 _UNSET = object()
 
 app = FastAPI(title="Face Recognition Attendance System", version="2.0.0")
+
+# Nothing was compressed. The roster JSON, the CSV exports and every page are
+# highly compressible text, and the deployment serves them over a campus LAN
+# to terminals and phones. One line, and the roster drops by roughly three
+# quarters.
+#
+# minimum_size keeps it off the small JSON replies the terminal polls, where
+# the gzip header and the CPU cost exceed anything saved. Images, JPEG frames
+# and the ONNX models are already compressed, and Starlette skips a response
+# that declares its own Content-Encoding, so they are unaffected.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # When this process started, for the dashboard's uptime reading. Module scope,
 # so it survives for the life of the worker and resets on every restart —
@@ -1246,19 +1258,11 @@ class AttendanceSystem:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # Create course_settings table
-        cursor.execute(f'''
-            CREATE TABLE IF NOT EXISTS course_settings (
-                id {SERIAL},
-                academic_year TEXT NOT NULL,
-                semester TEXT NOT NULL,
-                start_date DATE NOT NULL,
-                end_date DATE NOT NULL,
-                is_active BOOLEAN DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
+        # course_settings was created here. It was never written to and never
+        # read -- a CREATE TABLE and nothing else, anywhere in the codebase.
+        # migrate_phase13 drops it; not re-creating it is what makes that
+        # stick. Academic years and semesters live on `courses`.
+
         # Add new columns to attendance table if they don't exist
         from db import column_exists
         if not column_exists(self.conn, 'attendance', 'manual_reason'):
@@ -3803,7 +3807,11 @@ async def get_system_status(response: Response):
     return payload
 
 @app.get("/api/students/list")
-async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+async def list_students(q: Optional[str] = None,
+                        course_id: Optional[int] = None,
+                        limit: int = 500,
+                        offset: int = 0,
+                        session: Dict[str, Any] = Depends(require_teacher_or_admin)):
     """The roster behind /people.
 
     It was entirely unscoped: no institute filter and no batch filter, so
@@ -3812,10 +3820,59 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
     "endpoints whose exposure mattered most" test list, guarded for
     authentication and never scoped for tenancy — being authenticated is not
     the same as being entitled.
+
+    It also returned every student, always. One institute of 60 is nothing;
+    a deployment with a few thousand across ten institutes is a response
+    nobody reads the end of, built by a GROUP BY over the whole of
+    `attendance`. It now takes `limit`/`offset` and reports `total` and
+    `has_more`, so there is a ceiling on what one request can ever produce.
+
+    `q` and `course_id` filter server-side. They exist because pagination
+    without them is worse than neither: /people searched the full array it
+    had been given, so a paginated roster would have searched only the page
+    you happened to be on. The page uses the client-side path while
+    everything fits in one response — instant, no round trip per keystroke —
+    and switches to these once it does not.
     """
     try:
         scope, scope_params = visible_student_filter(session, "s.course_id")
+        where = scope
+        params = list(scope_params)
+
+        if course_id is not None:
+            assert_course_allowed(session, course_id)
+            where += " AND s.course_id = ?"
+            params.append(int(course_id))
+
+        term = (q or "").strip()
+        if term:
+            # Name or roll number, which is what the page's own box matched.
+            #
+            # LIKE treats % and _ as patterns, so the term has to be escaped
+            # or a search for "%" returns the entire roster as though the box
+            # were empty, and "_" matches any single character. Harmless to a
+            # typist, confusing to anyone searching a name with an underscore,
+            # and the sort of thing that turns into a complaint about search
+            # being "wrong".
+            escaped = (term.lower().replace("\\", "\\\\")
+                                   .replace("%", "\\%")
+                                   .replace("_", "\\_"))
+            where += (" AND (LOWER(s.name) LIKE ? ESCAPE '\\'"
+                      " OR LOWER(s.student_id) LIKE ? ESCAPE '\\')")
+            like = f"%{escaped}%"
+            params.extend([like, like])
+
+        # A caller asking for a million rows gets 1000. The default is high
+        # enough that the ordinary institute never sees a second page.
+        limit = max(1, min(int(limit), 1000))
+        offset = max(0, int(offset))
+
         cursor = attendance_system.conn.cursor()
+        total = cursor.execute(
+            "SELECT COUNT(*) FROM students s WHERE s.status IN "
+            "('active', 'pending_registration')" + where, tuple(params)
+        ).fetchone()[0]
+
         cursor.execute('''
             SELECT s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                    COUNT(a.id) as attendance_count,
@@ -3824,11 +3881,12 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
             FROM students s
             LEFT JOIN attendance a ON s.id = a.student_id
             LEFT JOIN courses c ON c.id = s.course_id
-            WHERE s.status IN ('active', 'pending_registration')''' + scope + '''
+            WHERE s.status IN ('active', 'pending_registration')''' + where + '''
             GROUP BY s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                      s.joining_date, s.status, s.course_id, c.name
             ORDER BY s.name
-        ''', tuple(scope_params))
+            LIMIT ? OFFSET ?
+        ''', tuple(params + [limit, offset]))
 
         students = []
         for row in cursor.fetchall():
@@ -3848,8 +3906,20 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
                 "model": "buffalo_l_w600k_512D"
             })
         
-        return {"success": True, "students": students}
-    
+        return {
+            "success": True,
+            "students": students,
+            # `total` is the count that matches the filter, not the page, so
+            # the page can say "12 of 340" honestly and know whether its own
+            # client-side search would be lying.
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(students) < total,
+        }
+
+    except HTTPException:
+        raise
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -4492,12 +4562,13 @@ async def clear_all_data(session: Dict[str, Any] = Depends(require_admin_access)
                     f"DELETE FROM {table} WHERE student_id IN ({marks})", tuple(ids))
             cursor.execute(f"DELETE FROM students WHERE id IN ({marks})", tuple(ids))
 
-        # Neither of these is student-scoped: a registration session has no
-        # student yet, and the daily summary is a derived aggregate. They are
-        # only cleared when the wipe covers the whole deployment.
+        # A registration session has no student yet, so it is not
+        # student-scoped and is only cleared when the wipe covers the whole
+        # deployment. (daily_attendance_summary used to be cleared here too;
+        # migrate_phase13 dropped that table, so the DELETE would now throw
+        # and take the whole wipe down with it.)
         if not where:
             cursor.execute('DELETE FROM registration_sessions')
-            cursor.execute('DELETE FROM daily_attendance_summary')
 
         conn.commit()
         
@@ -5496,22 +5567,47 @@ async def teacher_batch_students(course_id: int, date: Optional[str] = None,
         assert_course_allowed(session, course_id)
         the_date = date or datetime.now(timezone).date().strftime("%Y-%m-%d")
         cur = attendance_system.conn.cursor()
-        students = []
-        for r in cur.execute(
-            "SELECT id, student_id, name, (face_encoding IS NOT NULL), email, dob FROM students "
-            "WHERE course_id = ? AND status IN ('active','pending_registration') ORDER BY name",
+
+        # Two queries, not one per student. This ran a SELECT against
+        # `attendance` for every row in the batch, so a 60-student roster cost
+        # 61 round trips and the teacher portal's main page paid it on every
+        # visit.
+        rows = cur.execute(
+            "SELECT id, student_id, name, (face_encoding IS NOT NULL), email, dob "
+            "FROM students WHERE course_id = ? "
+            "AND status IN ('active','pending_registration') ORDER BY name",
             (course_id,),
-        ).fetchall():
+        ).fetchall()
+
+        marks_by_student = {}
+        if rows:
+            # Keyed on the student ids, not on course_id. The per-student query
+            # this replaces matched on student_id and date alone, and an
+            # attendance row can carry a NULL or stale course_id -- written
+            # before that column was populated, or left behind by a batch
+            # move. Narrowing by course_id here would have quietly turned
+            # those students absent.
+            ids = [r[0] for r in rows]
             marks = cur.execute(
-                "SELECT session_type, time_in, is_manual FROM attendance WHERE student_id = ? AND date = ?",
-                (r[0], the_date),
+                "SELECT student_id, session_type FROM attendance "
+                "WHERE date = ? AND student_id IN (%s)"
+                % ",".join("?" for _ in ids),
+                tuple([the_date] + ids)
             ).fetchall()
-            present = len(marks) > 0
-            sessions_present = [m[0] for m in marks if m[0]]
+            for sid, session_type in marks:
+                marks_by_student.setdefault(sid, []).append(session_type)
+
+        students = []
+        for r in rows:
+            # A student with a row but a NULL session_type is present without a
+            # named slot -- a whole-day manual mark. Still present, so the
+            # emptiness of the list must not stand in for absence.
+            slots = marks_by_student.get(r[0])
             students.append({
                 "id": r[0], "student_id": r[1], "name": r[2], "has_face": bool(r[3]),
                 "email": r[4], "dob": r[5],
-                "present": present, "sessions": sessions_present,
+                "present": slots is not None,
+                "sessions": [s for s in (slots or []) if s],
             })
         present_count = sum(1 for s in students if s["present"])
         return {
@@ -7315,49 +7411,42 @@ async def bulk_export_attendance(
         elif format == 'student_summary':  # FIXED: was 'student'
             writer.writerow(['Student Name', 'Student ID', 'Email', 'Full Days', 'Half Days', 'Absent Days', 'Total Sessions', 'Attendance %'])
             
+            # One grouped query for every student in the range, instead of two
+            # per student. A 200-student six-month export ran 400 queries and
+            # recomputed the identical working-day count 200 times.
+            per_student = {}
+            if student_ids:
+                for sid, d, morn, aft in cursor.execute(
+                    "SELECT student_id, date,"
+                    " SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END),"
+                    " SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END)"
+                    " FROM slot_attendance WHERE date BETWEEN ? AND ?" + day_scope +
+                    " GROUP BY student_id, date",
+                    tuple([start_date, end_date] + day_params)
+                ).fetchall():
+                    bucket = per_student.setdefault(sid, {"full": 0, "half": 0, "sessions": 0})
+                    bucket["sessions"] += (morn or 0) + (aft or 0)
+                    if (morn or 0) > 0 and (aft or 0) > 0:
+                        bucket["full"] += 1
+                    elif (morn or 0) > 0 or (aft or 0) > 0:
+                        bucket["half"] += 1
+
+            # The same for everyone in the export, so counted once.
+            total_working_days = 0
+            current_date = start_date_obj
+            while current_date <= end_date_obj:
+                if ((include_weekends or current_date.weekday() != 6)
+                        and current_date not in holiday_dates):
+                    total_working_days += 1
+                current_date += timedelta(days=1)
+
             for student in students:
                 student_id, name, student_id_str, email = student
-                
-                # Get slot data for this student (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT date, 
-                           SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) as morn_count,
-                           SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) as aft_count
-                    FROM slot_attendance 
-                    WHERE student_id = ? AND date BETWEEN ? AND ?
-                    GROUP BY date
-                ''', (student_id, start_date, end_date))  # FIXED: use string versions
-                
-                daily_sessions = cursor.fetchall()
-                
-                full_days = 0
-                half_days = 0
-                for _, morn, aft in daily_sessions:
-                    if morn > 0 and aft > 0:
-                        full_days += 1
-                    elif morn > 0 or aft > 0:
-                        half_days += 1
-                
-                # Get total session count
-                cursor.execute('''
-                    SELECT COUNT(*) FROM slot_attendance 
-                    WHERE student_id = ? AND date BETWEEN ? AND ?
-                ''', (student_id, start_date, end_date))  # FIXED: use string versions
-                total_sessions = cursor.fetchone()[0]
-                
-                # Calculate working days
-                total_working_days = 0
-                current_date = start_date_obj  # FIXED: use _obj version
-                while current_date <= end_date_obj:  # FIXED: use _obj version
-                    if not include_weekends and current_date.weekday() == 6:
-                        current_date += timedelta(days=1)
-                        continue
-                    if current_date in holiday_dates:
-                        current_date += timedelta(days=1)
-                        continue
-                    total_working_days += 1
-                    current_date += timedelta(days=1)
-                
+                tally = per_student.get(student_id, {"full": 0, "half": 0, "sessions": 0})
+                full_days = tally["full"]
+                half_days = tally["half"]
+                total_sessions = tally["sessions"]
+
                 absent_days = total_working_days - full_days - half_days
                 effective_present_days = full_days + (half_days * 0.5)
                 percentage = (effective_present_days / total_working_days * 100) if total_working_days > 0 else 0

@@ -288,10 +288,10 @@
             <div class="pp-toolbar">
                 <label for="q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Search students</label>
                 <input type="search" id="q" class="app-form-input" style="max-width:280px;"
-                       placeholder="Search name or roll number…" oninput="renderStudents()">
+                       placeholder="Search name or roll number…" oninput="onSearchInput()">
                 <label for="batchFilter" class="muted" style="font-size:.86rem;">Batch</label>
                 <select id="batchFilter" class="app-form-input" style="max-width:220px;"
-                        onchange="renderStudents()">
+                        onchange="onFilterChange()">
                     <option value="">All batches</option>
                 </select>
                 <label for="faceFilter" class="muted" style="font-size:.86rem;">Face</label>
@@ -333,6 +333,11 @@
                 <div class="pp-card">
                     <div class="pp-scroll" id="studentRows">
                         <div class="pp-empty">Loading…</div>
+                    </div>
+                    <!-- Only appears once the roster outgrows one response. -->
+                    <div id="moreRow" hidden style="padding:12px;text-align:center;">
+                        <button class="app-btn app-btn-sm app-btn-subtle"
+                                id="moreBtn" onclick="loadMore()"></button>
                     </div>
                 </div>
                 <aside class="pp-panel" id="panel" style="display:none;" aria-live="polite"></aside>
@@ -389,19 +394,39 @@
 
         /* ---------- Students ---------- */
 
-        async function loadStudents() {
+        /* The roster used to arrive in full, always, and search filtered the
+           array in the browser. That is the right behaviour for one institute
+           of sixty and the wrong one for a few thousand across ten, so the
+           endpoint now paginates.
+
+           Paginating alone would have quietly broken search: filtering the
+           array you were given means searching only the page you are on. So
+           the page keeps the instant client-side path while the whole roster
+           fits in one response (TOTAL === STUDENTS.length), and hands search
+           and the batch filter to the server once it does not. */
+        let TOTAL = 0;
+        let SERVER_SIDE = false;
+        let searchTimer = null;
+
+        async function loadStudents(opts) {
+            opts = opts || {};
+            const params = new URLSearchParams();
+            if (SERVER_SIDE) {
+                const q = (document.getElementById('q').value || '').trim();
+                const batch = document.getElementById('batchFilter').value;
+                if (q) params.set('q', q);
+                if (batch) params.set('course_id', batch);
+                if (opts.append) params.set('offset', String(STUDENTS.length));
+            }
             try {
-                const d = await (await fetch('/api/students/list')).json();
-                STUDENTS = d.students || [];
-                const batches = {};
-                STUDENTS.forEach(function (s) {
-                    if (s.course_id) batches[s.course_id] = s.batch;
-                });
-                const sel = document.getElementById('batchFilter');
-                sel.innerHTML = '<option value="">All batches</option>' +
-                    Object.keys(batches).map(function (id) {
-                        return '<option value="' + id + '">' + esc(batches[id]) + '</option>';
-                    }).join('');
+                const url = '/api/students/list' + (params.toString() ? '?' + params : '');
+                const d = await (await fetch(url)).json();
+                if (!d.success) throw new Error(d.message || 'failed');
+                STUDENTS = opts.append ? STUDENTS.concat(d.students || []) : (d.students || []);
+                TOTAL = d.total || STUDENTS.length;
+                // One response short of the whole roster is the signal to stop
+                // pretending the browser has all of it.
+                if (d.has_more) SERVER_SIDE = true;
                 renderStudents();
             } catch (e) {
                 document.getElementById('studentRows').innerHTML =
@@ -409,11 +434,41 @@
             }
         }
 
+        /* The batch list comes from /api/courses, not from the students.
+           Deriving it from the roster meant a paginated page only offered the
+           batches that happened to appear on it — and a batch with no students
+           yet never appeared at all. */
+        async function loadBatchFilter() {
+            try {
+                const d = await (await fetch('/api/courses')).json();
+                const sel = document.getElementById('batchFilter');
+                sel.innerHTML = '<option value="">All batches</option>' +
+                    (d.courses || []).map(function (c) {
+                        return '<option value="' + c.id + '">' + esc(c.name) + '</option>';
+                    }).join('');
+            } catch (e) { /* the filter is a convenience; the roster still loads */ }
+        }
+
+        /* Typing is debounced only when it costs a round trip. */
+        function onSearchInput() {
+            if (!SERVER_SIDE) { renderStudents(); return; }
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () { loadStudents(); }, 250);
+        }
+
+        function onFilterChange() {
+            if (SERVER_SIDE) loadStudents(); else renderStudents();
+        }
+
         function visibleStudents() {
             const q = (document.getElementById('q').value || '').trim().toLowerCase();
             const batch = document.getElementById('batchFilter').value;
             const face = document.getElementById('faceFilter').value;
             return STUDENTS.filter(function (s) {
+                // Name, roll and batch are already applied by the server once
+                // we are paginating; re-applying them here is harmless but
+                // the face filter is the only one it has never handled.
+                if (SERVER_SIDE) return faceMatches(s, face);
                 if (batch && String(s.course_id) !== batch) return false;
                 if (face === 'yes' && !s.photo_count) return false;
                 if (face === 'no' && s.photo_count) return false;
@@ -423,10 +478,42 @@
             });
         }
 
+        async function loadMore() {
+            const btn = document.getElementById('moreBtn');
+            btn.disabled = true;
+            btn.textContent = 'Loading…';
+            try {
+                await loadStudents({append: true});
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function updateMoreRow(shown) {
+            const row = document.getElementById('moreRow');
+            // Judged on how many are loaded against how many match, not on
+            // how many are on screen: the face filter is applied in the
+            // browser, so a page of thirty can render as three.
+            const remaining = TOTAL - STUDENTS.length;
+            row.hidden = !(SERVER_SIDE && remaining > 0);
+            if (!row.hidden) {
+                document.getElementById('moreBtn').textContent =
+                    'Load ' + Math.min(remaining, 500) + ' more of ' + remaining;
+            }
+        }
+
+        function faceMatches(s, face) {
+            if (face === 'yes') return !!s.photo_count;
+            if (face === 'no') return !s.photo_count;
+            return true;
+        }
+
         function renderStudents() {
             const rows = visibleStudents();
-            document.getElementById('count').textContent =
-                rows.length + ' of ' + STUDENTS.length + ' students';
+            document.getElementById('count').textContent = SERVER_SIDE
+                ? rows.length + ' shown · ' + TOTAL + ' match'
+                : rows.length + ' of ' + STUDENTS.length + ' students';
+            updateMoreRow(rows.length);
 
             if (!rows.length) {
                 document.getElementById('studentRows').innerHTML =
@@ -667,7 +754,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', async function () {
-            await loadStudents();
+            await Promise.all([loadStudents(), loadBatchFilter()]);
             // ?student=<id> opens that student straight away, so other pages can
             // link to one person instead of saying "go and find them".
             const want = parseInt(new URLSearchParams(location.search).get('student'));

@@ -122,18 +122,10 @@ class AttendanceSlotManager:
                     UNIQUE(student_id, date, slot_id)
                 )
             ''')
-            # Create daily_attendance_summary for quick counts
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS daily_attendance_summary (
-                    id SERIAL PRIMARY KEY,
-                    date DATE NOT NULL UNIQUE,
-                    total_students INTEGER DEFAULT 0,
-                    present_morning INTEGER DEFAULT 0,
-                    present_afternoon INTEGER DEFAULT 0,
-                    total_present INTEGER DEFAULT 0,
-                    last_updated TEXT NOT NULL
-                )
-            ''')
+            # daily_attendance_summary was created here (both branches).
+            # migrate_phase13 drops it: nothing ever read it, and the write
+            # that maintained it cost four COUNT queries per student marked.
+            # Not re-created, or every restart would bring it back.
         else:
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS slot_attendance (
@@ -150,18 +142,10 @@ class AttendanceSlotManager:
                     UNIQUE(student_id, date, slot_id)
                 )
             ''')
-            # Create daily_attendance_summary for quick counts
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS daily_attendance_summary (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date DATE NOT NULL UNIQUE,
-                    total_students INTEGER DEFAULT 0,
-                    present_morning INTEGER DEFAULT 0,
-                    present_afternoon INTEGER DEFAULT 0,
-                    total_present INTEGER DEFAULT 0,
-                    last_updated TEXT NOT NULL
-                )
-            ''')
+            # daily_attendance_summary was created here (both branches).
+            # migrate_phase13 drops it: nothing ever read it, and the write
+            # that maintained it cost four COUNT queries per student marked.
+            # Not re-created, or every restart would bring it back.
 
         # session_configs must exist before load_session_configs() reads it.
         # The slot manager is constructed at import time BEFORE AttendanceSystem

@@ -42,6 +42,12 @@ REQUIRED_TABLES = ["users", "teacher_batches", "sessions", "grievances",
 # `INSERT OR IGNORE` writers only actually dedupe while this index exists.
 REQUIRED_INDEXES = {
     "idx_attendance_unique_slot": "attendance",
+    # phase 13: slot_attendance had no index at all, and it is written on
+    # every mark and read by every report. The first of these answers "has
+    # this student already marked this slot today?", which runs once per
+    # recognised face.
+    "idx_slot_attendance_student_date": "slot_attendance",
+    "idx_slot_attendance_date_slot": "slot_attendance",
 }
 
 
