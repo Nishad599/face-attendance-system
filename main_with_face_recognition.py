@@ -473,6 +473,37 @@ def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     return [r[0] for r in rows]
 
 
+def visible_student_filter(session: Dict[str, Any], column: str = "course_id"):
+    """(sql, params) limiting a student query to what this session may see.
+
+    Two separate restrictions, and a list endpoint needs both:
+
+      the institute  — one customer never sees another's students
+      the batch      — a teacher sees only the batches assigned to them
+
+    tenancy.student_filter() does the first. teacher_allowed_course_ids() does
+    the second and returns None for an admin, meaning "every batch" — which is
+    why applying it on its own silently checks nothing for an admin. That is
+    exactly how /api/students/list, /api/attendance/today/slots and
+    /api/attendance/bulk-export came to return every institute's roster to any
+    admin who asked: three endpoints that take no id, so an id-based sweep
+    never looked at them.
+
+    It lives here rather than in tenancy.py because the batch half needs the
+    app's own connection and session shape.
+    """
+    where, params = tenancy.student_filter(attendance_system.conn, session, column)
+    allowed = teacher_allowed_course_ids(session)
+    if allowed is None:
+        return where, params
+    if not allowed:
+        # A teacher with no batches assigned sees nobody, not everybody.
+        return where + f" AND {column} IN (SELECT NULL)", params
+    marks = ",".join("?" for _ in allowed)
+    return (where + f" AND {column} IN ({marks})",
+            list(params) + [int(c) for c in allowed])
+
+
 def assert_student_allowed(session: Dict[str, Any], student_id: int):
     """403 unless this session may act on that student.
 
@@ -3548,7 +3579,17 @@ async def get_system_status(response: Response):
 
 @app.get("/api/students/list")
 async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
+    """The roster behind /people.
+
+    It was entirely unscoped: no institute filter and no batch filter, so
+    every teacher and every admin got every institute's students with names
+    and email addresses. It is the first entry in this file's own
+    "endpoints whose exposure mattered most" test list, guarded for
+    authentication and never scoped for tenancy — being authenticated is not
+    the same as being entitled.
+    """
     try:
+        scope, scope_params = visible_student_filter(session, "s.course_id")
         cursor = attendance_system.conn.cursor()
         cursor.execute('''
             SELECT s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
@@ -3558,11 +3599,11 @@ async def list_students(session: Dict[str, Any] = Depends(require_teacher_or_adm
             FROM students s
             LEFT JOIN attendance a ON s.id = a.student_id
             LEFT JOIN courses c ON c.id = s.course_id
-            WHERE s.status IN ('active', 'pending_registration')
+            WHERE s.status IN ('active', 'pending_registration')''' + scope + '''
             GROUP BY s.id, s.student_id, s.name, s.email, s.photo_count, s.verification_score,
                      s.joining_date, s.status, s.course_id, c.name
             ORDER BY s.name
-        ''')
+        ''', tuple(scope_params))
 
         students = []
         for row in cursor.fetchall():
@@ -6940,20 +6981,41 @@ async def bulk_export_attendance(
     include_holidays: bool = False,
     session: Dict[str, Any] = Depends(require_teacher_or_admin)
 ):
-    """Export bulk slot-based attendance data as CSV"""
+    """Export slot-based attendance as CSV, for the caller's own students.
+
+    This was the worst of the three unscoped list endpoints, because it hands
+    back a file: the student_summary format wrote every institute's students
+    into one CSV with name, roll number and email, and daily_summary counted
+    them all into one headcount. An admin at one customer could download
+    another customer's roster.
+
+    Both formats are now driven by the same scoped id set, so there is one
+    place to get it wrong rather than two.
+    """
     try:
         from fastapi.responses import StreamingResponse
         import csv
-        
+
         start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
         end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
-        
+
         cursor = attendance_system.conn.cursor()
-        
-        # Get all students
-        cursor.execute('SELECT id, name, student_id, email FROM students WHERE status = "active" ORDER BY name')
+
+        scope, scope_params = visible_student_filter(session, "course_id")
+        cursor.execute(
+            'SELECT id, name, student_id, email FROM students '
+            'WHERE status = "active"' + scope + ' ORDER BY name',
+            tuple(scope_params))
         students = cursor.fetchall()
-        
+
+        # The per-day counts below aggregate slot_attendance directly rather
+        # than walking `students`, so they need the same restriction. An empty
+        # roster must produce an empty IN (), not an unfiltered count.
+        student_ids = [r[0] for r in students]
+        id_marks = ",".join("?" for _ in student_ids) if student_ids else "NULL"
+        day_scope = f" AND student_id IN ({id_marks})"
+        day_params = list(student_ids)
+
         # Get holidays if not including them
         holiday_dates = []
         if not include_holidays:
@@ -6965,7 +7027,38 @@ async def bulk_export_attendance(
         
         if format == 'daily_summary':  # FIXED: was 'daily'
             writer.writerow(['Date', 'Day', 'Total Students', 'Full Day Present', 'Half Day Present', 'Absent', 'Morning Sessions', 'Afternoon Sessions'])
-            
+
+            # One query for the whole range, not four per day. This loop used
+            # to run four COUNT(DISTINCT) queries for every date in the range,
+            # so a six-month export was about 1,200 round trips; it is now one.
+            # Grouping by date in SQL also means an empty range costs nothing.
+            per_day = {}
+            for row in cursor.execute(
+                "SELECT date,"
+                " COUNT(DISTINCT CASE WHEN slot_id LIKE 'morning%' THEN student_id END),"
+                " COUNT(DISTINCT CASE WHEN slot_id LIKE 'afternoon%' THEN student_id END),"
+                " COUNT(DISTINCT student_id) FROM slot_attendance"
+                " WHERE date BETWEEN ? AND ?" + day_scope +
+                " GROUP BY date",
+                tuple([start_date, end_date] + day_params)
+            ).fetchall():
+                per_day[str(row[0])] = [row[1] or 0, row[2] or 0, 0, row[3] or 0]
+
+            # Full days need a per-student HAVING, so they come as a second
+            # grouped query rather than folding into the one above.
+            for row in cursor.execute(
+                "SELECT date, COUNT(*) FROM ("
+                "  SELECT date, student_id FROM slot_attendance"
+                "  WHERE date BETWEEN ? AND ?" + day_scope +
+                "  GROUP BY date, student_id"
+                "  HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0"
+                "     AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0"
+                ") GROUP BY date",
+                tuple([start_date, end_date] + day_params)
+            ).fetchall():
+                bucket = per_day.setdefault(str(row[0]), [0, 0, 0, 0])
+                bucket[2] = row[1] or 0
+
             current_date = start_date_obj  # FIXED: use _obj version
             while current_date <= end_date_obj:  # FIXED: use _obj version
                 if not include_weekends and current_date.weekday() == 6:
@@ -6978,40 +7071,11 @@ async def bulk_export_attendance(
                 
                 date_str = current_date.strftime('%Y-%m-%d')
                 day_name = current_date.strftime('%A')
-                
-                # Count morning sessions (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id LIKE 'morning%'
-                ''', (date_str,))
-                morning_count = cursor.fetchone()[0]
-                
-                # Count afternoon sessions (FROM SLOT_ATTENDANCE)
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ? AND slot_id LIKE 'afternoon%'
-                ''', (date_str,))
-                afternoon_count = cursor.fetchone()[0]
-                
-                # Count students with both sessions equivalent
-                cursor.execute('''
-                    SELECT student_id FROM slot_attendance 
-                    WHERE date = ? 
-                    GROUP BY student_id 
-                    HAVING SUM(CASE WHEN slot_id LIKE 'morning%' THEN 1 ELSE 0 END) > 0 
-                       AND SUM(CASE WHEN slot_id LIKE 'afternoon%' THEN 1 ELSE 0 END) > 0
-                ''', (date_str,))
-                full_day_records = cursor.fetchall()
-                full_day_count = len(full_day_records)
-                
-                # Total unique students
-                cursor.execute('''
-                    SELECT COUNT(DISTINCT student_id) FROM slot_attendance 
-                    WHERE date = ?
-                ''', (date_str,))
-                total_present_students = cursor.fetchone()[0]
+
+                counts = per_day.get(date_str, (0, 0, 0, 0))
+                morning_count, afternoon_count, full_day_count, total_present_students = counts
                 half_day_count = total_present_students - full_day_count
-                
+
                 absent_count = len(students) - total_present_students
                 
                 writer.writerow([
@@ -7387,15 +7451,20 @@ async def get_student_session_attendance(student_id: int, session: Dict[str, Any
 
 @app.get("/api/attendance/today/slots")
 async def get_today_slot_attendance(session: Dict[str, Any] = Depends(require_teacher_or_admin)):
-    """Get today's slot-based attendance (the working system)"""
+    """Today's slot-by-slot attendance, scoped to the caller's own students.
+
+    Unscoped until now, so it listed every institute's students by name,
+    roll number and email alongside the four slot times.
+    """
     try:
-        today = datetime.now().date()
         timezone = pytz.timezone('Asia/Kolkata')
-        today = datetime.now(timezone).date()
+        # As a string, not a date: sqlite3's implicit date adapter is
+        # deprecated in 3.12, and every other query here already binds the
+        # ISO text that slot_attendance.date actually stores.
+        today = datetime.now(timezone).date().strftime('%Y-%m-%d')
+        scope, scope_params = visible_student_filter(session, "s.course_id")
         cursor = attendance_system.conn.cursor()
 
-
-        
         cursor.execute('''
             SELECT s.name, s.student_id, s.email, 
                    sa_m1.created_at as morning_1_time,
@@ -7412,12 +7481,14 @@ async def get_today_slot_attendance(session: Dict[str, Any] = Depends(require_te
                 AND sa_a1.date = ? AND sa_a1.slot_id = 'afternoon_1'
             LEFT JOIN slot_attendance sa_a2 ON s.id = sa_a2.student_id 
                 AND sa_a2.date = ? AND sa_a2.slot_id = 'afternoon_2'
-            WHERE s.status = 'active'
+            WHERE s.status = 'active' ''' + scope + '''
             ORDER BY s.name
-        ''', (today, today, today, today))
-        
+        ''', (today, today, today, today, *scope_params))
+
         return cursor.fetchall()
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error loading slot attendance: {e}")
         return []

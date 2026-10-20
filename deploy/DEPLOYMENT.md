@@ -95,7 +95,31 @@ None of these are installed by the deploy. Add them once with `crontab -e`:
 
 # Same-day "you weren't marked" nudge, Mon-Sat after the last slot
 30 17 * * 1-6 cd $HOME/student && ./venv/bin/python send_daily_nudge.py >> logs/nudge.log 2>&1
+
+# Delete face data past its retention window, Sunday 02:15 (after the backup)
+15 2 * * 0 cd $HOME/student && ./venv/bin/python purge_biometrics.py >> logs/purge.log 2>&1
 ```
+
+**The purge job is not optional.** `/privacy` tells every student "your face
+data is deleted within N days of your course ending", and until this script
+existed nothing deleted anything — `BIOMETRIC_RETENTION_DAYS` was only ever
+read in order to print that sentence. Without the cron entry the deployment
+makes a promise it does not keep, which under the DPDP Act is a
+storage-limitation failure and not merely a missing feature.
+
+Check what it would do before trusting it, and after any change to course end
+dates:
+
+```bash
+./venv/bin/python purge_biometrics.py --dry-run
+```
+
+It clears `students.face_encoding`, resets `photo_count` and removes the
+enrolment JPEGs under `student_photos/`. It deliberately keeps attendance
+records, consent records and the student's own details, because the same
+notice says those are kept. The clock runs from the **course end date**, so a
+running course or one with a blank `end_date` is never touched. Re-running is
+a no-op, and each institute gets its own `audit_log` entry.
 
 `cron` does not expand `$HOME` in every implementation — if a job silently does
 nothing, replace `$HOME` with the absolute path (`/home/nishadk/student`).
