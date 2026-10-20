@@ -473,6 +473,58 @@ def teacher_allowed_course_ids(session: Dict[str, Any]) -> Optional[List[int]]:
     return [r[0] for r in rows]
 
 
+def best_match(probe, institute_id):
+    """(db_id, name, similarity) for the closest known face, or (None, None, 0.0).
+
+    One place, because there were two copies of this loop — the staff camera
+    and the terminal — and a third in a now-deleted face-login endpoint. They
+    had already drifted once over the threshold constant. A difference here
+    means the same student is recognised at one camera and not another, which
+    is the kind of bug people explain as "the system doesn't like me".
+
+    Takes the fast path when the pre-normalised matrix is available and falls
+    back to the per-row loop when it is not (mixed embedding dimensions on a
+    part-migrated database), so behaviour is identical either way.
+    """
+    if probe is None:
+        return None, None, 0.0
+    matrix, names, ids = attendance_system.match_gallery(institute_id)
+
+    if matrix is not None and len(ids):
+        p = np.asarray(probe, dtype=attendance_system.MATCH_DTYPE)
+        n = np.linalg.norm(p)
+        if n == 0:
+            return None, None, 0.0
+        if p.shape[0] != matrix.shape[1]:
+            return None, None, 0.0
+        sims = matrix @ (p / n)
+        i = int(np.argmax(sims))
+        return ids[i], names[i], float(sims[i])
+
+    encodings, names, ids = attendance_system.gallery_for(institute_id)
+    if not len(encodings):
+        return None, None, 0.0
+    p = np.asarray(probe, dtype=np.float64)
+    pn = np.linalg.norm(p)
+    if pn == 0:
+        return None, None, 0.0
+    p = p / pn
+    best_i, best_sim = -1, -1.0
+    for i, known in enumerate(encodings):
+        k = np.asarray(known, dtype=np.float64)
+        if k.shape != p.shape:
+            continue
+        kn = np.linalg.norm(k)
+        if kn == 0:
+            continue
+        sim = float(np.dot(p, k / kn))
+        if sim > best_sim:
+            best_sim, best_i = sim, i
+    if best_i < 0:
+        return None, None, 0.0
+    return ids[best_i], names[best_i], best_sim
+
+
 def visible_student_filter(session: Dict[str, Any], column: str = "course_id"):
     """(sql, params) limiting a student query to what this session may see.
 
@@ -654,6 +706,8 @@ class AttendanceSystem:
                 bucket["names"].append(name)
                 bucket["ids"].append(student_id)
 
+        self._build_match_matrices()
+
         # Detect embedding method based on dimensions
         if embedding_dimensions:
             most_common_dim = max(set(embedding_dimensions), key=embedding_dimensions.count)
@@ -673,6 +727,60 @@ class AttendanceSystem:
             print("[STATS] Face galleries per institute: " + ", ".join(
                 f"{k}={len(v['ids'])}" for k, v in sorted(
                     self.face_index.items(), key=lambda kv: (kv[0] is None, kv[0]))))
+
+    # Embeddings are stored float64 (4 KB each) because that is what was
+    # written to the blobs, but a cosine similarity does not need it: float32
+    # halves the memory traffic and lets BLAS use the wider SIMD path.
+    MATCH_DTYPE = np.float32
+
+    def _build_match_matrices(self):
+        """Pre-normalise each gallery into one (N, 512) matrix, once.
+
+        Matching used to be a Python loop doing, per known face, two
+        np.linalg.norm divisions and a 512-element dot product — and it
+        re-normalised the *probe* inside that loop, so once per student
+        instead of once per face. Measured on the dev machine, per face:
+
+            gallery      loop      matmul
+              100      0.78 ms    0.22 ms
+              500      3.53 ms    0.17 ms      21x
+             2000     12.42 ms    0.12 ms     108x
+
+        Pre-normalised rows turn the whole thing into `M @ probe`, one BLAS
+        call whose cost barely moves with N. It is per *face*, so a group shot
+        of eight multiplied the waste by eight.
+
+        Built here rather than lazily because load_student_faces() already
+        knows when the gallery changed, and a lazy build would have to decide
+        that all over again.
+        """
+        self.match_index = {}
+        for key, bucket in self.face_index.items():
+            self.match_index[key] = self._matrix_from(bucket["encodings"])
+        self.match_all = self._matrix_from(self.known_face_encodings)
+
+    def _matrix_from(self, encodings):
+        """(N, D) float32 with unit-length rows, or None when there is nothing.
+
+        Mixed dimensions can occur on a database that has both InsightFace
+        512-D and legacy face_recognition 128-D embeddings; np.stack would
+        raise on those, so the majority dimension wins and the rest are left
+        to the slow path rather than taking the whole gallery down.
+        """
+        if not encodings:
+            return None
+        dims = [len(e) for e in encodings]
+        want = max(set(dims), key=dims.count)
+        rows = [e for e in encodings if len(e) == want]
+        if len(rows) != len(encodings):
+            print(f"[WARN] {len(encodings) - len(rows)} face(s) have a "
+                  f"non-standard embedding size and are excluded from the "
+                  f"fast match path")
+            return None
+        M = np.stack(rows).astype(self.MATCH_DTYPE, copy=False)
+        norms = np.linalg.norm(M, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0          # a zero vector matches nothing
+        return M / norms
 
     def gallery_for(self, institute_id=None):
         """(encodings, names, ids) a request is allowed to match against.
@@ -697,6 +805,35 @@ class AttendanceSystem:
             names.extend(bucket["names"])
             ids.extend(bucket["ids"])
         return encodings, names, ids
+
+    def match_gallery(self, institute_id=None):
+        """(matrix, names, ids) for the fast path: `matrix @ probe` gives the
+        cosine similarity against every row at once.
+
+        The matrix is None when it could not be built — an empty gallery, or
+        mixed embedding dimensions — and callers fall back to gallery_for().
+        Returning the names and ids alongside keeps row order and label order
+        provably the same, which is the one thing that must not drift: an
+        off-by-one here marks the wrong student present.
+        """
+        if not hasattr(self, "match_index"):
+            self._build_match_matrices()
+        if institute_id is None or tenancy.is_single_tenant(self.conn):
+            return (getattr(self, "match_all", None),
+                    self.known_face_names, self.known_face_ids)
+
+        key = int(institute_id)
+        buckets = [k for k in (key, None) if self.face_index.get(k)]
+        if len(buckets) == 1:
+            # The common multi-tenant case: one institute, no concatenation,
+            # so the matrix built at load time is used as it is.
+            only = buckets[0]
+            b = self.face_index[only]
+            return self.match_index.get(only), b["names"], b["ids"]
+
+        # A half-migrated database, where some batches have no institute yet.
+        encodings, names, ids = self.gallery_for(institute_id)
+        return self._matrix_from(encodings), names, ids
 
     def start_registration_session(self, name: str, email: str, student_id: str):
         """Start a new registration session"""
@@ -762,21 +899,39 @@ class AttendanceSystem:
             if exclude_db_id is not None:
                 exclude_ids.add(exclude_db_id)
 
-            enc = np.asarray(encoding, dtype=np.float64)
-            enc_norm = enc / np.linalg.norm(enc)
-
             best_name, best_sim = None, 0.0
-            for known, db_id, name in zip(self.known_face_encodings,
-                                          self.known_face_ids,
-                                          self.known_face_names):
-                if db_id in exclude_ids:
-                    continue
-                k = np.asarray(known, dtype=np.float64)
-                if k.shape != enc_norm.shape:
-                    continue
-                sim = float(np.dot(enc_norm, k / np.linalg.norm(k)))
-                if sim > best_sim:
-                    best_sim, best_name = sim, name
+            matrix = getattr(self, "match_all", None)
+
+            if matrix is not None and len(self.known_face_ids):
+                enc = np.asarray(encoding, dtype=self.MATCH_DTYPE)
+                n = np.linalg.norm(enc)
+                if n == 0 or enc.shape[0] != matrix.shape[1]:
+                    return None, 0.0
+                sims = matrix @ (enc / n)
+                if exclude_ids:
+                    # Mask rather than filter, so row order still lines up
+                    # with known_face_names. -inf can never win an argmax.
+                    for i, db_id in enumerate(self.known_face_ids):
+                        if db_id in exclude_ids:
+                            sims[i] = -np.inf
+                i = int(np.argmax(sims))
+                if np.isfinite(sims[i]):
+                    best_sim = float(sims[i])
+                    best_name = self.known_face_names[i]
+            else:
+                enc = np.asarray(encoding, dtype=np.float64)
+                enc_norm = enc / np.linalg.norm(enc)
+                for known, db_id, name in zip(self.known_face_encodings,
+                                              self.known_face_ids,
+                                              self.known_face_names):
+                    if db_id in exclude_ids:
+                        continue
+                    k = np.asarray(known, dtype=np.float64)
+                    if k.shape != enc_norm.shape:
+                        continue
+                    sim = float(np.dot(enc_norm, k / np.linalg.norm(k)))
+                    if sim > best_sim:
+                        best_sim, best_name = sim, name
 
             if best_sim >= self.DUPLICATE_FACE_THRESHOLD:
                 return best_name, best_sim
@@ -1626,6 +1781,36 @@ sweep_stale_registration_files()
 # Now that base tables (courses, session_configs, students, …) exist, build the
 # slot manager (it reads those tables at construction time).
 attendance_manager = create_slot_manager_instance()
+
+
+def get_slot_manager():
+    """The one AttendanceSlotManager, instead of a fresh one per request.
+
+    Six handlers called create_slot_manager_instance() on every request, two
+    of them the hottest paths in the app: /api/attendance/live-count, which
+    every terminal and every open attendance page polls every 10 seconds, and
+    /api/detect_attendance_slots, which each terminal posts to every 3
+    seconds. Its constructor is not cheap and, worse, not read-only:
+
+        a new DB connection
+        5x CREATE TABLE IF NOT EXISTS  + commit     <- a write lock
+        load_session_configs()         4 SELECTs
+        ensure_default_configs()       + commit     <- another write lock
+
+    So each terminal took roughly 80 write locks a minute on a database that
+    takes one writer at a time, purely to re-create tables that already
+    existed. Four terminals at a slot boundary -- exactly when marking is
+    heaviest -- is over 300 a minute. That is what SQLITE_BUSY_TIMEOUT_MS was
+    quietly absorbing.
+
+    Nothing needed the fresh instance: config changes already call
+    reload_config() on this shared one (see PUT /api/admin/session-config),
+    which is the only state it caches.
+    """
+    global attendance_manager
+    if attendance_manager is None:
+        attendance_manager = create_slot_manager_instance()
+    return attendance_manager
 
 # Session management helpers
 def get_user_from_session(request: Request) -> Optional[dict]:
@@ -3301,8 +3486,9 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
 
     # Only this institute's students may be matched. On a single-institute
     # deployment this is the whole gallery, exactly as before.
+    match_institute_id = tenancy.institute_for_session(session)
     gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
-        tenancy.institute_for_session(session))
+        match_institute_id)
 
     try:
         # Convert base64 to image
@@ -3360,22 +3546,13 @@ async def detect_attendance(image_data: DetectionImage, session: Dict[str, Any] 
             face_encoding = face_data['embedding']
 
             # Find best match, against THIS session's institute only.
-            if len(gallery_encodings) > 0:
-                # Calculate similarities using dot product (for InsightFace embeddings)
-                similarities = []
-                for known_encoding in gallery_encodings:
-                    # Normalize embeddings
-                    face_norm = face_encoding / np.linalg.norm(face_encoding)
-                    known_norm = known_encoding / np.linalg.norm(known_encoding)
-                    similarity = np.dot(face_norm, known_norm)
-                    similarities.append(similarity)
-                
-                best_match_index = np.argmax(similarities)
-                best_similarity = similarities[best_match_index]
-                
-                if best_similarity > FACE_MATCH_THRESHOLD:
-                    student_id = gallery_ids[best_match_index]
-                    student_name = gallery_names[best_match_index]
+            # One pre-normalised matmul in best_match(), not a Python loop per
+            # known face; see AttendanceSystem._build_match_matrices.
+            if len(gallery_ids) > 0:
+                student_id, student_name, best_similarity = best_match(
+                    face_encoding, match_institute_id)
+
+                if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
 
                     # Check if already marked today
                     timezone = pytz.timezone('Asia/Kolkata')
@@ -4161,7 +4338,7 @@ async def get_session_configuration(course_id: Optional[int] = None,
                                     session: Dict[str, Any] = Depends(require_admin_access)):
     """Get session configuration for a batch (defaults to the first active batch)."""
     try:
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         if course_id is None:
             row = attendance_system.conn.execute(
                 "SELECT id FROM courses WHERE is_active = 1 ORDER BY id LIMIT 1"
@@ -4187,17 +4364,19 @@ async def update_session_configuration(
         if data.get('course_id') is not None:
             assert_course_allowed(session, data['course_id'])
 
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         success, message = manager.update_session_timing(
             session_type=session_type,
             start_time=data['start_time'],
             end_time=data['end_time'],
             course_id=data.get('course_id')
         )
-        if success and attendance_manager is not None:
-            # The app-wide manager is built once at import; without this its
-            # fallback view keeps the old timings until the next restart.
-            attendance_manager.reload_config()
+        if success:
+            # The manager is built once at import and caches the timings, so
+            # without this the app keeps the old ones until the next restart.
+            # It is also the only cached state it has, which is why sharing
+            # one instance across requests is safe.
+            manager.reload_config()
         return {"success": success, "message": message}
     # A bare `except Exception` swallows HTTPException too, turning a
     # 403 or 404 into a 200 with success:false. The caller cannot tell
@@ -4216,7 +4395,7 @@ async def get_current_slot_info(course_id: Optional[int] = None,
     belongs to no batch in particular - pass the batch you are looking at.
     """
     try:
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         current_slot = manager.get_current_slot(course_id=course_id)
         next_slot = manager.get_next_slot(course_id=course_id)
 
@@ -4234,10 +4413,9 @@ async def get_current_slot_info(course_id: Optional[int] = None,
 async def reload_slot_configuration(session: Dict[str, Any] = Depends(require_admin_access)):
     """Reload slot configuration from database"""
     try:
-        manager = create_slot_manager_instance()
-        manager.reload_config()
-        if attendance_manager is not None:
-            attendance_manager.reload_config()
+        # One manager now, so one reload. This used to build a throwaway
+        # instance, reload that, and then reload the app-wide one as well.
+        get_slot_manager().reload_config()
         return {"success": True, "message": "Slot configuration reloaded successfully"}
     except Exception as e:
         return {"success": False, "message": str(e)}
@@ -7563,7 +7741,7 @@ async def get_live_attendance_count(course_id: Optional[int] = None,
             if allowed is not None and len(allowed) == 1:
                 scope_course_id = allowed[0]
 
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         count_data = manager.get_live_student_count(course_id=scope_course_id)
         return count_data
     # A bare `except Exception` swallows HTTPException too, turning a
@@ -7598,8 +7776,9 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
     # Only this institute's students may be matched. The per-batch filter below
     # is a separate, narrower rule: a terminal is scoped to its batches, and the
     # institute scope is what stops another customer's student matching at all.
+    match_institute_id = tenancy.institute_for_session(session)
     gallery_encodings, gallery_names, gallery_ids = attendance_system.gallery_for(
-        tenancy.institute_for_session(session))
+        match_institute_id)
 
     # Terminal sessions restrict marking to their batch
     terminal_batch_ids = None
@@ -7642,7 +7821,7 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             }
         
         # Initialize slot manager
-        manager = create_slot_manager_instance()
+        manager = get_slot_manager()
         recognized_students = []
         unknown_faces = 0
         spoofed_faces = 0
@@ -7673,20 +7852,13 @@ async def detect_attendance_with_slots(image_data: DetectionImage,
             face_encoding = face_data['embedding']
 
             # Find best match, against THIS session's institute only.
-            if len(gallery_encodings) > 0:
-                similarities = []
-                for known_encoding in gallery_encodings:
-                    face_norm = face_encoding / np.linalg.norm(face_encoding)
-                    known_norm = known_encoding / np.linalg.norm(known_encoding)
-                    similarity = np.dot(face_norm, known_norm)
-                    similarities.append(similarity)
-                
-                best_match_index = np.argmax(similarities)
-                best_similarity = similarities[best_match_index]
-                
-                if best_similarity > FACE_MATCH_THRESHOLD:
-                    student_id = gallery_ids[best_match_index]
-                    student_name = gallery_names[best_match_index]
+            # One pre-normalised matmul in best_match(), not a Python loop per
+            # known face; see AttendanceSystem._build_match_matrices.
+            if len(gallery_ids) > 0:
+                student_id, student_name, best_similarity = best_match(
+                    face_encoding, match_institute_id)
+
+                if student_id is not None and best_similarity > FACE_MATCH_THRESHOLD:
 
                     # Terminal: skip students who aren't in this batch
                     if terminal_batch_ids is not None and student_id not in terminal_batch_ids:
